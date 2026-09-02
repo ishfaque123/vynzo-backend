@@ -1,4 +1,4 @@
-import jwt, { SignOptions } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
 
 export interface VynzoTokenPayload {
@@ -6,9 +6,7 @@ export interface VynzoTokenPayload {
 }
 
 export function signToken(payload: VynzoTokenPayload): string {
-  return jwt.sign(payload, env.jwtSecret, {
-    expiresIn: env.jwtExpiresIn,
-  } as SignOptions);
+  return jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn } as any);
 }
 
 export function verifyToken(token: string): VynzoTokenPayload {
