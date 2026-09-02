@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountStatus {
+  active
+  suspended
+  deactivated
+}
+
+model User {
+  id                String        @id @default(uuid())
+  googleId          String        @unique @map("google_id")
+  username          String?       @unique
+  displayName       String?       @map("display_name")
+  dateOfBirth       DateTime?     @map("date_of_birth")
+  bio               String?       @db.VarChar(300)
+  profilePictureUrl String?       @map("profile_picture_url")
+  profileCompleted  Boolean       @default(false) @map("profile_completed")
+  accountStatus     AccountStatus @default(active) @map("account_status")
+  role              String        @default("user")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+  lastActiveAt      DateTime?     @map("last_active_at")
+
+  @@index([username])
+  @@map("users")
+}
