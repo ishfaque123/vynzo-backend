@@ -6,7 +6,8 @@ export interface VynzoTokenPayload {
 }
 
 export function signToken(payload: VynzoTokenPayload): string {
-  return jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn } as any);
+  const sign: any = jwt.sign;
+  return sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
 }
 
 export function verifyToken(token: string): VynzoTokenPayload {
