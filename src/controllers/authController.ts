@@ -7,8 +7,8 @@ import { prisma } from '../config/prisma';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  secure: true,
+  sameSite: 'none' as const,
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
@@ -34,6 +34,6 @@ export async function getMe(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function logout(_req: Request, res: Response) {
-  res.clearCookie('vynzo_token');
+  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
   sendSuccess(res, { loggedOut: true });
 }
