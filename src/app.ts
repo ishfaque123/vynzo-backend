@@ -9,6 +9,8 @@ import { sendSuccess } from './utils/ApiResponse';
 import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
 import postRoutes from './routes/postRoutes';
+import followRoutes from './routes/followRoutes';
+import commentRoutes from './routes/commentRoutes';
 
 export const app = express();
 
@@ -17,15 +19,15 @@ app.use(cors({ origin: env.frontendUrl, credentials: true }));
 app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));
 
-// Health check
 app.get('/api/health', (_req, res) => {
   sendSuccess(res, { status: 'ok', environment: env.nodeEnv });
 });
 
-// Feature routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/follows', followRoutes);
+app.use('/api/comments', commentRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

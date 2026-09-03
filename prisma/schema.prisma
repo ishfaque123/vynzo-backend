@@ -29,21 +29,25 @@ model User {
   lastActiveAt      DateTime?     @map("last_active_at")
   posts             Post[]
   likes             Like[]
+  comments          Comment[]
+  following         Follow[]      @relation("Following")
+  followers         Follow[]      @relation("Followers")
 
   @@index([username])
   @@map("users")
 }
 
 model Post {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  content   String   @db.VarChar(2000)
-  imageUrl  String?  @map("image_url")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  content   String    @db.VarChar(2000)
+  imageUrl  String?   @map("image_url")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
-  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  likes Like[]
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes    Like[]
+  comments Comment[]
 
   @@index([userId])
   @@index([createdAt])
@@ -62,4 +66,32 @@ model Like {
   @@unique([userId, postId])
   @@index([postId])
   @@map("likes")
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  postId    String   @map("post_id")
+  content   String   @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@map("comments")
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String   @map("follower_id")
+  followingId String   @map("following_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  follower  User @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@map("follows")
 }
