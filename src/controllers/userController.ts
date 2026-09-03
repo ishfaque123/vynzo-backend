@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import { profileSetupSchema, profileUpdateSchema } from '../utils/validators/profileValidators';
-import { completeProfile, updateProfile, getPublicProfileByUsername, toPrivateProfile } from '../services/userService';
+import { completeProfile, updateProfile, getPublicProfileByUsername, toPrivateProfile, searchUsers } from '../services/userService';
 import { prisma } from '../config/prisma';
 
 export async function getMyProfile(req: Request, res: Response, next: NextFunction) {
@@ -31,5 +31,13 @@ export async function patchMyProfile(req: Request, res: Response, next: NextFunc
     const data = profileUpdateSchema.parse(req.body);
     const user = await updateProfile(req.user!.id, data as any);
     sendSuccess(res, { user: toPrivateProfile(user) });
+  } catch (err) { next(err); }
+}
+
+export async function searchUsersHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const query = (req.query.q as string) || '';
+    const users = query.length > 0 ? await searchUsers(query) : [];
+    sendSuccess(res, { users });
   } catch (err) { next(err); }
 }
