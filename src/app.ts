@@ -8,6 +8,7 @@ import { notFound } from './middleware/notFound';
 import { sendSuccess } from './utils/ApiResponse';
 import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
+import postRoutes from './routes/postRoutes';
 
 export const app = express();
 
@@ -24,16 +25,7 @@ app.get('/api/health', (_req, res) => {
 // Feature routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-
-// More routes are added in later stages:
-// app.use('/api/posts', postRoutes);
-// app.use('/api/media', mediaRoutes);
-// app.use('/api/comments', commentRoutes);
-// app.use('/api/likes', likeRoutes);
-// app.use('/api/follows', followRoutes);
-// app.use('/api/notifications', notificationRoutes);
-// app.use('/api/reports', reportRoutes);
-// app.use('/api/admin', adminRoutes);
+app.use('/api/posts', postRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
