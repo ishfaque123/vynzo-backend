@@ -1,12 +1,16 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 
-function toPostDTO(post: any) {
+function toPostDTO(post: any, currentUserId?: string) {
   return {
     id: post.id,
     content: post.content,
     imageUrl: post.imageUrl,
     createdAt: post.createdAt,
+    likeCount: post._count?.likes ?? 0,
+    likedByMe: currentUserId
+      ? post.likes?.some((l: any) => l.userId === currentUserId) ?? false
+      : false,
     author: {
       id: post.user.id,
       username: post.user.username,
@@ -19,18 +23,18 @@ function toPostDTO(post: any) {
 export async function createPost(userId: string, content: string) {
   const post = await prisma.post.create({
     data: { userId, content },
-    include: { user: true },
+    include: { user: true, _count: { select: { likes: true } }, likes: true },
   });
-  return toPostDTO(post);
+  return toPostDTO(post, userId);
 }
 
-export async function getFeed(limit = 20) {
+export async function getFeed(currentUserId?: string, limit = 20) {
   const posts = await prisma.post.findMany({
     take: limit,
     orderBy: { createdAt: 'desc' },
-    include: { user: true },
+    include: { user: true, _count: { select: { likes: true } }, likes: true },
   });
-  return posts.map(toPostDTO);
+  return posts.map((p) => toPostDTO(p, currentUserId));
 }
 
 export async function deletePost(userId: string, postId: string) {
