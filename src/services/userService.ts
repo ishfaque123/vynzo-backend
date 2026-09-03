@@ -28,6 +28,14 @@ export async function getPublicProfileByUsername(username: string) {
   return toPublicProfile(user);
 }
 
+function normalizeData(data: any) {
+  const result = { ...data };
+  if (result.dateOfBirth) {
+    result.dateOfBirth = new Date(result.dateOfBirth);
+  }
+  return result;
+}
+
 export async function completeProfile(userId: string, data: any) {
   const existing = await prisma.user.findUnique({ where: { username: data.username } });
   if (existing && existing.id !== userId) {
@@ -35,7 +43,7 @@ export async function completeProfile(userId: string, data: any) {
   }
   return prisma.user.update({
     where: { id: userId },
-    data: { ...data, profileCompleted: true },
+    data: { ...normalizeData(data), profileCompleted: true },
   });
 }
 
@@ -46,7 +54,7 @@ export async function updateProfile(userId: string, data: any) {
       throw new ApiError(409, 'USERNAME_TAKEN', 'Username already taken.');
     }
   }
-  return prisma.user.update({ where: { id: userId }, data });
+  return prisma.user.update({ where: { id: userId }, data: normalizeData(data) });
 }
 
 export async function searchUsers(query: string) {
