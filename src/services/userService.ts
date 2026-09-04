@@ -8,6 +8,7 @@ export function toPrivateProfile(user: any) {
     displayName: user.displayName,
     bio: user.bio,
     profilePictureUrl: user.profilePictureUrl,
+    coverPhotoUrl: user.coverPhotoUrl,
     profileCompleted: user.profileCompleted,
     commentsDisabled: user.commentsDisabled,
   };
@@ -20,6 +21,7 @@ export function toPublicProfile(user: any) {
     displayName: user.displayName,
     bio: user.bio,
     profilePictureUrl: user.profilePictureUrl,
+    coverPhotoUrl: user.coverPhotoUrl,
   };
 }
 
