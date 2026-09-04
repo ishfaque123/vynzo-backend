@@ -16,4 +16,9 @@ export const env = {
   googleClientSecret: requireEnv('GOOGLE_CLIENT_SECRET'),
   jwtSecret: requireEnv('JWT_SECRET'),
   jwtExpiresIn: '7d',
+  r2Endpoint: requireEnv('R2_ENDPOINT'),
+  r2AccessKeyId: requireEnv('R2_ACCESS_KEY_ID'),
+  r2SecretAccessKey: requireEnv('R2_SECRET_ACCESS_KEY'),
+  r2BucketName: requireEnv('R2_BUCKET_NAME'),
+  r2PublicUrl: requireEnv('R2_PUBLIC_URL'),
 };
