@@ -9,6 +9,7 @@ export function toPrivateProfile(user: any) {
     bio: user.bio,
     profilePictureUrl: user.profilePictureUrl,
     profileCompleted: user.profileCompleted,
+    commentsDisabled: user.commentsDisabled,
   };
 }
 
