@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { ZodError } from 'zod';
 import { sendError } from '../utils/ApiResponse';
 
 export class ApiError extends Error {
@@ -22,7 +23,11 @@ export function errorHandler(
     return sendError(res, err.statusCode, err.code, err.message);
   }
 
-  // Unexpected error — never leak internal details to the client
+  if (err instanceof ZodError) {
+    const message = err.issues[0]?.message || 'Invalid input.';
+    return sendError(res, 400, 'VALIDATION_ERROR', message);
+  }
+
   console.error(err);
   return sendError(res, 500, 'INTERNAL_ERROR', 'Something went wrong.');
 }
