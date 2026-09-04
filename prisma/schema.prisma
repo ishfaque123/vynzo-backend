@@ -24,6 +24,7 @@ model User {
   profileCompleted  Boolean       @default(false) @map("profile_completed")
   accountStatus     AccountStatus @default(active) @map("account_status")
   role              String        @default("user")
+  commentsDisabled  Boolean       @default(false) @map("comments_disabled")
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
   lastActiveAt      DateTime?     @map("last_active_at")
