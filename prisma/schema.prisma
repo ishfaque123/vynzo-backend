@@ -21,6 +21,7 @@ model User {
   dateOfBirth       DateTime?     @map("date_of_birth")
   bio               String?       @db.VarChar(300)
   profilePictureUrl String?       @map("profile_picture_url")
+  coverPhotoUrl     String?       @map("cover_photo_url")
   profileCompleted  Boolean       @default(false) @map("profile_completed")
   accountStatus     AccountStatus @default(active) @map("account_status")
   role              String        @default("user")
