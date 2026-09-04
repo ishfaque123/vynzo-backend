@@ -16,8 +16,11 @@ function toCommentDTO(comment: any) {
 }
 
 export async function addComment(userId: string, postId: string, content: string) {
-  const post = await prisma.post.findUnique({ where: { id: postId } });
+  const post = await prisma.post.findUnique({ where: { id: postId }, include: { user: true } });
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+  if (post.user.commentsDisabled) {
+    throw new ApiError(403, 'COMMENTS_DISABLED', 'Comments are disabled for this post.');
+  }
 
   const comment = await prisma.comment.create({
     data: { userId, postId, content },
@@ -33,4 +36,12 @@ export async function getComments(postId: string) {
     include: { user: true },
   });
   return comments.map(toCommentDTO);
+}
+
+export async function toggleCommentsSetting(userId: string, disabled: boolean) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { commentsDisabled: disabled },
+  });
+  return { commentsDisabled: user.commentsDisabled };
 }
