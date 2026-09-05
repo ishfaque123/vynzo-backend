@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
-import { createPost, getFeed, deletePost, sharePost, getPostById, getPostsByUsername } from '../services/postService';
+import { createPost, getFeed, deletePost, sharePost, getPostById, getPostsByUsername, updatePost } from '../services/postService';
 import { setReaction } from '../services/likeService';
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
@@ -15,9 +15,7 @@ export async function createPostHandler(req: Request, res: Response, next: NextF
   try {
     const { content, visibility, taggedUserIds } = createPostSchema.parse(req.body);
     let imageUrl: string | undefined;
-    if (req.file) {
-      imageUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'posts');
-    }
+    if (req.file) imageUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'posts');
     const tagIds = taggedUserIds ? JSON.parse(taggedUserIds) : [];
     const post = await createPost(req.user!.id, content, imageUrl, visibility || 'public', tagIds);
     sendSuccess(res, { post }, 201);
@@ -45,6 +43,19 @@ export async function getUserPostsHandler(req: Request, res: Response, next: Nex
   } catch (err) { next(err); }
 }
 
+const updatePostSchema = z.object({
+  content: z.string().min(1).max(2000).optional(),
+  commentAudience: z.enum(['everyone', 'followers', 'only_me']).optional(),
+});
+
+export async function updatePostHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = updatePostSchema.parse(req.body);
+    const post = await updatePost(req.user!.id, req.params.id, data);
+    sendSuccess(res, { post });
+  } catch (err) { next(err); }
+}
+
 export async function deletePostHandler(req: Request, res: Response, next: NextFunction) {
   try {
     await deletePost(req.user!.id, req.params.id);
@@ -64,9 +75,7 @@ export async function setReactionHandler(req: Request, res: Response, next: Next
   } catch (err) { next(err); }
 }
 
-const sharePostSchema = z.object({
-  content: z.string().max(2000).optional().default(''),
-});
+const sharePostSchema = z.object({ content: z.string().max(2000).optional().default('') });
 
 export async function sharePostHandler(req: Request, res: Response, next: NextFunction) {
   try {
