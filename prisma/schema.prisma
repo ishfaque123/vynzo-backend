@@ -27,6 +27,12 @@ enum ReactionType {
   angry
 }
 
+enum CommentAudience {
+  everyone
+  followers
+  only_me
+}
+
 model User {
   id                String        @id @default(uuid())
   googleId          String        @unique @map("google_id")
@@ -55,14 +61,15 @@ model User {
 }
 
 model Post {
-  id             String         @id @default(uuid())
-  userId         String         @map("user_id")
-  content        String         @db.VarChar(2000)
-  imageUrl       String?        @map("image_url")
-  visibility     PostVisibility @default(public)
-  originalPostId String?        @map("original_post_id")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
+  id              String          @id @default(uuid())
+  userId          String          @map("user_id")
+  content         String          @db.VarChar(2000)
+  imageUrl        String?         @map("image_url")
+  visibility      PostVisibility  @default(public)
+  commentAudience CommentAudience @default(everyone) @map("comment_audience")
+  originalPostId  String?         @map("original_post_id")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
 
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   likes        Like[]
