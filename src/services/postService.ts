@@ -17,6 +17,7 @@ function toPostDTO(post: any, currentUserId?: string): any {
     content: post.content,
     imageUrl: post.imageUrl,
     visibility: post.visibility,
+    commentAudience: post.commentAudience,
     createdAt: post.createdAt,
     likeCount: post._count?.likes ?? 0,
     myReaction: myLike ? myLike.type : null,
@@ -84,7 +85,6 @@ export async function getFeed(currentUserId?: string, limit = 20) {
 export async function getPostsByUsername(username: string, currentUserId?: string) {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
-
   const isOwner = currentUserId === user.id;
   const posts = await prisma.post.findMany({
     where: isOwner ? { userId: user.id } : { userId: user.id, visibility: 'public' },
@@ -98,6 +98,23 @@ export async function getPostById(postId: string, currentUserId?: string) {
   const post = await prisma.post.findUnique({ where: { id: postId }, include: includeShape });
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
   return toPostDTO(post, currentUserId);
+}
+
+export async function updatePost(
+  userId: string,
+  postId: string,
+  data: { content?: string; commentAudience?: 'everyone' | 'followers' | 'only_me' }
+) {
+  const post = await prisma.post.findUnique({ where: { id: postId } });
+  if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+  if (post.userId !== userId) throw new ApiError(403, 'FORBIDDEN', 'Not your post.');
+
+  const updated = await prisma.post.update({
+    where: { id: postId },
+    data,
+    include: includeShape,
+  });
+  return toPostDTO(updated, userId);
 }
 
 export async function deletePost(userId: string, postId: string) {

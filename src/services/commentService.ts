@@ -22,6 +22,18 @@ export async function addComment(userId: string, postId: string, content: string
     throw new ApiError(403, 'COMMENTS_DISABLED', 'Comments are disabled for this post.');
   }
 
+  if (post.commentAudience === 'only_me' && post.userId !== userId) {
+    throw new ApiError(403, 'COMMENTS_RESTRICTED', 'Only the author can comment on this post.');
+  }
+  if (post.commentAudience === 'followers' && post.userId !== userId) {
+    const isFollower = await prisma.follow.findUnique({
+      where: { followerId_followingId: { followerId: userId, followingId: post.userId } },
+    });
+    if (!isFollower) {
+      throw new ApiError(403, 'COMMENTS_RESTRICTED', 'Only followers can comment on this post.');
+    }
+  }
+
   const comment = await prisma.comment.create({
     data: { userId, postId, content },
     include: { user: true },
@@ -39,9 +51,6 @@ export async function getComments(postId: string) {
 }
 
 export async function toggleCommentsSetting(userId: string, disabled: boolean) {
-  const user = await prisma.user.update({
-    where: { id: userId },
-    data: { commentsDisabled: disabled },
-  });
+  const user = await prisma.user.update({ where: { id: userId }, data: { commentsDisabled: disabled } });
   return { commentsDisabled: user.commentsDisabled };
 }
