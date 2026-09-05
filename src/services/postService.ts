@@ -20,6 +20,8 @@ function toPostDTO(post: any, currentUserId?: string): any {
     commentAudience: post.commentAudience,
     createdAt: post.createdAt,
     likeCount: post._count?.likes ?? 0,
+    commentCount: post._count?.comments ?? 0,
+    shareCount: post._count?.reposts ?? 0,
     myReaction: myLike ? myLike.type : null,
     author: toAuthorDTO(post.user),
     taggedUsers: post.tags?.map((t: any) => toAuthorDTO(t.user)) ?? [],
@@ -29,13 +31,13 @@ function toPostDTO(post: any, currentUserId?: string): any {
 
 const includeShape = {
   user: true,
-  _count: { select: { likes: true } },
+  _count: { select: { likes: true, comments: true, reposts: true } },
   likes: true,
   tags: { include: { user: true } },
   originalPost: {
     include: {
       user: true,
-      _count: { select: { likes: true } },
+      _count: { select: { likes: true, comments: true, reposts: true } },
       likes: true,
       tags: { include: { user: true } },
     },
