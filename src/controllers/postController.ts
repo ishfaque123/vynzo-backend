@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
-import { createPost, getFeed, deletePost, sharePost, getPostById } from '../services/postService';
-import { toggleLike } from '../services/likeService';
+import { createPost, getFeed, deletePost, sharePost, getPostById, getPostsByUsername } from '../services/postService';
+import { setReaction } from '../services/likeService';
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
 
@@ -38,6 +38,13 @@ export async function getPostHandler(req: Request, res: Response, next: NextFunc
   } catch (err) { next(err); }
 }
 
+export async function getUserPostsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const posts = await getPostsByUsername(req.params.username, req.user?.id);
+    sendSuccess(res, { posts });
+  } catch (err) { next(err); }
+}
+
 export async function deletePostHandler(req: Request, res: Response, next: NextFunction) {
   try {
     await deletePost(req.user!.id, req.params.id);
@@ -45,9 +52,14 @@ export async function deletePostHandler(req: Request, res: Response, next: NextF
   } catch (err) { next(err); }
 }
 
-export async function toggleLikeHandler(req: Request, res: Response, next: NextFunction) {
+const reactionSchema = z.object({
+  type: z.enum(['like', 'love', 'haha', 'wow', 'sad', 'angry']),
+});
+
+export async function setReactionHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await toggleLike(req.user!.id, req.params.id);
+    const { type } = reactionSchema.parse(req.body);
+    const result = await setReaction(req.user!.id, req.params.id, type);
     sendSuccess(res, result);
   } catch (err) { next(err); }
 }
