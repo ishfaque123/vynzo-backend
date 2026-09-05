@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { optionalAuth } from '../middleware/optionalAuth';
-import { createPostHandler, getFeedHandler, deletePostHandler, toggleLikeHandler } from '../controllers/postController';
+import { upload } from '../middleware/upload';
+import { createPostHandler, getFeedHandler, deletePostHandler, toggleLikeHandler, sharePostHandler } from '../controllers/postController';
 
 const router = Router();
 
 router.get('/', optionalAuth, getFeedHandler);
-router.post('/', authMiddleware, createPostHandler);
+router.post('/', authMiddleware, upload.single('image'), createPostHandler);
 router.delete('/:id', authMiddleware, deletePostHandler);
 router.post('/:id/like', authMiddleware, toggleLikeHandler);
+router.post('/:id/share', authMiddleware, sharePostHandler);
 
 export default router;
