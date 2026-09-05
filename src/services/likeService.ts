@@ -1,7 +1,9 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 
-export async function toggleLike(userId: string, postId: string) {
+type ReactionType = 'like' | 'love' | 'haha' | 'wow' | 'sad' | 'angry';
+
+export async function setReaction(userId: string, postId: string, type: ReactionType) {
   const post = await prisma.post.findUnique({ where: { id: postId } });
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
 
@@ -9,13 +11,17 @@ export async function toggleLike(userId: string, postId: string) {
     where: { userId_postId: { userId, postId } },
   });
 
-  if (existing) {
+  if (existing && existing.type === type) {
     await prisma.like.delete({ where: { id: existing.id } });
     const count = await prisma.like.count({ where: { postId } });
-    return { liked: false, likeCount: count };
-  } else {
-    await prisma.like.create({ data: { userId, postId } });
-    const count = await prisma.like.count({ where: { postId } });
-    return { liked: true, likeCount: count };
+    return { reaction: null, likeCount: count };
   }
+
+  await prisma.like.upsert({
+    where: { userId_postId: { userId, postId } },
+    update: { type },
+    create: { userId, postId, type },
+  });
+  const count = await prisma.like.count({ where: { postId } });
+  return { reaction: type, likeCount: count };
 }

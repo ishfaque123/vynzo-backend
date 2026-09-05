@@ -11,6 +11,7 @@ function toAuthorDTO(user: any) {
 }
 
 function toPostDTO(post: any, currentUserId?: string): any {
+  const myLike = currentUserId ? post.likes?.find((l: any) => l.userId === currentUserId) : null;
   return {
     id: post.id,
     content: post.content,
@@ -18,9 +19,7 @@ function toPostDTO(post: any, currentUserId?: string): any {
     visibility: post.visibility,
     createdAt: post.createdAt,
     likeCount: post._count?.likes ?? 0,
-    likedByMe: currentUserId
-      ? post.likes?.some((l: any) => l.userId === currentUserId) ?? false
-      : false,
+    myReaction: myLike ? myLike.type : null,
     author: toAuthorDTO(post.user),
     taggedUsers: post.tags?.map((t: any) => toAuthorDTO(t.user)) ?? [],
     originalPost: post.originalPost ? toPostDTO(post.originalPost, currentUserId) : null,
@@ -65,7 +64,6 @@ export async function createPost(
 export async function sharePost(userId: string, originalPostId: string, content: string) {
   const original = await prisma.post.findUnique({ where: { id: originalPostId } });
   if (!original) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
-
   const post = await prisma.post.create({
     data: { userId, content, originalPostId },
     include: includeShape,
@@ -77,6 +75,19 @@ export async function getFeed(currentUserId?: string, limit = 20) {
   const posts = await prisma.post.findMany({
     where: { visibility: 'public' },
     take: limit,
+    orderBy: { createdAt: 'desc' },
+    include: includeShape,
+  });
+  return posts.map((p) => toPostDTO(p, currentUserId));
+}
+
+export async function getPostsByUsername(username: string, currentUserId?: string) {
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+  const isOwner = currentUserId === user.id;
+  const posts = await prisma.post.findMany({
+    where: isOwner ? { userId: user.id } : { userId: user.id, visibility: 'public' },
     orderBy: { createdAt: 'desc' },
     include: includeShape,
   });
