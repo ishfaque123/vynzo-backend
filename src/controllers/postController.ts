@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
-import { createPost, getFeed, deletePost, sharePost } from '../services/postService';
+import { createPost, getFeed, deletePost, sharePost, getPostById } from '../services/postService';
 import { toggleLike } from '../services/likeService';
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
@@ -28,6 +28,13 @@ export async function getFeedHandler(req: Request, res: Response, next: NextFunc
   try {
     const posts = await getFeed(req.user?.id, 20);
     sendSuccess(res, { posts });
+  } catch (err) { next(err); }
+}
+
+export async function getPostHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const post = await getPostById(req.params.id, req.user?.id);
+    sendSuccess(res, { post });
   } catch (err) { next(err); }
 }
 
