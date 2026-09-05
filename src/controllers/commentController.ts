@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
-import { addComment, getComments, toggleCommentsSetting } from '../services/commentService';
+import { addComment, getComments, toggleCommentsSetting, deleteComment } from '../services/commentService';
 import { z } from 'zod';
 
 const commentSchema = z.object({
@@ -32,4 +32,13 @@ export async function toggleCommentsSettingHandler(req: Request, res: Response, 
     const result = await toggleCommentsSetting(req.user!.id, disabled);
     sendSuccess(res, result);
   } catch (err) { next(err); }
+}
+
+export async function deleteCommentHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await deleteComment(req.user!.id, req.params.commentId);
+    sendSuccess(res, result);
+  } catch (err) {
+    next(err);
+  }
 }

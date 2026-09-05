@@ -54,3 +54,24 @@ export async function toggleCommentsSetting(userId: string, disabled: boolean) {
   const user = await prisma.user.update({ where: { id: userId }, data: { commentsDisabled: disabled } });
   return { commentsDisabled: user.commentsDisabled };
 }
+
+export async function deleteComment(userId: string, commentId: string) {
+  const comment = await prisma.comment.findUnique({
+    where: { id: commentId },
+    include: { post: true },
+  });
+
+  if (!comment) {
+    throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found.');
+  }
+
+  if (comment.userId !== userId && comment.post.userId !== userId) {
+    throw new ApiError(403, 'COMMENT_DELETE_FORBIDDEN', 'You cannot delete this comment.');
+  }
+
+  await prisma.comment.delete({
+    where: { id: commentId },
+  });
+
+  return { success: true };
+}
