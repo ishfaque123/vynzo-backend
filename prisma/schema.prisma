@@ -18,6 +18,15 @@ enum PostVisibility {
   private
 }
 
+enum ReactionType {
+  like
+  love
+  haha
+  wow
+  sad
+  angry
+}
+
 model User {
   id                String        @id @default(uuid())
   googleId          String        @unique @map("google_id")
@@ -80,10 +89,11 @@ model PostTag {
 }
 
 model Like {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  postId    String   @map("post_id")
-  createdAt DateTime @default(now()) @map("created_at")
+  id        String       @id @default(uuid())
+  userId    String       @map("user_id")
+  postId    String       @map("post_id")
+  type      ReactionType @default(like)
+  createdAt DateTime     @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
