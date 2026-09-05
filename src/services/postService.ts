@@ -55,9 +55,7 @@ export async function createPost(
       content,
       imageUrl,
       visibility,
-      tags: {
-        create: taggedUserIds.slice(0, 2).map((id) => ({ userId: id })),
-      },
+      tags: { create: taggedUserIds.slice(0, 2).map((id) => ({ userId: id })) },
     },
     include: includeShape,
   });
@@ -83,6 +81,12 @@ export async function getFeed(currentUserId?: string, limit = 20) {
     include: includeShape,
   });
   return posts.map((p) => toPostDTO(p, currentUserId));
+}
+
+export async function getPostById(postId: string, currentUserId?: string) {
+  const post = await prisma.post.findUnique({ where: { id: postId }, include: includeShape });
+  if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+  return toPostDTO(post, currentUserId);
 }
 
 export async function deletePost(userId: string, postId: string) {
