@@ -13,6 +13,11 @@ enum AccountStatus {
   deactivated
 }
 
+enum PostVisibility {
+  public
+  private
+}
+
 model User {
   id                String        @id @default(uuid())
   googleId          String        @unique @map("google_id")
@@ -34,26 +39,44 @@ model User {
   comments          Comment[]
   following         Follow[]      @relation("Following")
   followers         Follow[]      @relation("Followers")
+  tags              PostTag[]
 
   @@index([username])
   @@map("users")
 }
 
 model Post {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  content   String    @db.VarChar(2000)
-  imageUrl  String?   @map("image_url")
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  id             String         @id @default(uuid())
+  userId         String         @map("user_id")
+  content        String         @db.VarChar(2000)
+  imageUrl       String?        @map("image_url")
+  visibility     PostVisibility @default(public)
+  originalPostId String?        @map("original_post_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  likes    Like[]
-  comments Comment[]
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes        Like[]
+  comments     Comment[]
+  tags         PostTag[]
+  originalPost Post?     @relation("Reposts", fields: [originalPostId], references: [id], onDelete: SetNull)
+  reposts      Post[]    @relation("Reposts")
 
   @@index([userId])
   @@index([createdAt])
   @@map("posts")
+}
+
+model PostTag {
+  id     String @id @default(uuid())
+  postId String @map("post_id")
+  userId String @map("user_id")
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@map("post_tags")
 }
 
 model Like {
