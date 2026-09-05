@@ -55,6 +55,26 @@ export async function toggleCommentsSetting(userId: string, disabled: boolean) {
   return { commentsDisabled: user.commentsDisabled };
 }
 
+export async function editComment(userId: string, commentId: string, content: string) {
+  const comment = await prisma.comment.findUnique({ where: { id: commentId } });
+
+  if (!comment) {
+    throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found.');
+  }
+
+  if (comment.userId !== userId) {
+    throw new ApiError(403, 'COMMENT_EDIT_FORBIDDEN', 'You can only edit your own comment.');
+  }
+
+  const updatedComment = await prisma.comment.update({
+    where: { id: commentId },
+    data: { content },
+    include: { user: true },
+  });
+
+  return toCommentDTO(updatedComment);
+}
+
 export async function deleteComment(userId: string, commentId: string) {
   const comment = await prisma.comment.findUnique({
     where: { id: commentId },
