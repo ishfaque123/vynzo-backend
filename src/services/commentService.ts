@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
+import { getFriendStatus } from './followService';
 
 function toAuthorDTO(user: any) {
   return {
@@ -10,17 +11,19 @@ function toAuthorDTO(user: any) {
   };
 }
 
-function toCommentDTO(comment: any, currentUserId?: string): any {
+async function toCommentDTO(comment: any, currentUserId?: string): Promise<any> {
   const myReaction = currentUserId ? comment.reactions?.find((r: any) => r.userId === currentUserId) : null;
+  const friendStatus = await getFriendStatus(currentUserId, comment.userId);
   return {
     id: comment.id,
     content: comment.content,
     createdAt: comment.createdAt,
     author: toAuthorDTO(comment.user),
+    friendStatus,
     reactionCount: comment.reactions?.length ?? 0,
     myReaction: myReaction ? myReaction.type : null,
     taggedUsers: comment.tags?.map((t: any) => toAuthorDTO(t.user)) ?? [],
-    replies: comment.replies ? comment.replies.map((r: any) => toCommentDTO(r, currentUserId)) : [],
+    replies: comment.replies ? await Promise.all(comment.replies.map((r: any) => toCommentDTO(r, currentUserId))) : [],
   };
 }
 
@@ -29,11 +32,7 @@ const includeShape = {
   reactions: true,
   tags: { include: { user: true } },
   replies: {
-    include: {
-      user: true,
-      reactions: true,
-      tags: { include: { user: true } },
-    },
+    include: { user: true, reactions: true, tags: { include: { user: true } } },
     orderBy: { createdAt: 'asc' as const },
   },
 };
@@ -76,7 +75,7 @@ export async function getComments(postId: string, currentUserId?: string) {
     orderBy: { createdAt: 'asc' },
     include: includeShape,
   });
-  return comments.map((c) => toCommentDTO(c, currentUserId));
+  return Promise.all(comments.map((c) => toCommentDTO(c, currentUserId)));
 }
 
 export async function setCommentReaction(userId: string, commentId: string, type: string) {
