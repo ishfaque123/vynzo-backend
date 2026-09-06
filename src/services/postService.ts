@@ -14,6 +14,12 @@ function toAuthorDTO(user: any) {
 async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
   const myLike = currentUserId ? post.likes?.find((l: any) => l.userId === currentUserId) : null;
   const friendStatus = await getFriendStatus(currentUserId, post.userId);
+
+  const reactionCounts: Record<string, number> = {};
+  for (const like of post.likes || []) {
+    reactionCounts[like.type] = (reactionCounts[like.type] || 0) + 1;
+  }
+
   return {
     id: post.id,
     content: post.content,
@@ -22,6 +28,9 @@ async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
     commentAudience: post.commentAudience,
     createdAt: post.createdAt,
     likeCount: post._count?.likes ?? 0,
+    commentCount: post._count?.comments ?? 0,
+    shareCount: post._count?.reposts ?? 0,
+    reactionCounts,
     myReaction: myLike ? myLike.type : null,
     author: toAuthorDTO(post.user),
     friendStatus,
@@ -32,13 +41,13 @@ async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
 
 const includeShape = {
   user: true,
-  _count: { select: { likes: true } },
+  _count: { select: { likes: true, comments: true, reposts: true } },
   likes: true,
   tags: { include: { user: true } },
   originalPost: {
     include: {
       user: true,
-      _count: { select: { likes: true } },
+      _count: { select: { likes: true, comments: true, reposts: true } },
       likes: true,
       tags: { include: { user: true } },
     },
