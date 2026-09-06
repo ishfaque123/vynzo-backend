@@ -52,9 +52,11 @@ model User {
   posts             Post[]
   likes             Like[]
   comments          Comment[]
+  commentReactions  CommentReaction[]
   following         Follow[]      @relation("Following")
   followers         Follow[]      @relation("Followers")
   tags              PostTag[]
+  commentTags       CommentTag[]
 
   @@index([username])
   @@map("users")
@@ -111,17 +113,50 @@ model Like {
 }
 
 model Comment {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  postId    String   @map("post_id")
-  content   String   @db.VarChar(500)
-  createdAt DateTime @default(now()) @map("created_at")
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  postId           String   @map("post_id")
+  parentCommentId  String?  @map("parent_comment_id")
+  content          String   @db.VarChar(500)
+  createdAt        DateTime @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post           Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parentComment  Comment?          @relation("Replies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies        Comment[]         @relation("Replies")
+  reactions      CommentReaction[]
+  tags           CommentTag[]
 
   @@index([postId])
+  @@index([parentCommentId])
   @@map("comments")
+}
+
+model CommentReaction {
+  id        String       @id @default(uuid())
+  userId    String       @map("user_id")
+  commentId String       @map("comment_id")
+  type      ReactionType @default(like)
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@index([commentId])
+  @@map("comment_reactions")
+}
+
+model CommentTag {
+  id        String @id @default(uuid())
+  commentId String @map("comment_id")
+  userId    String @map("user_id")
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@map("comment_tags")
 }
 
 model Follow {
