@@ -1,17 +1,30 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
+import { getFriendStatus } from './followService';
 
-function toAuthorDTO(user: any) {
+async function toAuthorDTO(user: any, currentUserId?: string) {
   return {
     id: user.id,
     username: user.username,
     displayName: user.displayName,
     profilePictureUrl: user.profilePictureUrl,
+    friendStatus: await getFriendStatus(currentUserId, user.id),
   };
 }
 
-function toPostDTO(post: any, currentUserId?: string): any {
+async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
   const myLike = currentUserId ? post.likes?.find((l: any) => l.userId === currentUserId) : null;
+
+  const author = await toAuthorDTO(post.user, currentUserId);
+
+  const taggedUsers = await Promise.all(
+    (post.tags ?? []).map((t: any) => toAuthorDTO(t.user, currentUserId))
+  );
+
+  const originalPost = post.originalPost
+    ? await toPostDTO(post.originalPost, currentUserId)
+    : null;
+
   return {
     id: post.id,
     content: post.content,
@@ -23,9 +36,9 @@ function toPostDTO(post: any, currentUserId?: string): any {
     commentCount: post._count?.comments ?? 0,
     shareCount: post._count?.reposts ?? 0,
     myReaction: myLike ? myLike.type : null,
-    author: toAuthorDTO(post.user),
-    taggedUsers: post.tags?.map((t: any) => toAuthorDTO(t.user)) ?? [],
-    originalPost: post.originalPost ? toPostDTO(post.originalPost, currentUserId) : null,
+    author,
+    taggedUsers,
+    originalPost,
   };
 }
 
@@ -61,16 +74,19 @@ export async function createPost(
     },
     include: includeShape,
   });
+
   return toPostDTO(post, userId);
 }
 
 export async function sharePost(userId: string, originalPostId: string, content: string) {
   const original = await prisma.post.findUnique({ where: { id: originalPostId } });
   if (!original) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+
   const post = await prisma.post.create({
     data: { userId, content, originalPostId },
     include: includeShape,
   });
+
   return toPostDTO(post, userId);
 }
 
@@ -81,24 +97,33 @@ export async function getFeed(currentUserId?: string, limit = 20) {
     orderBy: { createdAt: 'desc' },
     include: includeShape,
   });
-  return posts.map((p) => toPostDTO(p, currentUserId));
+
+  return Promise.all(posts.map((p) => toPostDTO(p, currentUserId)));
 }
 
 export async function getPostsByUsername(username: string, currentUserId?: string) {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
   const isOwner = currentUserId === user.id;
+
   const posts = await prisma.post.findMany({
     where: isOwner ? { userId: user.id } : { userId: user.id, visibility: 'public' },
     orderBy: { createdAt: 'desc' },
     include: includeShape,
   });
-  return posts.map((p) => toPostDTO(p, currentUserId));
+
+  return Promise.all(posts.map((p) => toPostDTO(p, currentUserId)));
 }
 
 export async function getPostById(postId: string, currentUserId?: string) {
-  const post = await prisma.post.findUnique({ where: { id: postId }, include: includeShape });
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+    include: includeShape,
+  });
+
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+
   return toPostDTO(post, currentUserId);
 }
 
@@ -108,6 +133,7 @@ export async function updatePost(
   data: { content?: string; commentAudience?: 'everyone' | 'followers' | 'only_me' }
 ) {
   const post = await prisma.post.findUnique({ where: { id: postId } });
+
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
   if (post.userId !== userId) throw new ApiError(403, 'FORBIDDEN', 'Not your post.');
 
@@ -116,12 +142,15 @@ export async function updatePost(
     data,
     include: includeShape,
   });
+
   return toPostDTO(updated, userId);
 }
 
 export async function deletePost(userId: string, postId: string) {
   const post = await prisma.post.findUnique({ where: { id: postId } });
+
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
   if (post.userId !== userId) throw new ApiError(403, 'FORBIDDEN', 'Not your post.');
+
   await prisma.post.delete({ where: { id: postId } });
 }
