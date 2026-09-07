@@ -34,29 +34,32 @@ enum CommentAudience {
 }
 
 model User {
-  id                String        @id @default(uuid())
-  googleId          String        @unique @map("google_id")
-  username          String?       @unique
-  displayName       String?       @map("display_name")
-  dateOfBirth       DateTime?     @map("date_of_birth")
-  bio               String?       @db.VarChar(300)
-  profilePictureUrl String?       @map("profile_picture_url")
-  coverPhotoUrl     String?       @map("cover_photo_url")
-  profileCompleted  Boolean       @default(false) @map("profile_completed")
-  accountStatus     AccountStatus @default(active) @map("account_status")
-  role              String        @default("user")
-  commentsDisabled  Boolean       @default(false) @map("comments_disabled")
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
-  lastActiveAt      DateTime?     @map("last_active_at")
-  posts             Post[]
-  likes             Like[]
-  comments          Comment[]
-  commentReactions  CommentReaction[]
-  following         Follow[]      @relation("Following")
-  followers         Follow[]      @relation("Followers")
-  tags              PostTag[]
-  commentTags       CommentTag[]
+  id                  String        @id @default(uuid())
+  googleId            String        @unique @map("google_id")
+  username            String?       @unique
+  displayName         String?       @map("display_name")
+  dateOfBirth         DateTime?     @map("date_of_birth")
+  bio                 String?       @db.VarChar(300)
+  profilePictureUrl   String?       @map("profile_picture_url")
+  coverPhotoUrl       String?       @map("cover_photo_url")
+  profileCompleted    Boolean       @default(false) @map("profile_completed")
+  accountStatus       AccountStatus @default(active) @map("account_status")
+  role                String        @default("user")
+  commentsDisabled    Boolean       @default(false) @map("comments_disabled")
+  usernameChangedAt   DateTime?     @map("username_changed_at")
+  displayNameChangedAt DateTime?    @map("display_name_changed_at")
+  dobChangedAt        DateTime?     @map("dob_changed_at")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  lastActiveAt        DateTime?     @map("last_active_at")
+  posts               Post[]
+  likes               Like[]
+  comments            Comment[]
+  commentReactions    CommentReaction[]
+  following           Follow[]      @relation("Following")
+  followers           Follow[]      @relation("Followers")
+  tags                PostTag[]
+  commentTags         CommentTag[]
 
   @@index([username])
   @@map("users")
@@ -113,19 +116,19 @@ model Like {
 }
 
 model Comment {
-  id               String   @id @default(uuid())
-  userId           String   @map("user_id")
-  postId           String   @map("post_id")
-  parentCommentId  String?  @map("parent_comment_id")
-  content          String   @db.VarChar(500)
-  createdAt        DateTime @default(now()) @map("created_at")
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  postId          String   @map("post_id")
+  parentCommentId String?  @map("parent_comment_id")
+  content         String   @db.VarChar(500)
+  createdAt       DateTime @default(now()) @map("created_at")
 
-  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post           Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
-  parentComment  Comment?          @relation("Replies", fields: [parentCommentId], references: [id], onDelete: Cascade)
-  replies        Comment[]         @relation("Replies")
-  reactions      CommentReaction[]
-  tags           CommentTag[]
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post          Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parentComment Comment?          @relation("Replies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies       Comment[]         @relation("Replies")
+  reactions     CommentReaction[]
+  tags          CommentTag[]
 
   @@index([postId])
   @@index([parentCommentId])
