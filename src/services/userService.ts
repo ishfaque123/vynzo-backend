@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
+import { getFriendStatus } from './followService';
 
 export function toPrivateProfile(user: any) {
   return {
@@ -14,7 +15,7 @@ export function toPrivateProfile(user: any) {
   };
 }
 
-export function toPublicProfile(user: any) {
+export function toPublicProfile(user: any, friendStatus?: string) {
   return {
     id: user.id,
     username: user.username,
@@ -22,53 +23,41 @@ export function toPublicProfile(user: any) {
     bio: user.bio,
     profilePictureUrl: user.profilePictureUrl,
     coverPhotoUrl: user.coverPhotoUrl,
+    friendStatus: friendStatus ?? 'none',
   };
 }
 
-export async function getPublicProfileByUsername(username: string) {
+export async function getPublicProfileByUsername(username: string, currentUserId?: string) {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
-  return toPublicProfile(user);
+  const friendStatus = await getFriendStatus(currentUserId, user.id);
+  return toPublicProfile(user, friendStatus);
 }
 
 function normalizeData(data: any) {
   const result = { ...data };
-  if (result.dateOfBirth) {
-    result.dateOfBirth = new Date(result.dateOfBirth);
-  }
+  if (result.dateOfBirth) result.dateOfBirth = new Date(result.dateOfBirth);
   return result;
 }
 
 export async function completeProfile(userId: string, data: any) {
   const existing = await prisma.user.findUnique({ where: { username: data.username } });
-  if (existing && existing.id !== userId) {
-    throw new ApiError(409, 'USERNAME_TAKEN', 'Username already taken.');
-  }
-  return prisma.user.update({
-    where: { id: userId },
-    data: { ...normalizeData(data), profileCompleted: true },
-  });
+  if (existing && existing.id !== userId) throw new ApiError(409, 'USERNAME_TAKEN', 'Username already taken.');
+  return prisma.user.update({ where: { id: userId }, data: { ...normalizeData(data), profileCompleted: true } });
 }
 
 export async function updateProfile(userId: string, data: any) {
   if (data.username) {
     const existing = await prisma.user.findUnique({ where: { username: data.username } });
-    if (existing && existing.id !== userId) {
-      throw new ApiError(409, 'USERNAME_TAKEN', 'Username already taken.');
-    }
+    if (existing && existing.id !== userId) throw new ApiError(409, 'USERNAME_TAKEN', 'Username already taken.');
   }
   return prisma.user.update({ where: { id: userId }, data: normalizeData(data) });
 }
 
 export async function searchUsers(query: string) {
   const users = await prisma.user.findMany({
-    where: {
-      OR: [
-        { username: { contains: query } },
-        { displayName: { contains: query } },
-      ],
-    },
+    where: { OR: [{ username: { contains: query } }, { displayName: { contains: query } }] },
     take: 20,
   });
-  return users.map(toPublicProfile);
+  return users.map((u) => toPublicProfile(u));
 }
