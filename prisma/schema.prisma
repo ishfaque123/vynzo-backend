@@ -57,6 +57,7 @@ model User {
   accountStatus        AccountStatus @default(active) @map("account_status")
   role                 String        @default("user")
   commentsDisabled     Boolean       @default(false) @map("comments_disabled")
+  walletBalance        Float         @default(0) @map("wallet_balance")
   usernameChangedAt    DateTime?     @map("username_changed_at")
   displayNameChangedAt DateTime?     @map("display_name_changed_at")
   dobChangedAt         DateTime?     @map("dob_changed_at")
