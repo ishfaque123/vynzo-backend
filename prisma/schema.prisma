@@ -33,6 +33,12 @@ enum CommentAudience {
   only_me
 }
 
+enum Gender {
+  male
+  female
+  custom
+}
+
 model User {
   id                   String        @id @default(uuid())
   googleId             String        @unique @map("google_id")
@@ -42,6 +48,11 @@ model User {
   bio                  String?       @db.VarChar(300)
   profilePictureUrl    String?       @map("profile_picture_url")
   coverPhotoUrl        String?       @map("cover_photo_url")
+  gender               Gender?
+  website              String?
+  phone                String?
+  province             String?
+  city                 String?
   profileCompleted     Boolean       @default(false) @map("profile_completed")
   accountStatus        AccountStatus @default(active) @map("account_status")
   role                 String        @default("user")
