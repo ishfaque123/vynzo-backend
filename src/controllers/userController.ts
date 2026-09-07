@@ -13,7 +13,7 @@ export async function getMyProfile(req: Request, res: Response, next: NextFuncti
 
 export async function getPublicProfile(req: Request, res: Response, next: NextFunction) {
   try {
-    const profile = await getPublicProfileByUsername(req.params.username);
+    const profile = await getPublicProfileByUsername(req.params.username, req.user?.id);
     sendSuccess(res, { user: profile });
   } catch (err) { next(err); }
 }
