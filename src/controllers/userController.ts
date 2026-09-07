@@ -48,3 +48,11 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
     sendSuccess(res, { earnings: user?.walletBalance ?? 0 });
   } catch (err) { next(err); }
 }
+
+export async function deleteMyAccount(req: Request, res: Response, next: NextFunction) {
+  try {
+    await prisma.user.delete({ where: { id: req.user!.id } });
+    res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
+    sendSuccess(res, { deleted: true });
+  } catch (err) { next(err); }
+}
