@@ -15,4 +15,14 @@ export const profileSetupSchema = z.object({
   bio: z.string().max(300).optional(),
 });
 
-export const profileUpdateSchema = profileSetupSchema.partial();
+export const profileUpdateSchema = z.object({
+  username: z.string().regex(USERNAME_REGEX, 'Username must be 3-30 characters: letters, numbers, underscore, or period.').optional(),
+  displayName: z.string().min(1).max(50).optional(),
+  dateOfBirth: z.string().optional(),
+  bio: z.string().max(300).optional(),
+  gender: z.enum(['male', 'female', 'custom']).optional(),
+  website: z.string().max(200).optional(),
+  phone: z.string().max(30).optional(),
+  province: z.string().max(50).optional(),
+  city: z.string().max(50).optional(),
+});
