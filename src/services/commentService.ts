@@ -69,13 +69,50 @@ export async function addComment(
   return toCommentDTO(comment, userId);
 }
 
+// Fetches every comment for the post in one flat query, then reconstructs the
+// full reply tree in memory. This supports replies-of-replies at any depth —
+// the previous version only ever included one level of nested replies, so a
+// reply made to a reply was saved to the database but never returned/shown.
 export async function getComments(postId: string, currentUserId?: string) {
-  const comments = await prisma.comment.findMany({
-    where: { postId, parentCommentId: null },
+  const allComments = await prisma.comment.findMany({
+    where: { postId },
     orderBy: { createdAt: 'asc' },
-    include: includeShape,
+    include: {
+      user: true,
+      reactions: true,
+      tags: { include: { user: true } },
+    },
   });
-  return Promise.all(comments.map((c) => toCommentDTO(c, currentUserId)));
+
+  const byId = new Map<string, any>();
+  for (const c of allComments) byId.set(c.id, { ...c, children: [] as any[] });
+
+  const roots: any[] = [];
+  for (const c of byId.values()) {
+    if (c.parentCommentId && byId.has(c.parentCommentId)) {
+      byId.get(c.parentCommentId).children.push(c);
+    } else {
+      roots.push(c);
+    }
+  }
+
+  async function buildDTO(c: any): Promise<any> {
+    const myReaction = currentUserId ? c.reactions?.find((r: any) => r.userId === currentUserId) : null;
+    const friendStatus = await getFriendStatus(currentUserId, c.userId);
+    return {
+      id: c.id,
+      content: c.content,
+      createdAt: c.createdAt,
+      author: toAuthorDTO(c.user),
+      friendStatus,
+      reactionCount: c.reactions?.length ?? 0,
+      myReaction: myReaction ? myReaction.type : null,
+      taggedUsers: c.tags?.map((t: any) => toAuthorDTO(t.user)) ?? [],
+      replies: await Promise.all(c.children.map((r: any) => buildDTO(r))),
+    };
+  }
+
+  return Promise.all(roots.map((r) => buildDTO(r)));
 }
 
 export async function setCommentReaction(userId: string, commentId: string, type: string) {
