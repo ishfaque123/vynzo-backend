@@ -41,10 +41,3 @@ export async function searchUsersHandler(req: Request, res: Response, next: Next
     sendSuccess(res, { users });
   } catch (err) { next(err); }
 }
-
-export async function getMyDashboard(req: Request, res: Response, next: NextFunction) {
-  try {
-    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
-    sendSuccess(res, { earnings: user?.walletBalance ?? 0 });
-  } catch (err) { next(err); }
-}
