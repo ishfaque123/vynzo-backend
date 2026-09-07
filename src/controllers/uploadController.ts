@@ -3,6 +3,7 @@ import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 import { uploadToR2 } from '../config/r2';
 import { prisma } from '../config/prisma';
+import { createPost } from '../services/postService';
 
 export async function uploadAvatarHandler(req: Request, res: Response, next: NextFunction) {
   try {
@@ -13,6 +14,8 @@ export async function uploadAvatarHandler(req: Request, res: Response, next: Nex
       data: { profilePictureUrl: url },
     });
     sendSuccess(res, { profilePictureUrl: user.profilePictureUrl });
+
+    createPost(req.user!.id, `${user.displayName} updated their profile picture`, url, 'public').catch(() => {});
   } catch (err) { next(err); }
 }
 
