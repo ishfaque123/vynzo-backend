@@ -39,6 +39,16 @@ enum Gender {
   custom
 }
 
+enum NotificationType {
+  follow
+  post_like
+  post_comment
+  comment_like
+  comment_reply
+  account_restricted
+  account_banned
+}
+
 model User {
   id                   String        @id @default(uuid())
   googleId             String        @unique @map("google_id")
@@ -72,6 +82,8 @@ model User {
   followers            Follow[]      @relation("Followers")
   tags                 PostTag[]
   commentTags          CommentTag[]
+  notificationsReceived  Notification[] @relation("NotificationsReceived")
+  notificationsTriggered Notification[] @relation("NotificationsTriggered")
 
   @@index([username])
   @@map("users")
@@ -186,4 +198,21 @@ model Follow {
   @@unique([followerId, followingId])
   @@index([followingId])
   @@map("follows")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  actorId   String?          @map("actor_id")
+  type      NotificationType
+  postId    String?          @map("post_id")
+  commentId String?          @map("comment_id")
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user  User  @relation("NotificationsReceived", fields: [userId], references: [id], onDelete: Cascade)
+  actor User? @relation("NotificationsTriggered", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

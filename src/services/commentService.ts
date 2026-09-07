@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
+import { createNotification } from './notificationService';
 
 function toAuthorDTO(user: any) {
   return {
@@ -66,13 +67,19 @@ export async function addComment(
     },
     include: includeShape,
   });
+
+  if (parentCommentId) {
+    const parentComment = await prisma.comment.findUnique({ where: { id: parentCommentId } });
+    if (parentComment) {
+      await createNotification({ userId: parentComment.userId, actorId: userId, type: 'comment_reply', postId, commentId: parentCommentId });
+    }
+  } else {
+    await createNotification({ userId: post.userId, actorId: userId, type: 'post_comment', postId });
+  }
+
   return toCommentDTO(comment, userId);
 }
 
-// Fetches every comment for the post in one flat query, then reconstructs the
-// full reply tree in memory. This supports replies-of-replies at any depth —
-// the previous version only ever included one level of nested replies, so a
-// reply made to a reply was saved to the database but never returned/shown.
 export async function getComments(postId: string, currentUserId?: string) {
   const allComments = await prisma.comment.findMany({
     where: { postId },
@@ -130,6 +137,11 @@ export async function setCommentReaction(userId: string, commentId: string, type
     update: { type: type as any },
     create: { userId, commentId, type: type as any },
   });
+
+  if (!existing) {
+    await createNotification({ userId: comment.userId, actorId: userId, type: 'comment_like', postId: comment.postId, commentId });
+  }
+
   const count = await prisma.commentReaction.count({ where: { commentId } });
   return { reaction: type, reactionCount: count };
 }

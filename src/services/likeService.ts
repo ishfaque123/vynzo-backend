@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
+import { createNotification } from './notificationService';
 
 type ReactionType = 'like' | 'love' | 'haha' | 'wow' | 'sad' | 'angry';
 
@@ -22,6 +23,11 @@ export async function setReaction(userId: string, postId: string, type: Reaction
     update: { type },
     create: { userId, postId, type },
   });
+
+  if (!existing) {
+    await createNotification({ userId: post.userId, actorId: userId, type: 'post_like', postId });
+  }
+
   const count = await prisma.like.count({ where: { postId } });
   return { reaction: type, likeCount: count };
 }

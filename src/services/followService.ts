@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
+import { createNotification } from './notificationService';
 
 const FRIEND_LIMIT = 5000;
 
@@ -32,6 +33,7 @@ export async function toggleFollow(followerId: string, followingId: string) {
   }
 
   await prisma.follow.create({ data: { followerId, followingId } });
+  await createNotification({ userId: followingId, actorId: followerId, type: 'follow' });
   return { following: true };
 }
 

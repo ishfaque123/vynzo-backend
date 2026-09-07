@@ -12,6 +12,7 @@ import postRoutes from './routes/postRoutes';
 import followRoutes from './routes/followRoutes';
 import commentRoutes from './routes/commentRoutes';
 import uploadRoutes from './routes/uploadRoutes';
+import notificationRoutes from './routes/notificationRoutes';
 
 export const app = express();
 
@@ -30,6 +31,7 @@ app.use('/api/posts', postRoutes);
 app.use('/api/follows', followRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
