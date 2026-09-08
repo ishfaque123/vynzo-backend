@@ -13,6 +13,8 @@ export const profileSetupSchema = z.object({
     return date < now && age >= 13 && age < 120;
   }, 'Enter a valid date of birth (must be at least 13 years old).'),
   bio: z.string().max(300).optional(),
+  gender: z.enum(['male', 'female', 'custom']).optional(),
+  phone: z.string().max(30).optional(),
 });
 
 export const profileUpdateSchema = z.object({
