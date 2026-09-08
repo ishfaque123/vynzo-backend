@@ -1,11 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
-import { sendSuccess, sendError } from '../utils/ApiResponse';
-import { loginWithGoogleCode } from '../services/authService';
+import { sendSuccess } from '../utils/ApiResponse';
+import { switchAccountSchema } from '../utils/validators/authValidators';
+import {
+  loginWithGoogleCode,
+  getSavedAccounts,
+  switchAccount,
+} from '../services/authService';
 import { getGoogleAuthUrl } from '../config/googleAuth';
 import { toPrivateProfile } from '../services/userService';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
-import { verifyToken } from '../utils/jwt';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -14,36 +18,12 @@ const COOKIE_OPTIONS = {
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
-interface SavedAccount {
-  userId: string;
-  token: string;
-}
-
-function readSavedAccounts(req: Request): SavedAccount[] {
-  const raw = req.cookies?.vynzo_accounts;
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((a) => a && typeof a.userId === 'string' && typeof a.token === 'string');
-  } catch {
-    return [];
-  }
-}
-
-function writeSavedAccounts(res: Response, accounts: SavedAccount[]) {
-  res.cookie('vynzo_accounts', JSON.stringify(accounts), COOKIE_OPTIONS);
-}
-
-function getActiveUserId(req: Request): string | null {
-  const token = req.cookies?.vynzo_token as string | undefined;
-  if (!token) return null;
-  try {
-    return verifyToken(token).userId;
-  } catch {
-    return null;
-  }
-}
+const DEVICE_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: true,
+  sameSite: 'none' as const,
+  maxAge: 30 * 24 * 60 * 60 * 1000,
+};
 
 export async function googleLoginStart(req: Request, res: Response) {
   const forceSelect = req.query.switch === '1';
@@ -58,14 +38,12 @@ export async function googleCallback(req: Request, res: Response) {
   }
 
   try {
-    const { token, user, isNewUser } = await loginWithGoogleCode(code);
+    const result = await loginWithGoogleCode(code, req.cookies?.vynzo_device);
 
-    const accounts = readSavedAccounts(req).filter((a) => a.userId !== user.id);
-    accounts.push({ userId: user.id, token });
-    writeSavedAccounts(res, accounts);
+    res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
+    res.cookie('vynzo_device', result.deviceToken, DEVICE_COOKIE_OPTIONS);
 
-    res.cookie('vynzo_token', token, COOKIE_OPTIONS);
-    res.redirect(`${env.frontendUrl}${isNewUser ? '/profile-setup' : '/'}`);
+    res.redirect(`${env.frontendUrl}${result.isNewUser ? '/profile-setup' : '/'}`);
   } catch (err) {
     res.redirect(`${env.frontendUrl}/login?error=google_auth_failed`);
   }
@@ -80,89 +58,29 @@ export async function getMe(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-export async function listAccounts(req: Request, res: Response) {
-  const activeUserId = getActiveUserId(req);
-  const saved = readSavedAccounts(req);
-  const validAccounts: SavedAccount[] = [];
-  const summaries: any[] = [];
-
-  for (const acc of saved) {
-    try {
-      verifyToken(acc.token);
-    } catch {
-      continue;
-    }
-    const user = await prisma.user.findUnique({ where: { id: acc.userId } });
-    if (!user) continue;
-    validAccounts.push(acc);
-    summaries.push({
-      id: user.id,
-      username: user.username,
-      displayName: user.displayName,
-      profilePictureUrl: user.profilePictureUrl,
-      isActive: user.id === activeUserId,
-    });
-  }
-
-  if (validAccounts.length !== saved.length) {
-    writeSavedAccounts(res, validAccounts);
-  }
-
-  sendSuccess(res, { accounts: summaries });
-}
-
-export async function switchAccount(req: Request, res: Response) {
-  const { userId } = req.body as { userId?: string };
-  if (!userId) return sendError(res, 400, 'MISSING_USER_ID', 'userId is required.');
-
-  const saved = readSavedAccounts(req);
-  const match = saved.find((a) => a.userId === userId);
-  if (!match) return sendError(res, 404, 'ACCOUNT_NOT_FOUND', 'Account not found.');
-
+export async function getAccounts(req: Request, res: Response, next: NextFunction) {
   try {
-    verifyToken(match.token);
-  } catch {
-    const remaining = saved.filter((a) => a.userId !== userId);
-    writeSavedAccounts(res, remaining);
-    return sendError(res, 401, 'ACCOUNT_EXPIRED', 'This account session has expired. Please log in again.');
+    const accounts = await getSavedAccounts(req.cookies?.vynzo_device);
+    sendSuccess(res, { accounts });
+  } catch (err) {
+    next(err);
   }
-
-  res.cookie('vynzo_token', match.token, COOKIE_OPTIONS);
-  sendSuccess(res, { switched: true });
 }
 
-export async function removeAccount(req: Request, res: Response) {
-  const { userId } = req.body as { userId?: string };
-  if (!userId) return sendError(res, 400, 'MISSING_USER_ID', 'userId is required.');
+export async function switchSavedAccount(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { accountId } = switchAccountSchema.parse(req.body);
+    const result = await switchAccount(accountId, req.cookies?.vynzo_device);
 
-  const saved = readSavedAccounts(req);
-  const remaining = saved.filter((a) => a.userId !== userId);
-  writeSavedAccounts(res, remaining);
-
-  const activeUserId = getActiveUserId(req);
-  if (activeUserId === userId) {
-    if (remaining.length > 0) {
-      res.cookie('vynzo_token', remaining[0].token, COOKIE_OPTIONS);
-    } else {
-      res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
-    }
+    res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
+    sendSuccess(res, { user: toPrivateProfile(result.user) });
+  } catch (err) {
+    next(err);
   }
-
-  sendSuccess(res, { removed: true });
 }
 
-export async function logout(req: Request, res: Response) {
-  const activeUserId = getActiveUserId(req);
-  const saved = readSavedAccounts(req);
-  const remaining = saved.filter((a) => a.userId !== activeUserId);
-  writeSavedAccounts(res, remaining);
-
-  if (remaining.length > 0) {
-    res.cookie('vynzo_token', remaining[0].token, COOKIE_OPTIONS);
-    return sendSuccess(res, { loggedOut: true, switchedTo: remaining[0].userId });
-  }
-
+export async function logout(_req: Request, res: Response) {
   res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
-  res.clearCookie('vynzo_accounts', { secure: true, sameSite: 'none' as const });
-  sendSuccess(res, { loggedOut: true, switchedTo: null });
+  // vynzo_device intentionally kept — saved accounts belong to this device.
+  sendSuccess(res, { loggedOut: true });
 }

@@ -1,14 +1,11 @@
 import { prisma } from '../config/prisma';
-import { verifyGoogleIdToken } from '../config/googleAuth';
+import { getGoogleUserFromCode } from '../config/googleAuth';
 import { signToken } from '../utils/jwt';
 import { getOrCreateDeviceSession, getDeviceSession } from './deviceSessionService';
 import { ApiError } from '../middleware/errorHandler';
 
-export async function loginWithGoogle(
-  idToken: string,
-  deviceToken?: string,
-) {
-  const { googleId } = await verifyGoogleIdToken(idToken);
+export async function loginWithGoogleCode(code: string, deviceToken?: string) {
+  const { googleId } = await getGoogleUserFromCode(code);
 
   let user = await prisma.user.findUnique({ where: { googleId } });
   let isNewUser = false;
@@ -20,7 +17,6 @@ export async function loginWithGoogle(
     if (user.accountStatus !== 'active') {
       throw new ApiError(403, 'ACCOUNT_NOT_ACTIVE', 'This account is not active.');
     }
-
     user = await prisma.user.update({
       where: { id: user.id },
       data: { lastActiveAt: new Date() },
@@ -57,21 +53,14 @@ export async function loginWithGoogle(
 
 export async function getSavedAccounts(deviceToken?: string) {
   const device = await getDeviceSession(deviceToken);
-
-  if (!device) {
-    return [];
-  }
+  if (!device) return [];
 
   const accounts = await prisma.accountSession.findMany({
     where: {
       deviceSessionId: device.id,
-      user: {
-        accountStatus: 'active',
-      },
+      user: { accountStatus: 'active' },
     },
-    orderBy: {
-      lastUsedAt: 'desc',
-    },
+    orderBy: { lastUsedAt: 'desc' },
     include: {
       user: {
         select: {
@@ -88,12 +77,8 @@ export async function getSavedAccounts(deviceToken?: string) {
   return accounts.map((account) => account.user);
 }
 
-export async function switchAccount(
-  accountId: string,
-  deviceToken?: string,
-) {
+export async function switchAccount(accountId: string, deviceToken?: string) {
   const device = await getDeviceSession(deviceToken);
-
   if (!device) {
     throw new ApiError(401, 'DEVICE_SESSION_REQUIRED', 'Saved account session not found.');
   }
@@ -105,9 +90,7 @@ export async function switchAccount(
         userId: accountId,
       },
     },
-    include: {
-      user: true,
-    },
+    include: { user: true },
   });
 
   if (!account || account.user.accountStatus !== 'active') {
@@ -128,8 +111,5 @@ export async function switchAccount(
 
   const token = signToken({ userId: account.user.id });
 
-  return {
-    token,
-    user: account.user,
-  };
+  return { token, user: account.user };
 }

@@ -14,6 +14,7 @@ export const env = {
   frontendUrl: requireEnv('FRONTEND_URL'),
   googleClientId: requireEnv('GOOGLE_CLIENT_ID'),
   googleClientSecret: requireEnv('GOOGLE_CLIENT_SECRET'),
+  googleRedirectUri: requireEnv('GOOGLE_REDIRECT_URI'),
   jwtSecret: requireEnv('JWT_SECRET'),
   jwtExpiresIn: '7d',
   r2Endpoint: requireEnv('R2_ENDPOINT'),
