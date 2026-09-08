@@ -14,6 +14,7 @@ import commentRoutes from './routes/commentRoutes';
 import uploadRoutes from './routes/uploadRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import shareRoutes from './routes/shareRoutes';
+import messageRoutes from './routes/messageRoutes';
 
 export const app = express();
 
@@ -34,6 +35,7 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/share', shareRoutes);
+app.use('/api/messages', messageRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
