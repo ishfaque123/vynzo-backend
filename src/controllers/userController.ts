@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
+import { ApiError } from '../middleware/errorHandler';
 import { profileSetupSchema, profileUpdateSchema } from '../utils/validators/profileValidators';
 import { completeProfile, updateProfile, getPublicProfileByUsername, toPrivateProfile, searchUsers } from '../services/userService';
 import { prisma } from '../config/prisma';
@@ -20,6 +21,10 @@ export async function getPublicProfile(req: Request, res: Response, next: NextFu
 
 export async function postProfileSetup(req: Request, res: Response, next: NextFunction) {
   try {
+    const existing = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (existing?.profileCompleted) {
+      throw new ApiError(403, 'PROFILE_ALREADY_COMPLETED', 'Profile setup already completed. Use Edit Profile to make changes.');
+    }
     const data = profileSetupSchema.parse(req.body);
     const user = await completeProfile(req.user!.id, data);
     sendSuccess(res, { user: toPrivateProfile(user) });
