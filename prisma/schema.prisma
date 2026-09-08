@@ -244,3 +244,14 @@ model Notification {
   @@index([userId, createdAt])
   @@map("notifications")
 }
+
+model ShareLink {
+  id         String   @id @default(uuid())
+  code       String   @unique
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([targetType, targetId])
+  @@map("share_links")
+}
