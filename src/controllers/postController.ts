@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
-import { createPost, getFeed, deletePost, sharePost, getPostById, getPostsByUsername, updatePost } from '../services/postService';
+import {
+  createPost, getFeed, deletePost, sharePost, getPostById, getPostsByUsername,
+  updatePost, reportPost, hidePost,
+} from '../services/postService';
 import { setReaction } from '../services/likeService';
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
@@ -82,5 +85,25 @@ export async function sharePostHandler(req: Request, res: Response, next: NextFu
     const { content } = sharePostSchema.parse(req.body);
     const post = await sharePost(req.user!.id, req.params.id, content);
     sendSuccess(res, { post }, 201);
+  } catch (err) { next(err); }
+}
+
+const reportPostSchema = z.object({
+  reason: z.enum(['spam', 'harassment', 'hate_speech', 'violence', 'nudity', 'misinformation', 'other']).default('other'),
+  details: z.string().max(500).optional(),
+});
+
+export async function reportPostHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { reason, details } = reportPostSchema.parse(req.body ?? {});
+    const result = await reportPost(req.user!.id, req.params.id, reason, details);
+    sendSuccess(res, result);
+  } catch (err) { next(err); }
+}
+
+export async function hidePostHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await hidePost(req.user!.id, req.params.id);
+    sendSuccess(res, result);
   } catch (err) { next(err); }
 }

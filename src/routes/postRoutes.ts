@@ -2,7 +2,11 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { optionalAuth } from '../middleware/optionalAuth';
 import { upload } from '../middleware/upload';
-import { createPostHandler, getFeedHandler, deletePostHandler, setReactionHandler, sharePostHandler, getPostHandler, getUserPostsHandler, updatePostHandler } from '../controllers/postController';
+import {
+  createPostHandler, getFeedHandler, deletePostHandler, setReactionHandler,
+  sharePostHandler, getPostHandler, getUserPostsHandler, updatePostHandler,
+  reportPostHandler, hidePostHandler,
+} from '../controllers/postController';
 
 const router = Router();
 
@@ -14,5 +18,7 @@ router.patch('/:id', authMiddleware, updatePostHandler);
 router.delete('/:id', authMiddleware, deletePostHandler);
 router.post('/:id/reaction', authMiddleware, setReactionHandler);
 router.post('/:id/share', authMiddleware, sharePostHandler);
+router.post('/:id/report', authMiddleware, reportPostHandler);
+router.post('/:id/hide', authMiddleware, hidePostHandler);
 
 export default router;

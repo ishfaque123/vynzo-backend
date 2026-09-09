@@ -95,8 +95,20 @@ const WEIGHTS = {
 };
 
 export async function getFeed(currentUserId?: string, limit = 20) {
+  const hiddenPostIds = currentUserId
+    ? (
+        await prisma.hiddenPost.findMany({
+          where: { userId: currentUserId },
+          select: { postId: true },
+        })
+      ).map((h) => h.postId)
+    : [];
+
   const candidatePosts = await prisma.post.findMany({
-    where: { visibility: 'public' },
+    where: {
+      visibility: 'public',
+      ...(hiddenPostIds.length ? { id: { notIn: hiddenPostIds } } : {}),
+    },
     take: 200,
     orderBy: { createdAt: 'desc' },
     include: includeShape,
@@ -184,4 +196,31 @@ export async function deletePost(userId: string, postId: string) {
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
   if (post.userId !== userId) throw new ApiError(403, 'FORBIDDEN', 'Not your post.');
   await prisma.post.delete({ where: { id: postId } });
+}
+
+export async function reportPost(userId: string, postId: string, reason: string, details?: string) {
+  const post = await prisma.post.findUnique({ where: { id: postId } });
+  if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+
+  const existing = await prisma.report.findUnique({
+    where: { postId_reporterId: { postId, reporterId: userId } },
+  });
+  if (existing) throw new ApiError(400, 'ALREADY_REPORTED', 'You have already reported this post.');
+
+  await prisma.report.create({
+    data: { postId, reporterId: userId, reason: reason as any, details },
+  });
+  return { reported: true };
+}
+
+export async function hidePost(userId: string, postId: string) {
+  const post = await prisma.post.findUnique({ where: { id: postId } });
+  if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+
+  await prisma.hiddenPost.upsert({
+    where: { userId_postId: { userId, postId } },
+    update: {},
+    create: { userId, postId },
+  });
+  return { hidden: true };
 }

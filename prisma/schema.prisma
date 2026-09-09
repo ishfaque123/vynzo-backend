@@ -49,6 +49,16 @@ enum NotificationType {
   account_banned
 }
 
+enum ReportReason {
+  spam
+  harassment
+  hate_speech
+  violence
+  nudity
+  misinformation
+  other
+}
+
 model User {
   id                     String            @id @default(uuid())
   googleId               String            @unique @map("google_id")
@@ -88,6 +98,8 @@ model User {
   accountSessions        AccountSession[]
   conversationParticipants ConversationParticipant[]
   messagesSent           Message[]
+  reportsMade            Report[]          @relation("ReportsMade")
+  hiddenPosts            HiddenPost[]
 
   @@index([username])
   @@index([country])
@@ -138,6 +150,8 @@ model Post {
   tags         PostTag[]
   originalPost Post?     @relation("Reposts", fields: [originalPostId], references: [id], onDelete: SetNull)
   reposts      Post[]    @relation("Reposts")
+  reports      Report[]
+  hiddenBy     HiddenPost[]
 
   @@index([userId])
   @@index([createdAt])
@@ -300,4 +314,34 @@ model Message {
 
   @@index([conversationId, createdAt])
   @@map("messages")
+}
+
+model Report {
+  id         String       @id @default(uuid())
+  postId     String       @map("post_id")
+  reporterId String       @map("reporter_id")
+  reason     ReportReason @default(other)
+  details    String?      @db.VarChar(500)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  post     Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporter User @relation("ReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, reporterId])
+  @@index([postId])
+  @@map("reports")
+}
+
+model HiddenPost {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  postId    String   @map("post_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@map("hidden_posts")
 }
