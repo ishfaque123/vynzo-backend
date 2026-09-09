@@ -63,6 +63,7 @@ model User {
   phone                  String?
   province               String?
   city                   String?
+  country                String?
   profileCompleted       Boolean           @default(false) @map("profile_completed")
   accountStatus          AccountStatus     @default(active) @map("account_status")
   role                   String            @default("user")
@@ -89,6 +90,7 @@ model User {
   messagesSent           Message[]
 
   @@index([username])
+  @@index([country])
   @@map("users")
 }
 

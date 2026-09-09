@@ -17,6 +17,7 @@ export function toPrivateProfile(user: any) {
     phone: user.phone,
     province: user.province,
     city: user.city,
+    country: user.country,
     dateOfBirth: user.dateOfBirth,
     profileCompleted: user.profileCompleted,
     commentsDisabled: user.commentsDisabled,
@@ -37,6 +38,7 @@ export function toPublicProfile(user: any, friendStatus?: string) {
     website: user.website,
     province: user.province,
     city: user.city,
+    country: user.country,
     friendStatus: friendStatus ?? 'none',
   };
 }

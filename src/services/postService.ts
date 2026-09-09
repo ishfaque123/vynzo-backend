@@ -84,14 +84,69 @@ export async function sharePost(userId: string, originalPostId: string, content:
   return toPostDTO(post, userId);
 }
 
+const WEIGHTS = {
+  like: 3,
+  comment: 5,
+  share: 4,
+  countryMatch: 40,
+  affinityPerPastLike: 8,
+  affinityCap: 80,
+  recencyBase: 200,
+};
+
 export async function getFeed(currentUserId?: string, limit = 20) {
-  const posts = await prisma.post.findMany({
+  const candidatePosts = await prisma.post.findMany({
     where: { visibility: 'public' },
-    take: limit,
+    take: 200,
     orderBy: { createdAt: 'desc' },
     include: includeShape,
   });
-  return Promise.all(posts.map((p) => toPostDTO(p, currentUserId)));
+
+  let currentUserCountry: string | null = null;
+  const affinityMap = new Map<string, number>();
+
+  if (currentUserId) {
+    const me = await prisma.user.findUnique({ where: { id: currentUserId }, select: { country: true } });
+    currentUserCountry = me?.country ?? null;
+
+    const pastLikes = await prisma.like.findMany({
+      where: { userId: currentUserId },
+      select: { post: { select: { userId: true } } },
+      take: 500,
+      orderBy: { createdAt: 'desc' },
+    });
+    for (const l of pastLikes) {
+      const authorId = l.post.userId;
+      affinityMap.set(authorId, (affinityMap.get(authorId) || 0) + 1);
+    }
+  }
+
+  const now = Date.now();
+  const scored = candidatePosts.map((post) => {
+    const hoursOld = (now - new Date(post.createdAt).getTime()) / 3600000;
+    const recencyScore = WEIGHTS.recencyBase / (hoursOld + 2);
+
+    const likeCount = post._count.likes;
+    const commentCount = post._count.comments;
+    const shareCount = post._count.reposts;
+    const engagementScore = likeCount * WEIGHTS.like + commentCount * WEIGHTS.comment + shareCount * WEIGHTS.share;
+
+    const countryBoost =
+      currentUserCountry && post.user.country && currentUserCountry === post.user.country ? WEIGHTS.countryMatch : 0;
+
+    const affinityBoost = Math.min(
+      (affinityMap.get(post.userId) || 0) * WEIGHTS.affinityPerPastLike,
+      WEIGHTS.affinityCap
+    );
+
+    const score = recencyScore + engagementScore + countryBoost + affinityBoost;
+    return { post, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, limit).map((s) => s.post);
+
+  return Promise.all(top.map((p) => toPostDTO(p, currentUserId)));
 }
 
 export async function getPostsByUsername(username: string, currentUserId?: string) {

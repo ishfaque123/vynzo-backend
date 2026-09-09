@@ -27,4 +27,5 @@ export const profileUpdateSchema = z.object({
   phone: z.string().max(30).optional(),
   province: z.string().max(50).optional(),
   city: z.string().max(50).optional(),
+  country: z.string().max(60).optional(),
 });
