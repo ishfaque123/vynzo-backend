@@ -15,6 +15,7 @@ export const profileSetupSchema = z.object({
   bio: z.string().max(300).optional(),
   gender: z.enum(['male', 'female', 'custom']).optional(),
   phone: z.string().max(30).optional(),
+  country: z.string().max(60).optional(),
 });
 
 export const profileUpdateSchema = z.object({
