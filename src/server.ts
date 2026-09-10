@@ -1,12 +1,12 @@
 import http from 'http';
 import { app } from './app';
 import { env } from './config/env';
-import { testDbConnection } from './config/db';
+import { prisma } from './config/prisma';
 import { initSocketServer } from './socket/socketServer';
 
 async function start() {
   try {
-    await testDbConnection();
+    await prisma.$queryRaw`SELECT 1`;
     console.log('Database connection successful.');
 
     const httpServer = http.createServer(app);
