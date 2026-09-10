@@ -3,7 +3,9 @@ import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 import { profileSetupSchema, profileUpdateSchema } from '../utils/validators/profileValidators';
 import { completeProfile, updateProfile, getPublicProfileByUsername, toPrivateProfile, searchUsers } from '../services/userService';
+import { reportUser } from '../services/userReportService';
 import { prisma } from '../config/prisma';
+import { z } from 'zod';
 
 export async function getMyProfile(req: Request, res: Response, next: NextFunction) {
   try {
@@ -59,5 +61,18 @@ export async function deleteMyAccount(req: Request, res: Response, next: NextFun
     await prisma.user.delete({ where: { id: req.user!.id } });
     res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
     sendSuccess(res, { deleted: true });
+  } catch (err) { next(err); }
+}
+
+const reportUserSchema = z.object({
+  reason: z.enum(['spam', 'harassment', 'hate_speech', 'violence', 'nudity', 'misinformation', 'other']).default('other'),
+  details: z.string().max(500).optional(),
+});
+
+export async function reportUserHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { reason, details } = reportUserSchema.parse(req.body ?? {});
+    const result = await reportUser(req.user!.id, req.params.userId, reason, details);
+    sendSuccess(res, result);
   } catch (err) { next(err); }
 }
