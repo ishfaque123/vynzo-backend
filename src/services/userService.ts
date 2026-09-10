@@ -1,6 +1,8 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
+import { isUserOnline } from '../socket/socketServer';
+import { getBlockStatus } from './blockService';
 
 const COOLDOWN_DAYS = 30;
 
@@ -27,7 +29,11 @@ export function toPrivateProfile(user: any) {
   };
 }
 
-export function toPublicProfile(user: any, friendStatus?: string) {
+export function toPublicProfile(
+  user: any,
+  friendStatus?: string,
+  extra?: { isOnline?: boolean; lastActiveAt?: Date | null; blockedByMe?: boolean; blockedByOther?: boolean }
+) {
   return {
     id: user.id,
     username: user.username,
@@ -40,14 +46,27 @@ export function toPublicProfile(user: any, friendStatus?: string) {
     city: user.city,
     country: user.country,
     friendStatus: friendStatus ?? 'none',
+    isOnline: extra?.isOnline ?? false,
+    lastActiveAt: extra?.lastActiveAt ?? null,
+    blockedByMe: extra?.blockedByMe ?? false,
+    blockedByOther: extra?.blockedByOther ?? false,
   };
 }
 
 export async function getPublicProfileByUsername(username: string, currentUserId?: string) {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
   const friendStatus = await getFriendStatus(currentUserId, user.id);
-  return toPublicProfile(user, friendStatus);
+  const blockStatus = currentUserId
+    ? await getBlockStatus(currentUserId, user.id)
+    : { blockedByMe: false, blockedByOther: false };
+
+  return toPublicProfile(user, friendStatus, {
+    isOnline: isUserOnline(user.id),
+    lastActiveAt: user.lastActiveAt,
+    ...blockStatus,
+  });
 }
 
 function checkCooldown(lastChanged: Date | null): { allowed: boolean; daysLeft: number } {

@@ -1,7 +1,8 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
+import { isEitherBlocked } from './blockService';
 
-const userSelect = { id: true, username: true, displayName: true, profilePictureUrl: true } as const;
+const userSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, lastActiveAt: true } as const;
 
 export async function getOrCreateConversation(userId: string, otherUserId: string) {
   if (userId === otherUserId) {
@@ -10,6 +11,9 @@ export async function getOrCreateConversation(userId: string, otherUserId: strin
 
   const otherUser = await prisma.user.findUnique({ where: { id: otherUserId } });
   if (!otherUser) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+  const blocked = await isEitherBlocked(userId, otherUserId);
+  if (blocked) throw new ApiError(403, 'BLOCKED', 'You cannot message this user.');
 
   const existing = await prisma.conversation.findFirst({
     where: {

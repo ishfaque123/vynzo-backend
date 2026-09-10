@@ -100,6 +100,8 @@ model User {
   messagesSent           Message[]
   reportsMade            Report[]          @relation("ReportsMade")
   hiddenPosts            HiddenPost[]
+  blocksMade             Block[]           @relation("BlocksMade")
+  blocksReceived         Block[]           @relation("BlocksReceived")
 
   @@index([username])
   @@index([country])
@@ -344,4 +346,18 @@ model HiddenPost {
   @@unique([userId, postId])
   @@index([userId])
   @@map("hidden_posts")
+}
+
+model Block {
+  id        String   @id @default(uuid())
+  blockerId String   @map("blocker_id")
+  blockedId String   @map("blocked_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  blocker User @relation("BlocksMade", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("blocks")
 }

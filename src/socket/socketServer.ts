@@ -3,6 +3,7 @@ import { Server as HttpServer } from 'http';
 import { verifyToken } from '../utils/jwt';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
+import { isEitherBlocked } from '../services/blockService';
 
 interface AuthedSocket extends Socket {
   userId?: string;
@@ -78,6 +79,17 @@ export function initSocketServer(httpServer: HttpServer) {
             where: { conversationId_userId: { conversationId, userId } },
           });
           if (!isParticipant) return;
+
+          const otherParticipant = await prisma.conversationParticipant.findFirst({
+            where: { conversationId, userId: { not: userId } },
+          });
+          if (otherParticipant) {
+            const blocked = await isEitherBlocked(userId, otherParticipant.userId);
+            if (blocked) {
+              if (ack) ack({ success: false, error: 'BLOCKED' });
+              return;
+            }
+          }
 
           const message = await prisma.message.create({
             data: { conversationId, senderId: userId, content: content.trim() },
