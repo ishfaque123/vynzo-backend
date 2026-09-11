@@ -6,6 +6,8 @@ type NotificationType =
   | 'post_comment'
   | 'comment_like'
   | 'comment_reply'
+  | 'post_share'
+  | 'new_device_login'
   | 'account_restricted'
   | 'account_banned';
 

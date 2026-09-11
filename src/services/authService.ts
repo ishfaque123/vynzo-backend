@@ -2,6 +2,7 @@ import { prisma } from '../config/prisma';
 import { getGoogleUserFromCode } from '../config/googleAuth';
 import { signToken } from '../utils/jwt';
 import { getOrCreateDeviceSession, getDeviceSession } from './deviceSessionService';
+import { createNotification } from './notificationService';
 import { ApiError } from '../middleware/errorHandler';
 
 export async function loginWithGoogleCode(code: string, deviceToken?: string) {
@@ -28,6 +29,15 @@ export async function loginWithGoogleCode(code: string, deviceToken?: string) {
 
   const device = await getOrCreateDeviceSession(deviceToken);
 
+  const existingAccountSession = await prisma.accountSession.findUnique({
+    where: {
+      deviceSessionId_userId: {
+        deviceSessionId: device.session.id,
+        userId: user.id,
+      },
+    },
+  });
+
   await prisma.accountSession.upsert({
     where: {
       deviceSessionId_userId: {
@@ -43,6 +53,14 @@ export async function loginWithGoogleCode(code: string, deviceToken?: string) {
       lastUsedAt: new Date(),
     },
   });
+
+  if (!isNewUser && !existingAccountSession) {
+    await createNotification({
+      userId: user.id,
+      actorId: null,
+      type: 'new_device_login',
+    });
+  }
 
   const token = signToken({ userId: user.id });
 

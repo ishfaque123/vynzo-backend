@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
+import { createNotification } from './notificationService';
 
 function toAuthorDTO(user: any) {
   return {
@@ -81,6 +82,14 @@ export async function sharePost(userId: string, originalPostId: string, content:
     data: { userId, content, originalPostId },
     include: includeShape,
   });
+
+  await createNotification({
+    userId: original.userId,
+    actorId: userId,
+    type: 'post_share',
+    postId: post.id,
+  });
+
   return toPostDTO(post, userId);
 }
 
