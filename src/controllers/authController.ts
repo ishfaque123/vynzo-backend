@@ -42,6 +42,8 @@ export async function googleCallback(req: Request, res: Response) {
   try {
     const result = await loginWithGoogleCode(code, req.cookies?.vynzo_device);
 
+    res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
+    res.clearCookie('vynzo_device', { secure: true, sameSite: 'none' as const });
     res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
     res.cookie('vynzo_device', result.deviceToken, DEVICE_COOKIE_OPTIONS);
 
@@ -74,6 +76,7 @@ export async function switchSavedAccount(req: Request, res: Response, next: Next
     const { accountId } = switchAccountSchema.parse(req.body);
     const result = await switchAccount(accountId, req.cookies?.vynzo_device);
 
+    res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
     res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
     sendSuccess(res, { user: toPrivateProfile(result.user) });
   } catch (err) {
