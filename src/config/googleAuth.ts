@@ -11,7 +11,7 @@ export function getGoogleAuthUrl(forceSelect?: boolean) {
   return googleClient.generateAuthUrl({
     access_type: 'online',
     scope: ['openid', 'email', 'profile'],
-    ...(forceSelect ? { prompt: 'select_account' } : {}),
+    prompt: 'select_account',
   });
 }
 
