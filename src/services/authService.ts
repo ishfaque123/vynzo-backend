@@ -5,7 +5,8 @@ import { getOrCreateDeviceSession, getDeviceSession } from './deviceSessionServi
 import { ApiError } from '../middleware/errorHandler';
 
 export async function loginWithGoogleCode(code: string, deviceToken?: string) {
-  const { googleId } = await getGoogleUserFromCode(code);
+  const { googleId, email } = await getGoogleUserFromCode(code);
+  console.log('[GOOGLE_LOGIN_DEBUG]', { googleId, email, codePrefix: code.slice(0, 12) });
 
   let user = await prisma.user.findUnique({ where: { googleId } });
   let isNewUser = false;
@@ -22,6 +23,8 @@ export async function loginWithGoogleCode(code: string, deviceToken?: string) {
       data: { lastActiveAt: new Date() },
     });
   }
+
+  console.log('[GOOGLE_LOGIN_DEBUG] resolved user:', { userId: user.id, isNewUser });
 
   const device = await getOrCreateDeviceSession(deviceToken);
 
