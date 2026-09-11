@@ -28,6 +28,10 @@ app.get('/api/health', (_req, res) => {
   sendSuccess(res, { status: 'ok', environment: env.nodeEnv });
 });
 
+app.get('/api/debug-env', (_req, res) => {
+  sendSuccess(res, { frontendUrl: env.frontendUrl, googleRedirectUri: env.googleRedirectUri });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
