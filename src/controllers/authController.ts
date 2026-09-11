@@ -11,11 +11,20 @@ import { toPrivateProfile } from '../services/userService';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 
+// NOTE: No `domain` attribute here on purpose. The backend is served from
+// Railway's own domain (e.g. *.up.railway.app), NOT frianzo.online — a
+// server can only set cookies for its own domain. Setting `domain:
+// '.frianzo.online'` here caused the browser to silently reject the
+// cookie entirely (invalid cross-domain Set-Cookie), so login always
+// looked like it "worked" (Google auth succeeded) but the session cookie
+// never actually got stored, bouncing the user straight back to /login.
+// Leaving `domain` unset makes the cookie scope to the backend's own
+// host, and SameSite=None + Secure (below) is what allows the frontend,
+// on a different domain, to still send it with credentials: 'include'.
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
   sameSite: 'none' as const,
-  domain: '.frianzo.online',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
@@ -23,7 +32,6 @@ const DEVICE_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
   sameSite: 'none' as const,
-  domain: '.frianzo.online',
   maxAge: 30 * 24 * 60 * 60 * 1000,
 };
 
@@ -85,7 +93,7 @@ export async function switchSavedAccount(req: Request, res: Response, next: Next
 }
 
 export async function logout(_req: Request, res: Response) {
-  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
+  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
   // vynzo_device intentionally kept — saved accounts belong to this device.
   sendSuccess(res, { loggedOut: true });
 }
