@@ -66,3 +66,16 @@ export async function getUnreadCount(userId: string) {
   const count = await prisma.notification.count({ where: { userId, read: false } });
   return { count };
 }
+
+export async function deleteNotifications(userId: string, ids: string[]) {
+  if (!ids.length) return { deletedCount: 0 };
+  const result = await prisma.notification.deleteMany({
+    where: { userId, id: { in: ids } },
+  });
+  return { deletedCount: result.count };
+}
+
+export async function deleteAllNotifications(userId: string) {
+  const result = await prisma.notification.deleteMany({ where: { userId } });
+  return { deletedCount: result.count };
+}
