@@ -15,6 +15,7 @@ const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
   sameSite: 'none' as const,
+  domain: '.frianzo.online',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
@@ -22,6 +23,7 @@ const DEVICE_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
   sameSite: 'none' as const,
+  domain: '.frianzo.online',
   maxAge: 30 * 24 * 60 * 60 * 1000,
 };
 
@@ -80,7 +82,7 @@ export async function switchSavedAccount(req: Request, res: Response, next: Next
 }
 
 export async function logout(_req: Request, res: Response) {
-  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
+  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
   // vynzo_device intentionally kept — saved accounts belong to this device.
   sendSuccess(res, { loggedOut: true });
 }
