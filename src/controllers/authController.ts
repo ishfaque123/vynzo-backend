@@ -11,16 +11,8 @@ import { toPrivateProfile } from '../services/userService';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 
-// NOTE: No `domain` attribute here on purpose. The backend is served from
-// Railway's own domain (e.g. *.up.railway.app), NOT frianzo.online — a
-// server can only set cookies for its own domain. Setting `domain:
-// '.frianzo.online'` here caused the browser to silently reject the
-// cookie entirely (invalid cross-domain Set-Cookie), so login always
-// looked like it "worked" (Google auth succeeded) but the session cookie
-// never actually got stored, bouncing the user straight back to /login.
-// Leaving `domain` unset makes the cookie scope to the backend's own
-// host, and SameSite=None + Secure (below) is what allows the frontend,
-// on a different domain, to still send it with credentials: 'include'.
+// No `domain` attribute — the backend is served from Railway's own domain
+// (via the api.frianzo.online custom domain), not frianzo.online itself.
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
@@ -34,6 +26,21 @@ const DEVICE_COOKIE_OPTIONS = {
   sameSite: 'none' as const,
   maxAge: 30 * 24 * 60 * 60 * 1000,
 };
+
+// An older version of this code set cookies with `domain: '.frianzo.online'`.
+// Any browser that ever received one of those still has it stored. Clearing
+// with today's (no-domain) options only removes the host-only variant, so a
+// leftover `.frianzo.online`-scoped cookie can stick around and get sent
+// alongside the new one — the browser then may present the OLD, stale token
+// to the backend instead of the fresh one, which looks exactly like "every
+// Gmail account I pick logs me into the same old account." Clearing BOTH
+// variants on every login/switch/logout guarantees no old cookie survives.
+function clearAuthCookies(res: Response) {
+  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
+  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
+  res.clearCookie('vynzo_device', { secure: true, sameSite: 'none' as const });
+  res.clearCookie('vynzo_device', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
+}
 
 export async function googleLoginStart(req: Request, res: Response) {
   const forceSelect = req.query.switch === '1';
@@ -50,8 +57,7 @@ export async function googleCallback(req: Request, res: Response) {
   try {
     const result = await loginWithGoogleCode(code, req.cookies?.vynzo_device);
 
-    res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
-    res.clearCookie('vynzo_device', { secure: true, sameSite: 'none' as const });
+    clearAuthCookies(res);
     res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
     res.cookie('vynzo_device', result.deviceToken, DEVICE_COOKIE_OPTIONS);
 
@@ -85,6 +91,7 @@ export async function switchSavedAccount(req: Request, res: Response, next: Next
     const result = await switchAccount(accountId, req.cookies?.vynzo_device);
 
     res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
+    res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
     res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
     sendSuccess(res, { user: toPrivateProfile(result.user) });
   } catch (err) {
@@ -93,7 +100,7 @@ export async function switchSavedAccount(req: Request, res: Response, next: Next
 }
 
 export async function logout(_req: Request, res: Response) {
-  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
+  clearAuthCookies(res);
   // vynzo_device intentionally kept — saved accounts belong to this device.
   sendSuccess(res, { loggedOut: true });
 }
