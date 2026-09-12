@@ -19,6 +19,7 @@ import messageRoutes from './routes/messageRoutes';
 import blockRoutes from './routes/blockRoutes';
 import deviceRoutes from './routes/deviceRoutes';
 import usageRoutes from './routes/usageRoutes';
+import closeFriendRoutes from './routes/closeFriendRoutes';
 
 export const app = express();
 
@@ -52,6 +53,7 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/blocks', blockRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/usage', usageRoutes);
+app.use('/api/close-friends', closeFriendRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
