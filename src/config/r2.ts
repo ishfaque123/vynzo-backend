@@ -12,7 +12,7 @@ export const r2Client = new S3Client({
 });
 
 export async function uploadToR2(buffer: Buffer, mimeType: string, folder: string) {
-  const ext = mimeType.split('/')[1] || 'jpg';
+  const ext = (mimeType.split('/')[1] || 'jpg').split(';')[0];
   const key = `${folder}/${randomUUID()}.${ext}`;
 
   await r2Client.send(
