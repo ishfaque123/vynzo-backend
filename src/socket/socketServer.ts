@@ -96,13 +96,22 @@ export function initSocketServer(httpServer: HttpServer) {
       ) => {
         try {
           const trimmed = (content || '').trim();
-          if (!trimmed && !mediaUrl) return;
-          if (!conversationId) return;
+          if (!trimmed && !mediaUrl) {
+            if (ack) ack({ success: false, error: 'EMPTY_MESSAGE' });
+            return;
+          }
+          if (!conversationId) {
+            if (ack) ack({ success: false, error: 'MISSING_CONVERSATION' });
+            return;
+          }
 
           const isParticipant = await prisma.conversationParticipant.findUnique({
             where: { conversationId_userId: { conversationId, userId } },
           });
-          if (!isParticipant) return;
+          if (!isParticipant) {
+            if (ack) ack({ success: false, error: 'NOT_A_PARTICIPANT' });
+            return;
+          }
 
           const otherParticipant = await prisma.conversationParticipant.findFirst({
             where: { conversationId, userId: { not: userId } },
