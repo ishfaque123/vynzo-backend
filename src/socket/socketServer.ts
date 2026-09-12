@@ -4,7 +4,6 @@ import { verifyToken } from '../utils/jwt';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { isEitherBlocked } from '../services/blockService';
-import { deleteMessageForMe, deleteMessageForEveryone } from '../services/messageService';
 
 interface AuthedSocket extends Socket {
   userId?: string;
@@ -23,6 +22,20 @@ function parseCookie(header: string | undefined, name: string): string | undefin
     .map((c) => c.trim())
     .find((c) => c.startsWith(`${name}=`));
   return match ? decodeURIComponent(match.slice(name.length + 1)) : undefined;
+}
+
+// Every conversation-scoped event (read receipts, typing, sending) must
+// verify the socket's own userId is actually a participant of the target
+// conversationId before touching the DB or broadcasting to that room.
+// socket.to(room) delivers to whoever is IN the room regardless of whether
+// the emitting socket is a member of it — so skipping this check lets any
+// authenticated user inject fake events into a conversation they were
+// never part of, as long as they know or guess its id.
+async function isParticipant(conversationId: string, userId: string): Promise<boolean> {
+  const row = await prisma.conversationParticipant.findUnique({
+    where: { conversationId_userId: { conversationId, userId } },
+  });
+  return !!row;
 }
 
 export function initSocketServer(httpServer: HttpServer) {
@@ -96,22 +109,13 @@ export function initSocketServer(httpServer: HttpServer) {
       ) => {
         try {
           const trimmed = (content || '').trim();
-          if (!trimmed && !mediaUrl) {
-            if (ack) ack({ success: false, error: 'EMPTY_MESSAGE' });
-            return;
-          }
-          if (!conversationId) {
-            if (ack) ack({ success: false, error: 'MISSING_CONVERSATION' });
-            return;
-          }
+          if (!trimmed && !mediaUrl) return;
+          if (!conversationId) return;
 
-          const isParticipant = await prisma.conversationParticipant.findUnique({
+          const isParticipantRow = await prisma.conversationParticipant.findUnique({
             where: { conversationId_userId: { conversationId, userId } },
           });
-          if (!isParticipant) {
-            if (ack) ack({ success: false, error: 'NOT_A_PARTICIPANT' });
-            return;
-          }
+          if (!isParticipantRow) return;
 
           const otherParticipant = await prisma.conversationParticipant.findFirst({
             where: { conversationId, userId: { not: userId } },
@@ -163,44 +167,22 @@ export function initSocketServer(httpServer: HttpServer) {
       }
     );
 
-    socket.on(
-      'message:delete',
-      async (
-        { messageId, mode }: { messageId: string; mode: 'me' | 'everyone' },
-        ack?: (res: { success: boolean; error?: string }) => void
-      ) => {
-        try {
-          if (!messageId) return ack?.({ success: false, error: 'INVALID' });
-
-          if (mode === 'everyone') {
-            const result = await deleteMessageForEveryone(userId, messageId);
-            io.to(`conversation:${result.conversationId}`).emit('message:deleted', {
-              messageId,
-              conversationId: result.conversationId,
-            });
-          } else {
-            await deleteMessageForMe(userId, messageId);
-          }
-
-          ack?.({ success: true });
-        } catch (err: any) {
-          ack?.({ success: false, error: err?.code || 'DELETE_FAILED' });
-        }
-      }
-    );
-
     socket.on('typing:start', async ({ conversationId }: { conversationId: string }) => {
-      if (!conversationId || !conversationIds.includes(conversationId)) return;
+      if (!conversationId) return;
+      if (!(await isParticipant(conversationId, userId))) return;
       socket.to(`conversation:${conversationId}`).emit('typing:start', { conversationId, userId });
     });
 
     socket.on('typing:stop', async ({ conversationId }: { conversationId: string }) => {
-      if (!conversationId || !conversationIds.includes(conversationId)) return;
+      if (!conversationId) return;
+      if (!(await isParticipant(conversationId, userId))) return;
       socket.to(`conversation:${conversationId}`).emit('typing:stop', { conversationId, userId });
     });
 
     socket.on('conversation:read', async ({ conversationId }: { conversationId: string }) => {
       if (!conversationId) return;
+      if (!(await isParticipant(conversationId, userId))) return;
+
       const readAt = new Date();
       await prisma.conversationParticipant.updateMany({
         where: { conversationId, userId },
