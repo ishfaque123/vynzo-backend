@@ -10,7 +10,7 @@ export async function blockUser(blockerId: string, blockedId: string) {
 
   await prisma.block.upsert({
     where: { blockerId_blockedId: { blockerId, blockedId } },
-    update: {},
+    update: { hiddenFromList: false },
     create: { blockerId, blockedId },
   });
 
@@ -50,4 +50,33 @@ export async function isEitherBlocked(userIdA: string, userIdB: string): Promise
     },
   });
   return count > 0;
+}
+
+// "Blocked Accounts" list — an entry hidden via the long-press "Delete"
+// action still stays blocked, it just no longer shows up here.
+export async function getBlockedUsers(userId: string) {
+  const blocks = await prisma.block.findMany({
+    where: { blockerId: userId, hiddenFromList: false },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      blocked: {
+        select: { id: true, username: true, displayName: true, profilePictureUrl: true },
+      },
+    },
+  });
+
+  return blocks.map((b) => ({
+    blockedAt: b.createdAt,
+    user: b.blocked,
+  }));
+}
+
+// "Delete" — removes entries from the Blocked Accounts list only. The
+// underlying block stays active; use unblockUser() to actually lift it.
+export async function hideBlockedEntries(userId: string, blockedIds: string[]) {
+  await prisma.block.updateMany({
+    where: { blockerId: userId, blockedId: { in: blockedIds } },
+    data: { hiddenFromList: true },
+  });
+  return { hidden: true };
 }
