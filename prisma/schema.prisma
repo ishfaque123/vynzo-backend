@@ -87,6 +87,7 @@ model User {
   createdAt              DateTime          @default(now()) @map("created_at")
   updatedAt              DateTime          @updatedAt @map("updated_at")
   lastActiveAt           DateTime?         @map("last_active_at")
+  publicKey              String?           @db.Text @map("public_key")
   posts                  Post[]
   likes                  Like[]
   comments               Comment[]
@@ -329,7 +330,7 @@ model Message {
   id             String   @id @default(uuid())
   conversationId String   @map("conversation_id")
   senderId       String   @map("sender_id")
-  content        String   @db.VarChar(2000)
+  content        String   @db.Text
   mediaUrl       String?  @map("media_url")
   mediaType      String?  @map("media_type")
   voiceDuration  Int?     @map("voice_duration")
