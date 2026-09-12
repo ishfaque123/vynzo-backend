@@ -27,8 +27,11 @@ export async function createPostHandler(req: Request, res: Response, next: NextF
 
 export async function getFeedHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const posts = await getFeed(req.user?.id, 20);
-    sendSuccess(res, { posts });
+    const limit = 20;
+    const rawOffset = parseInt(String(req.query.offset ?? '0'), 10);
+    const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
+    const { posts, hasMore } = await getFeed(req.user?.id, limit, offset);
+    sendSuccess(res, { posts, hasMore, nextOffset: offset + posts.length });
   } catch (err) { next(err); }
 }
 

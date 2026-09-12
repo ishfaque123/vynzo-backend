@@ -40,15 +40,17 @@ async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
   };
 }
 
+// commentCount only counts top-level comments (parentCommentId: null) —
+// replies are intentionally excluded from the number shown on a post.
 const includeShape = {
   user: true,
-  _count: { select: { likes: true, comments: true, reposts: true } },
+  _count: { select: { likes: true, comments: { where: { parentCommentId: null } }, reposts: true } },
   likes: true,
   tags: { include: { user: true } },
   originalPost: {
     include: {
       user: true,
-      _count: { select: { likes: true, comments: true, reposts: true } },
+      _count: { select: { likes: true, comments: { where: { parentCommentId: null } }, reposts: true } },
       likes: true,
       tags: { include: { user: true } },
     },
@@ -103,7 +105,7 @@ const WEIGHTS = {
   recencyBase: 200,
 };
 
-export async function getFeed(currentUserId?: string, limit = 20) {
+export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const hiddenPostIds = currentUserId
     ? (
         await prisma.hiddenPost.findMany({
@@ -113,12 +115,16 @@ export async function getFeed(currentUserId?: string, limit = 20) {
       ).map((h) => h.postId)
     : [];
 
+  // Candidate pool needs to comfortably cover however deep the requester
+  // has paginated, plus headroom for ranking to still be meaningful.
+  const poolSize = Math.max(200, offset + limit + 40);
+
   const candidatePosts = await prisma.post.findMany({
     where: {
       visibility: 'public',
       ...(hiddenPostIds.length ? { id: { notIn: hiddenPostIds } } : {}),
     },
-    take: 200,
+    take: poolSize,
     orderBy: { createdAt: 'desc' },
     include: includeShape,
   });
@@ -165,9 +171,11 @@ export async function getFeed(currentUserId?: string, limit = 20) {
   });
 
   scored.sort((a, b) => b.score - a.score);
-  const top = scored.slice(0, limit).map((s) => s.post);
+  const pageSlice = scored.slice(offset, offset + limit).map((s) => s.post);
+  const hasMore = scored.length > offset + limit;
 
-  return Promise.all(top.map((p) => toPostDTO(p, currentUserId)));
+  const posts = await Promise.all(pageSlice.map((p) => toPostDTO(p, currentUserId)));
+  return { posts, hasMore };
 }
 
 export async function getPostsByUsername(username: string, currentUserId?: string) {
