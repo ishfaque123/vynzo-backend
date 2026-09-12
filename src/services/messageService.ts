@@ -85,16 +85,52 @@ export async function getMessages(userId: string, conversationId: string, cursor
   });
 
   const messages = await prisma.message.findMany({
-    where: { conversationId },
+    where: { conversationId, hiddenFor: { none: { userId } } },
     orderBy: { createdAt: 'desc' },
     take: limit,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     include: { sender: { select: userSelect } },
   });
 
+  const shaped = messages.reverse().map((m) =>
+    m.deletedAt
+      ? { ...m, content: '', mediaUrl: null, mediaType: null, voiceDuration: null, isDeleted: true }
+      : { ...m, isDeleted: false }
+  );
+
   return {
-    messages: messages.reverse(),
+    messages: shaped,
     otherLastReadAt: other?.lastReadAt || null,
     otherLastDeliveredAt: other?.lastDeliveredAt || null,
   };
+}
+
+export async function deleteMessageForMe(userId: string, messageId: string) {
+  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!message) throw new ApiError(404, 'MESSAGE_NOT_FOUND', 'Message not found.');
+
+  const participant = await prisma.conversationParticipant.findUnique({
+    where: { conversationId_userId: { conversationId: message.conversationId, userId } },
+  });
+  if (!participant) throw new ApiError(403, 'NOT_A_PARTICIPANT', 'You are not part of this conversation.');
+
+  await prisma.hiddenMessage.upsert({
+    where: { userId_messageId: { userId, messageId } },
+    update: {},
+    create: { userId, messageId },
+  });
+
+  return { deleted: true };
+}
+
+export async function deleteMessageForEveryone(userId: string, messageId: string) {
+  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!message) throw new ApiError(404, 'MESSAGE_NOT_FOUND', 'Message not found.');
+  if (message.senderId !== userId) {
+    throw new ApiError(403, 'FORBIDDEN', 'You can only delete your own messages for everyone.');
+  }
+
+  await prisma.message.update({ where: { id: messageId }, data: { deletedAt: new Date() } });
+
+  return { conversationId: message.conversationId };
 }
