@@ -98,6 +98,7 @@ model User {
   notificationsReceived  Notification[]    @relation("NotificationsReceived")
   notificationsTriggered Notification[]    @relation("NotificationsTriggered")
   accountSessions        AccountSession[]
+  usagePings             UsagePing[]
   conversationParticipants ConversationParticipant[]
   messagesSent           Message[]
   reportsMade            Report[]          @relation("ReportsMade")
@@ -141,6 +142,17 @@ model AccountSession {
   @@unique([deviceSessionId, userId])
   @@index([userId])
   @@map("account_sessions")
+}
+
+model UsagePing {
+  id       String   @id @default(uuid())
+  userId   String   @map("user_id")
+  pingedAt DateTime @default(now()) @map("pinged_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, pingedAt])
+  @@map("usage_pings")
 }
 
 model Post {

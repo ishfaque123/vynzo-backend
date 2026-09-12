@@ -17,6 +17,7 @@ import shareRoutes from './routes/shareRoutes';
 import messageRoutes from './routes/messageRoutes';
 import blockRoutes from './routes/blockRoutes';
 import deviceRoutes from './routes/deviceRoutes';
+import usageRoutes from './routes/usageRoutes';
 
 export const app = express();
 
@@ -48,6 +49,7 @@ app.use('/api/share', shareRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/blocks', blockRoutes);
 app.use('/api/devices', deviceRoutes);
+app.use('/api/usage', usageRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
