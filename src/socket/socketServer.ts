@@ -4,6 +4,7 @@ import { verifyToken } from '../utils/jwt';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { isEitherBlocked } from '../services/blockService';
+import { deleteMessageForMe, deleteMessageForEveryone } from '../services/messageService';
 
 interface AuthedSocket extends Socket {
   userId?: string;
@@ -149,6 +150,32 @@ export function initSocketServer(httpServer: HttpServer) {
           if (ack) ack({ success: true, data: message, delivered });
         } catch {
           if (ack) ack({ success: false, error: 'SEND_FAILED' });
+        }
+      }
+    );
+
+    socket.on(
+      'message:delete',
+      async (
+        { messageId, mode }: { messageId: string; mode: 'me' | 'everyone' },
+        ack?: (res: { success: boolean; error?: string }) => void
+      ) => {
+        try {
+          if (!messageId) return ack?.({ success: false, error: 'INVALID' });
+
+          if (mode === 'everyone') {
+            const result = await deleteMessageForEveryone(userId, messageId);
+            io.to(`conversation:${result.conversationId}`).emit('message:deleted', {
+              messageId,
+              conversationId: result.conversationId,
+            });
+          } else {
+            await deleteMessageForMe(userId, messageId);
+          }
+
+          ack?.({ success: true });
+        } catch (err: any) {
+          ack?.({ success: false, error: err?.code || 'DELETE_FAILED' });
         }
       }
     );
