@@ -112,16 +112,6 @@ export async function savePublicKeyHandler(req: Request, res: Response, next: Ne
   }
 }
 
-export async function savePublicKeyHandler(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { publicKey } = req.body as { publicKey?: string };
-    if (!publicKey) throw new (await import('../middleware/errorHandler')).ApiError(400, 'NO_KEY', 'publicKey is required.');
-    await prisma.user.update({ where: { id: req.user!.id }, data: { publicKey } });
-    sendSuccess(res, { saved: true });
-  } catch (err) {
-    next(err);
-  }
-}
 
 export async function logout(_req: Request, res: Response) {
   clearAuthCookies(res);
