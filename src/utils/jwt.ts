@@ -3,6 +3,7 @@ import { env } from '../config/env';
 
 export interface VynzoTokenPayload {
   userId: string;
+  accountSessionId?: string;
 }
 
 export function signToken(payload: VynzoTokenPayload): string {

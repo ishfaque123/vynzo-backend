@@ -6,6 +6,7 @@ import {
   getSavedAccounts,
   switchAccount,
 } from '../services/authService';
+import { extractRequestMeta } from '../services/deviceSessionService';
 import { getGoogleAuthUrl } from '../config/googleAuth';
 import { toPrivateProfile } from '../services/userService';
 import { prisma } from '../config/prisma';
@@ -55,7 +56,8 @@ export async function googleCallback(req: Request, res: Response) {
   }
 
   try {
-    const result = await loginWithGoogleCode(code, req.cookies?.vynzo_device);
+    const meta = extractRequestMeta(req);
+    const result = await loginWithGoogleCode(code, req.cookies?.vynzo_device, meta);
 
     clearAuthCookies(res);
     res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);

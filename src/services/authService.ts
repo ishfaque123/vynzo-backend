@@ -1,11 +1,11 @@
 import { prisma } from '../config/prisma';
 import { getGoogleUserFromCode } from '../config/googleAuth';
 import { signToken } from '../utils/jwt';
-import { getOrCreateDeviceSession, getDeviceSession } from './deviceSessionService';
+import { getOrCreateDeviceSession, getDeviceSession, RequestMeta } from './deviceSessionService';
 import { createNotification } from './notificationService';
 import { ApiError } from '../middleware/errorHandler';
 
-export async function loginWithGoogleCode(code: string, deviceToken?: string) {
+export async function loginWithGoogleCode(code: string, deviceToken?: string, meta?: RequestMeta) {
   const { googleId, email } = await getGoogleUserFromCode(code);
   console.log('[GOOGLE_LOGIN_DEBUG]', { googleId, email, codePrefix: code.slice(0, 12) });
 
@@ -27,7 +27,7 @@ export async function loginWithGoogleCode(code: string, deviceToken?: string) {
 
   console.log('[GOOGLE_LOGIN_DEBUG] resolved user:', { userId: user.id, isNewUser });
 
-  const device = await getOrCreateDeviceSession(deviceToken);
+  const device = await getOrCreateDeviceSession(deviceToken, meta);
 
   const existingAccountSession = await prisma.accountSession.findUnique({
     where: {
@@ -38,7 +38,7 @@ export async function loginWithGoogleCode(code: string, deviceToken?: string) {
     },
   });
 
-  await prisma.accountSession.upsert({
+  const accountSession = await prisma.accountSession.upsert({
     where: {
       deviceSessionId_userId: {
         deviceSessionId: device.session.id,
@@ -62,7 +62,7 @@ export async function loginWithGoogleCode(code: string, deviceToken?: string) {
     });
   }
 
-  const token = signToken({ userId: user.id });
+  const token = signToken({ userId: user.id, accountSessionId: accountSession.id });
 
   return {
     token,
@@ -120,7 +120,7 @@ export async function switchAccount(accountId: string, deviceToken?: string) {
 
   const now = new Date();
 
-  await prisma.accountSession.update({
+  const updated = await prisma.accountSession.update({
     where: { id: account.id },
     data: { lastUsedAt: now },
   });
@@ -130,7 +130,7 @@ export async function switchAccount(accountId: string, deviceToken?: string) {
     data: { lastActiveAt: now },
   });
 
-  const token = signToken({ userId: account.user.id });
+  const token = signToken({ userId: account.user.id, accountSessionId: updated.id });
 
   return { token, user: account.user };
 }

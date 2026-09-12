@@ -19,6 +19,17 @@ export async function authMiddleware(req: Request, _res: Response, next: NextFun
     }
 
     const payload = verifyToken(token);
+
+    // Tokens issued after the Devices feature carry the account-session id
+    // that created them. If that session was remotely logged out, the
+    // session row is gone — reject the token even though it hasn't expired.
+    if (payload.accountSessionId) {
+      const session = await prisma.accountSession.findUnique({ where: { id: payload.accountSessionId } });
+      if (!session) {
+        throw new ApiError(401, 'SESSION_REVOKED', 'This session has been logged out.');
+      }
+    }
+
     const user = await prisma.user.findUnique({ where: { id: payload.userId } });
 
     if (!user || user.accountStatus !== 'active') {
