@@ -103,6 +103,8 @@ model User {
   conversationParticipants ConversationParticipant[]
   messagesSent           Message[]
   hiddenMessages         HiddenMessage[]
+  closeFriendsOf         CloseFriend[] @relation("CloseFriendOwner")
+  closeFriendedBy        CloseFriend[] @relation("CloseFriendTarget")
   reportsMade            Report[]          @relation("ReportsMade")
   hiddenPosts            HiddenPost[]
   blocksMade             Block[]           @relation("BlocksMade")
@@ -344,6 +346,20 @@ model Message {
 
   @@index([conversationId, createdAt])
   @@map("messages")
+}
+
+model CloseFriend {
+  id        String   @id @default(uuid())
+  ownerId   String   @map("owner_id")
+  friendId  String   @map("friend_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  owner  User @relation("CloseFriendOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  friend User @relation("CloseFriendTarget", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, friendId])
+  @@index([friendId])
+  @@map("close_friends")
 }
 
 model HiddenMessage {
