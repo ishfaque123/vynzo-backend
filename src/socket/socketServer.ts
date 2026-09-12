@@ -64,13 +64,25 @@ export function initSocketServer(httpServer: HttpServer) {
       conversationIds.forEach((id) => {
         socket.to(`conversation:${id}`).emit('presence:online', { userId });
       });
+
+      // Coming online delivers anything that was waiting — turns a single
+      // tick into a double (grey) tick the moment this user reconnects,
+      // same as WhatsApp does when a phone comes back online.
+      const deliveredAt = new Date();
+      await prisma.conversationParticipant.updateMany({
+        where: { conversationId: { in: conversationIds }, userId },
+        data: { lastDeliveredAt: deliveredAt },
+      });
+      conversationIds.forEach((id) => {
+        socket.to(`conversation:${id}`).emit('conversation:delivered', { conversationId: id, userId, deliveredAt });
+      });
     }
 
     socket.on(
       'message:send',
       async (
         { conversationId, content }: { conversationId: string; content: string },
-        ack?: (res: { success: boolean; data?: unknown; error?: string }) => void
+        ack?: (res: { success: boolean; data?: unknown; error?: string; delivered?: boolean }) => void
       ) => {
         try {
           if (!content?.trim() || !conversationId) return;
@@ -106,7 +118,20 @@ export function initSocketServer(httpServer: HttpServer) {
           });
 
           io.to(`conversation:${conversationId}`).emit('message:new', message);
-          if (ack) ack({ success: true, data: message });
+
+          // The recipient's socket already sits in this conversation's room,
+          // so if they're online the message above just reached their
+          // device — mark it delivered immediately (double grey tick).
+          let delivered = false;
+          if (otherParticipant && isUserOnline(otherParticipant.userId)) {
+            await prisma.conversationParticipant.update({
+              where: { id: otherParticipant.id },
+              data: { lastDeliveredAt: new Date() },
+            });
+            delivered = true;
+          }
+
+          if (ack) ack({ success: true, data: message, delivered });
         } catch {
           if (ack) ack({ success: false, error: 'SEND_FAILED' });
         }
@@ -125,11 +150,14 @@ export function initSocketServer(httpServer: HttpServer) {
 
     socket.on('conversation:read', async ({ conversationId }: { conversationId: string }) => {
       if (!conversationId) return;
+      const readAt = new Date();
+      // Reading always implies delivered too — bump both together so the
+      // two states can never disagree.
       await prisma.conversationParticipant.updateMany({
         where: { conversationId, userId },
-        data: { lastReadAt: new Date() },
+        data: { lastReadAt: readAt, lastDeliveredAt: readAt },
       });
-      socket.to(`conversation:${conversationId}`).emit('conversation:read', { conversationId, userId });
+      socket.to(`conversation:${conversationId}`).emit('conversation:read', { conversationId, userId, readAt });
     });
 
     socket.on('disconnect', async () => {

@@ -55,11 +55,22 @@ export async function listConversations(userId: string) {
       ? lastMessage.senderId !== userId && (!me?.lastReadAt || lastMessage.createdAt > me.lastReadAt)
       : false;
 
+    // If the last message is one I sent, tell the list view whether the
+    // other person has seen it / received it yet — powers the tick shown
+    // next to the preview text (WhatsApp-style).
+    let lastMessageStatus: 'sent' | 'delivered' | 'read' | null = null;
+    if (lastMessage && lastMessage.senderId === userId) {
+      if (other?.lastReadAt && other.lastReadAt >= lastMessage.createdAt) lastMessageStatus = 'read';
+      else if (other?.lastDeliveredAt && other.lastDeliveredAt >= lastMessage.createdAt) lastMessageStatus = 'delivered';
+      else lastMessageStatus = 'sent';
+    }
+
     return {
       id: c.id,
       isGroup: c.isGroup,
       otherUser: other?.user || null,
       lastMessage,
+      lastMessageStatus,
       unread,
       updatedAt: c.updatedAt,
     };
@@ -72,6 +83,10 @@ export async function getMessages(userId: string, conversationId: string, cursor
   });
   if (!participant) throw new ApiError(403, 'NOT_A_PARTICIPANT', 'You are not part of this conversation.');
 
+  const other = await prisma.conversationParticipant.findFirst({
+    where: { conversationId, userId: { not: userId } },
+  });
+
   const messages = await prisma.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: 'desc' },
@@ -80,5 +95,9 @@ export async function getMessages(userId: string, conversationId: string, cursor
     include: { sender: { select: userSelect } },
   });
 
-  return messages.reverse();
+  return {
+    messages: messages.reverse(),
+    otherLastReadAt: other?.lastReadAt || null,
+    otherLastDeliveredAt: other?.lastDeliveredAt || null,
+  };
 }
