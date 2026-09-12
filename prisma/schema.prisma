@@ -102,6 +102,7 @@ model User {
   usagePings             UsagePing[]
   conversationParticipants ConversationParticipant[]
   messagesSent           Message[]
+  hiddenMessages         HiddenMessage[]
   reportsMade            Report[]          @relation("ReportsMade")
   hiddenPosts            HiddenPost[]
   blocksMade             Block[]           @relation("BlocksMade")
@@ -327,20 +328,36 @@ model ConversationParticipant {
 }
 
 model Message {
-  id             String   @id @default(uuid())
-  conversationId String   @map("conversation_id")
-  senderId       String   @map("sender_id")
-  content        String   @db.Text
-  mediaUrl       String?  @map("media_url")
-  mediaType      String?  @map("media_type")
-  voiceDuration  Int?     @map("voice_duration")
-  createdAt      DateTime @default(now()) @map("created_at")
+  id             String    @id @default(uuid())
+  conversationId String    @map("conversation_id")
+  senderId       String    @map("sender_id")
+  content        String    @db.Text
+  mediaUrl       String?   @map("media_url")
+  mediaType      String?   @map("media_type")
+  voiceDuration  Int?      @map("voice_duration")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  conversation Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  hiddenFor    HiddenMessage[]
 
   @@index([conversationId, createdAt])
   @@map("messages")
+}
+
+model HiddenMessage {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  messageId String   @map("message_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@index([messageId])
+  @@map("hidden_messages")
 }
 
 model Report {
