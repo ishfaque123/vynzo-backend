@@ -180,13 +180,13 @@ export function initSocketServer(httpServer: HttpServer) {
       }
     );
 
-    socket.on('typing:start', ({ conversationId }: { conversationId: string }) => {
-      if (!conversationId) return;
+    socket.on('typing:start', async ({ conversationId }: { conversationId: string }) => {
+      if (!conversationId || !conversationIds.includes(conversationId)) return;
       socket.to(`conversation:${conversationId}`).emit('typing:start', { conversationId, userId });
     });
 
-    socket.on('typing:stop', ({ conversationId }: { conversationId: string }) => {
-      if (!conversationId) return;
+    socket.on('typing:stop', async ({ conversationId }: { conversationId: string }) => {
+      if (!conversationId || !conversationIds.includes(conversationId)) return;
       socket.to(`conversation:${conversationId}`).emit('typing:stop', { conversationId, userId });
     });
 
