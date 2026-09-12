@@ -30,3 +30,12 @@ export async function uploadCoverHandler(req: Request, res: Response, next: Next
     sendSuccess(res, { coverPhotoUrl: user.coverPhotoUrl });
   } catch (err) { next(err); }
 }
+
+export async function uploadChatMediaHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) throw new ApiError(400, 'NO_FILE', 'No file uploaded.');
+    const url = await uploadToR2(req.file.buffer, req.file.mimetype, 'chat-media');
+    const mediaType = req.file.mimetype.startsWith('audio/') ? 'voice' : 'image';
+    sendSuccess(res, { url, mediaType });
+  } catch (err) { next(err); }
+}

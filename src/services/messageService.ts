@@ -55,9 +55,6 @@ export async function listConversations(userId: string) {
       ? lastMessage.senderId !== userId && (!me?.lastReadAt || lastMessage.createdAt > me.lastReadAt)
       : false;
 
-    // If the last message is one I sent, tell the list view whether the
-    // other person has seen it / received it yet — powers the tick shown
-    // next to the preview text (WhatsApp-style).
     let lastMessageStatus: 'sent' | 'delivered' | 'read' | null = null;
     if (lastMessage && lastMessage.senderId === userId) {
       if (other?.lastReadAt && other.lastReadAt >= lastMessage.createdAt) lastMessageStatus = 'read';

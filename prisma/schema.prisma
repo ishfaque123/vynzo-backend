@@ -330,6 +330,9 @@ model Message {
   conversationId String   @map("conversation_id")
   senderId       String   @map("sender_id")
   content        String   @db.VarChar(2000)
+  mediaUrl       String?  @map("media_url")
+  mediaType      String?  @map("media_type")
+  voiceDuration  Int?     @map("voice_duration")
   createdAt      DateTime @default(now()) @map("created_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

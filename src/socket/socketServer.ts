@@ -65,9 +65,6 @@ export function initSocketServer(httpServer: HttpServer) {
         socket.to(`conversation:${id}`).emit('presence:online', { userId });
       });
 
-      // Coming online delivers anything that was waiting — turns a single
-      // tick into a double (grey) tick the moment this user reconnects,
-      // same as WhatsApp does when a phone comes back online.
       const deliveredAt = new Date();
       await prisma.conversationParticipant.updateMany({
         where: { conversationId: { in: conversationIds }, userId },
@@ -81,11 +78,25 @@ export function initSocketServer(httpServer: HttpServer) {
     socket.on(
       'message:send',
       async (
-        { conversationId, content }: { conversationId: string; content: string },
+        {
+          conversationId,
+          content,
+          mediaUrl,
+          mediaType,
+          voiceDuration,
+        }: {
+          conversationId: string;
+          content: string;
+          mediaUrl?: string;
+          mediaType?: 'image' | 'voice';
+          voiceDuration?: number;
+        },
         ack?: (res: { success: boolean; data?: unknown; error?: string; delivered?: boolean }) => void
       ) => {
         try {
-          if (!content?.trim() || !conversationId) return;
+          const trimmed = (content || '').trim();
+          if (!trimmed && !mediaUrl) return;
+          if (!conversationId) return;
 
           const isParticipant = await prisma.conversationParticipant.findUnique({
             where: { conversationId_userId: { conversationId, userId } },
@@ -104,7 +115,14 @@ export function initSocketServer(httpServer: HttpServer) {
           }
 
           const message = await prisma.message.create({
-            data: { conversationId, senderId: userId, content: content.trim() },
+            data: {
+              conversationId,
+              senderId: userId,
+              content: trimmed,
+              mediaUrl: mediaUrl || null,
+              mediaType: mediaUrl ? mediaType || 'image' : null,
+              voiceDuration: mediaType === 'voice' ? voiceDuration || null : null,
+            },
             include: {
               sender: {
                 select: { id: true, username: true, displayName: true, profilePictureUrl: true },
@@ -119,9 +137,6 @@ export function initSocketServer(httpServer: HttpServer) {
 
           io.to(`conversation:${conversationId}`).emit('message:new', message);
 
-          // The recipient's socket already sits in this conversation's room,
-          // so if they're online the message above just reached their
-          // device — mark it delivered immediately (double grey tick).
           let delivered = false;
           if (otherParticipant && isUserOnline(otherParticipant.userId)) {
             await prisma.conversationParticipant.update({
@@ -151,8 +166,6 @@ export function initSocketServer(httpServer: HttpServer) {
     socket.on('conversation:read', async ({ conversationId }: { conversationId: string }) => {
       if (!conversationId) return;
       const readAt = new Date();
-      // Reading always implies delivered too — bump both together so the
-      // two states can never disagree.
       await prisma.conversationParticipant.updateMany({
         where: { conversationId, userId },
         data: { lastReadAt: readAt, lastDeliveredAt: readAt },
