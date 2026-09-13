@@ -80,6 +80,14 @@ export async function createPost(
 export async function sharePost(userId: string, originalPostId: string, content: string) {
   const original = await prisma.post.findUnique({ where: { id: originalPostId } });
   if (!original) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+
+  // Bug fix: sharing used to skip visibility entirely, so a private post
+  // could be reshared by anyone who had its id, instantly turning it into
+  // a brand-new PUBLIC post.
+  if (original.visibility === 'private' && original.userId !== userId) {
+    throw new ApiError(403, 'FORBIDDEN', 'You cannot share this post.');
+  }
+
   const post = await prisma.post.create({
     data: { userId, content, originalPostId },
     include: includeShape,
@@ -217,6 +225,14 @@ export async function getPostById(postId: string, currentUserId?: string) {
     if (friendStatus !== 'following' && friendStatus !== 'friends') {
       throw new ApiError(403, 'PRIVATE_ACCOUNT', 'This account is private.');
     }
+  }
+
+  // Bug fix: a single post can be marked visibility: 'private' independently
+  // of the author's account being private. This was completely unchecked
+  // here, so a private post's full content was readable by anyone (even
+  // logged out) who had or guessed its id.
+  if (post.visibility === 'private' && post.userId !== currentUserId) {
+    throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
   }
 
   return toPostDTO(post, currentUserId);
