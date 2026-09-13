@@ -29,4 +29,7 @@ export const profileUpdateSchema = z.object({
   province: z.string().max(50).optional(),
   city: z.string().max(50).optional(),
   country: z.string().max(60).optional(),
+  messagePermission: z.enum(['everyone', 'followers', 'none']).optional(),
+  tagPermission: z.enum(['everyone', 'followers', 'none']).optional(),
+  showOnlineStatus: z.boolean().optional(),
 });
