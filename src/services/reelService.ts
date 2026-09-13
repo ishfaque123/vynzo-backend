@@ -2,6 +2,7 @@ import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { env } from '../config/env';
 import { deleteFromR2 } from '../config/r2';
+import { getFriendStatus } from './followService';
 
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true };
 
@@ -52,13 +53,14 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
         user: { select: authorSelect },
         _count: { select: { likes: true } },
         likes: { where: { userId: currentUserId }, select: { id: true } },
+        favorites: { where: { userId: currentUserId }, select: { id: true } },
       },
     }),
     prisma.reel.count({ where }),
   ]);
 
-  return {
-    reels: reels.map((r) => ({
+  const reelsWithStatus = await Promise.all(
+    reels.map(async (r) => ({
       id: r.id,
       videoUrl: r.videoUrl,
       caption: r.caption,
@@ -66,9 +68,15 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
       createdAt: r.createdAt,
       likeCount: r._count.likes,
       liked: r.likes.length > 0,
+      favorited: r.favorites.length > 0,
       isMine: r.userId === currentUserId,
       author: r.user,
-    })),
+      friendStatus: await getFriendStatus(currentUserId, r.userId),
+    }))
+  );
+
+  return {
+    reels: reelsWithStatus,
     hasMore: offset + reels.length < total,
   };
 }
@@ -84,6 +92,52 @@ export async function toggleReelLike(userId: string, reelId: string) {
   }
   await prisma.reelLike.create({ data: { reelId, userId } });
   return { liked: true };
+}
+
+// "Favorite" is a private bookmark — nobody but the owner can see their
+// favorites list, and it never posts/reshares anything anywhere.
+export async function toggleReelFavorite(userId: string, reelId: string) {
+  const reel = await prisma.reel.findUnique({ where: { id: reelId } });
+  if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
+
+  const existing = await prisma.reelFavorite.findUnique({ where: { reelId_userId: { reelId, userId } } });
+  if (existing) {
+    await prisma.reelFavorite.delete({ where: { id: existing.id } });
+    return { favorited: false };
+  }
+  await prisma.reelFavorite.create({ data: { reelId, userId } });
+  return { favorited: true };
+}
+
+export async function getMyFavoriteReels(userId: string) {
+  const favorites = await prisma.reelFavorite.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      reel: {
+        include: {
+          user: { select: authorSelect },
+          _count: { select: { likes: true } },
+          likes: { where: { userId }, select: { id: true } },
+        },
+      },
+    },
+  });
+
+  return favorites
+    .filter((f) => f.reel)
+    .map((f) => ({
+      id: f.reel.id,
+      videoUrl: f.reel.videoUrl,
+      caption: f.reel.caption,
+      durationSec: f.reel.durationSec,
+      createdAt: f.reel.createdAt,
+      likeCount: f.reel._count.likes,
+      liked: f.reel.likes.length > 0,
+      favorited: true,
+      isMine: f.reel.userId === userId,
+      author: f.reel.user,
+    }));
 }
 
 export async function deleteReel(userId: string, reelId: string) {

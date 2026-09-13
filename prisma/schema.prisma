@@ -111,6 +111,7 @@ model User {
   statusViews            StatusView[]
   reels                  Reel[]
   reelLikes              ReelLike[]
+  reelFavorites          ReelFavorite[]
   closeFriendsOf         CloseFriend[] @relation("CloseFriendOwner")
   closeFriendedBy        CloseFriend[] @relation("CloseFriendTarget")
   reportsMade            Report[]          @relation("ReportsMade")
@@ -508,8 +509,9 @@ model Reel {
   durationSec  Int?     @map("duration_sec")
   createdAt    DateTime @default(now()) @map("created_at")
 
-  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  likes ReelLike[]
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes     ReelLike[]
+  favorites ReelFavorite[]
 
   @@index([userId])
   @@index([createdAt])
@@ -528,4 +530,18 @@ model ReelLike {
   @@unique([reelId, userId])
   @@index([reelId])
   @@map("reel_likes")
+}
+
+model ReelFavorite {
+  id        String   @id @default(uuid())
+  reelId    String   @map("reel_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reelId, userId])
+  @@index([userId])
+  @@map("reel_favorites")
 }

@@ -13,7 +13,7 @@ function generateCode(length = 10): string {
   return code;
 }
 
-export async function createShareLink(targetType: 'profile' | 'post', targetId: string) {
+export async function createShareLink(targetType: 'profile' | 'post' | 'reel', targetId: string) {
   const existing = await prisma.shareLink.findFirst({ where: { targetType, targetId } });
   if (existing) return existing.code;
 
@@ -38,6 +38,12 @@ export async function resolveShareLink(code: string) {
     const user = await prisma.user.findUnique({ where: { id: link.targetId }, select: { username: true } });
     if (!user?.username) throw new ApiError(404, 'LINK_NOT_FOUND', 'This link is invalid or has expired.');
     return { type: 'profile' as const, username: user.username };
+  }
+
+  if (link.targetType === 'reel') {
+    const reel = await prisma.reel.findUnique({ where: { id: link.targetId }, select: { id: true } });
+    if (!reel) throw new ApiError(404, 'LINK_NOT_FOUND', 'This link is invalid or has expired.');
+    return { type: 'reel' as const, reelId: reel.id };
   }
 
   const post = await prisma.post.findUnique({ where: { id: link.targetId }, select: { id: true } });

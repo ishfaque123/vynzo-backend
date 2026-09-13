@@ -5,6 +5,8 @@ import {
   createReel,
   getReelFeed,
   toggleReelLike,
+  toggleReelFavorite,
+  getMyFavoriteReels,
   deleteReel,
   getReelsConfig,
   getMyDailyReelStatus,
@@ -47,6 +49,20 @@ export async function toggleReelLikeHandler(req: Request, res: Response, next: N
   try {
     const result = await toggleReelLike(req.user!.id, req.params.id);
     sendSuccess(res, result);
+  } catch (err) { next(err); }
+}
+
+export async function toggleReelFavoriteHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await toggleReelFavorite(req.user!.id, req.params.id);
+    sendSuccess(res, result);
+  } catch (err) { next(err); }
+}
+
+export async function getMyFavoriteReelsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const reels = await getMyFavoriteReels(req.user!.id);
+    sendSuccess(res, { reels });
   } catch (err) { next(err); }
 }
 

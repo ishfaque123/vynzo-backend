@@ -6,7 +6,9 @@ import { ApiError } from '../middleware/errorHandler';
 export async function createShareLinkHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { type, id } = req.body as { type?: string; id?: string };
-    if (type !== 'profile' && type !== 'post') throw new ApiError(400, 'INVALID_TYPE', 'type must be "profile" or "post".');
+    if (type !== 'profile' && type !== 'post' && type !== 'reel') {
+      throw new ApiError(400, 'INVALID_TYPE', 'type must be "profile", "post", or "reel".');
+    }
     if (!id) throw new ApiError(400, 'MISSING_ID', 'id is required.');
     const code = await createShareLink(type, id);
     sendSuccess(res, { code });
