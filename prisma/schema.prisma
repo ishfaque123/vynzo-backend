@@ -107,6 +107,8 @@ model User {
   conversationParticipants ConversationParticipant[]
   messagesSent           Message[]
   hiddenMessages         HiddenMessage[]
+  statuses               Status[]
+  statusViews            StatusView[]
   closeFriendsOf         CloseFriend[] @relation("CloseFriendOwner")
   closeFriendedBy        CloseFriend[] @relation("CloseFriendTarget")
   reportsMade            Report[]          @relation("ReportsMade")
@@ -368,6 +370,38 @@ model CloseFriend {
   @@unique([ownerId, friendId])
   @@index([friendId])
   @@map("close_friends")
+}
+
+model Status {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  mediaUrl    String?  @map("media_url")
+  mediaType   String?  @map("media_type")
+  textContent String?  @db.VarChar(500) @map("text_content")
+  bgColor     String?  @map("bg_color")
+  createdAt   DateTime @default(now()) @map("created_at")
+  expiresAt   DateTime @map("expires_at")
+
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  views StatusView[]
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("statuses")
+}
+
+model StatusView {
+  id       String   @id @default(uuid())
+  statusId String   @map("status_id")
+  viewerId String   @map("viewer_id")
+  viewedAt DateTime @default(now()) @map("viewed_at")
+
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  viewer User   @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([statusId, viewerId])
+  @@index([statusId])
+  @@map("status_views")
 }
 
 model HiddenMessage {
