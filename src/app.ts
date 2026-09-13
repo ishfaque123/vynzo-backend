@@ -33,14 +33,6 @@ app.get('/api/health', (_req, res) => {
   sendSuccess(res, { status: 'ok', environment: env.nodeEnv });
 });
 
-app.get('/api/debug-env', (_req, res) => {
-  sendSuccess(res, { frontendUrl: env.frontendUrl, googleRedirectUri: env.googleRedirectUri });
-});
-
-app.get('/api/debug-cookies', (req, res) => {
-  sendSuccess(res, { rawCookieHeader: req.headers.cookie || null, parsedCookies: req.cookies });
-});
-
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
