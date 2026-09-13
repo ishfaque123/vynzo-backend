@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { env } from './env';
 import { randomUUID } from 'crypto';
 
@@ -25,4 +25,11 @@ export async function uploadToR2(buffer: Buffer, mimeType: string, folder: strin
   );
 
   return `${env.r2PublicUrl}/${key}`;
+}
+
+export async function deleteFromR2(url: string) {
+  const prefix = `${env.r2PublicUrl}/`;
+  if (!url.startsWith(prefix)) return;
+  const key = url.slice(prefix.length);
+  await r2Client.send(new DeleteObjectCommand({ Bucket: env.r2BucketName, Key: key }));
 }

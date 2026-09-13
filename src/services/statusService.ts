@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { isEitherBlocked } from './blockService';
+import { deleteFromR2 } from '../config/r2';
 
 const STATUS_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true };
@@ -57,4 +58,30 @@ export async function deleteStatus(userId: string, statusId: string) {
   if (status.userId !== userId) throw new ApiError(403, 'FORBIDDEN', 'Not your status.');
   await prisma.status.delete({ where: { id: statusId } });
   return { deleted: true };
+}
+
+// Runs periodically (see server.ts) to purge statuses whose 24-hour
+// lifetime has passed: removes the media file from R2 storage first,
+// then the database rows (StatusView rows cascade-delete automatically).
+export async function cleanupExpiredStatuses() {
+  const expired = await prisma.status.findMany({
+    where: { expiresAt: { lt: new Date() } },
+    select: { id: true, mediaUrl: true },
+  });
+
+  for (const s of expired) {
+    if (s.mediaUrl) {
+      try {
+        await deleteFromR2(s.mediaUrl);
+      } catch (err) {
+        console.error('Failed to delete expired status media from R2:', err);
+      }
+    }
+  }
+
+  if (expired.length) {
+    await prisma.status.deleteMany({ where: { id: { in: expired.map((s) => s.id) } } });
+  }
+
+  return { deleted: expired.length };
 }
