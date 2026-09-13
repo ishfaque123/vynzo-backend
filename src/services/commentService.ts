@@ -81,6 +81,24 @@ export async function addComment(
 }
 
 export async function getComments(postId: string, currentUserId?: string) {
+  // Bug fix: comments on a post used to be readable by anyone (even logged
+  // out), regardless of whether they were allowed to see the post itself.
+  // Same two checks as getPostById in postService.ts, for consistency:
+  // account-level privacy first, then post-level visibility.
+  const post = await prisma.post.findUnique({ where: { id: postId }, include: { user: true } });
+  if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+
+  if (post.user.isPrivate && post.userId !== currentUserId) {
+    const friendStatus = await getFriendStatus(currentUserId, post.userId);
+    if (friendStatus !== 'following' && friendStatus !== 'friends') {
+      throw new ApiError(403, 'PRIVATE_ACCOUNT', 'This account is private.');
+    }
+  }
+
+  if (post.visibility === 'private' && post.userId !== currentUserId) {
+    throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+  }
+
   const allComments = await prisma.comment.findMany({
     where: { postId },
     orderBy: { createdAt: 'asc' },
