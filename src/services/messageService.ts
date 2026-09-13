@@ -22,7 +22,7 @@ export async function getOrCreateConversation(userId: string, otherUserId: strin
     const isFollower = await prisma.follow.findUnique({
       where: { followerId_followingId: { followerId: userId, followingId: otherUserId } },
     });
-    if (!isFollower) throw new ApiError(403, 'MESSAGES_RESTRICTED', 'This user only accepts messages from people they follow... wait, followers.');
+    if (!isFollower) throw new ApiError(403, 'MESSAGES_RESTRICTED', 'This user only accepts messages from people they follow.');
   }
 
   const existing = await prisma.conversation.findFirst({
