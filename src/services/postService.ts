@@ -119,7 +119,15 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   // has paginated, plus headroom for ranking to still be meaningful.
   const poolSize = Math.max(200, offset + limit + 40);
 
-  const candidatePosts = await prisma.post.findMany({
+  const followingIds = currentUserId
+    ? new Set(
+        (await prisma.follow.findMany({ where: { followerId: currentUserId }, select: { followingId: true } })).map(
+          (f) => f.followingId
+        )
+      )
+    : new Set<string>();
+
+  const rawCandidatePosts = await prisma.post.findMany({
     where: {
       visibility: 'public',
       ...(hiddenPostIds.length ? { id: { notIn: hiddenPostIds } } : {}),
@@ -128,6 +136,10 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     orderBy: { createdAt: 'desc' },
     include: includeShape,
   });
+
+  const candidatePosts = rawCandidatePosts.filter(
+    (p) => !p.user.isPrivate || p.userId === currentUserId || followingIds.has(p.userId)
+  );
 
   let currentUserCountry: string | null = null;
   const affinityMap = new Map<string, number>();
@@ -182,6 +194,12 @@ export async function getPostsByUsername(username: string, currentUserId?: strin
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
   const isOwner = currentUserId === user.id;
+
+  if (user.isPrivate && !isOwner) {
+    const friendStatus = await getFriendStatus(currentUserId, user.id);
+    if (friendStatus !== 'following' && friendStatus !== 'friends') return [];
+  }
+
   const posts = await prisma.post.findMany({
     where: isOwner ? { userId: user.id } : { userId: user.id, visibility: 'public' },
     orderBy: { createdAt: 'desc' },
@@ -193,6 +211,14 @@ export async function getPostsByUsername(username: string, currentUserId?: strin
 export async function getPostById(postId: string, currentUserId?: string) {
   const post = await prisma.post.findUnique({ where: { id: postId }, include: includeShape });
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+
+  if (post.user.isPrivate && post.userId !== currentUserId) {
+    const friendStatus = await getFriendStatus(currentUserId, post.userId);
+    if (friendStatus !== 'following' && friendStatus !== 'friends') {
+      throw new ApiError(403, 'PRIVATE_ACCOUNT', 'This account is private.');
+    }
+  }
+
   return toPostDTO(post, currentUserId);
 }
 

@@ -32,4 +32,5 @@ export const profileUpdateSchema = z.object({
   messagePermission: z.enum(['everyone', 'followers', 'none']).optional(),
   tagPermission: z.enum(['everyone', 'followers', 'none']).optional(),
   showOnlineStatus: z.boolean().optional(),
+  isPrivate: z.boolean().optional(),
 });

@@ -83,6 +83,7 @@ model User {
   messagePermission      String            @default("everyone") @map("message_permission")
   tagPermission          String            @default("everyone") @map("tag_permission")
   showOnlineStatus       Boolean           @default(true) @map("show_online_status")
+  isPrivate              Boolean           @default(false) @map("is_private")
   walletBalance          Float             @default(0) @map("wallet_balance")
   usernameChangedAt      DateTime?         @map("username_changed_at")
   displayNameChangedAt   DateTime?         @map("display_name_changed_at")
@@ -342,6 +343,8 @@ model Message {
   mediaUrl       String?   @map("media_url")
   mediaType      String?   @map("media_type")
   voiceDuration  Int?      @map("voice_duration")
+  viewOnce       Boolean   @default(false) @map("view_once")
+  viewedAt       DateTime? @map("viewed_at")
   deletedAt      DateTime? @map("deleted_at")
   createdAt      DateTime  @default(now()) @map("created_at")
 
