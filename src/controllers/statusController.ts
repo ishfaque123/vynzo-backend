@@ -4,18 +4,18 @@ import { createStatus, getStatusFeed, viewStatus, getStatusViewers, deleteStatus
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
 
-const createStatusSchema = z.object({ textContent: z.string().max(500).optional(), bgColor: z.string().max(20).optional() });
+const createStatusSchema = z.object({ textContent: z.string().max(500).optional(), bgColor: z.string().max(20).optional(), visibility: z.enum(['everyone', 'close_friends']).optional() });
 
 export async function createStatusHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const { textContent, bgColor } = createStatusSchema.parse(req.body);
+    const { textContent, bgColor, visibility } = createStatusSchema.parse(req.body);
     let mediaUrl: string | undefined;
     let mediaType: string | undefined;
     if (req.file) {
       mediaUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'statuses');
       mediaType = req.file.mimetype.startsWith('video') ? 'video' : 'image';
     }
-    const status = await createStatus(req.user!.id, { mediaUrl, mediaType, textContent, bgColor });
+    const status = await createStatus(req.user!.id, { mediaUrl, mediaType, textContent, bgColor, visibility });
     sendSuccess(res, { status }, 201);
   } catch (err) { next(err); }
 }
