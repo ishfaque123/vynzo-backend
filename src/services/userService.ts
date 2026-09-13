@@ -27,6 +27,7 @@ export function toPrivateProfile(user: any) {
     tagPermission: user.tagPermission,
     showOnlineStatus: user.showOnlineStatus,
     isPrivate: user.isPrivate,
+    isPrivate: user.isPrivate,
     usernameChangedAt: user.usernameChangedAt,
     displayNameChangedAt: user.displayNameChangedAt,
     dobChangedAt: user.dobChangedAt,
