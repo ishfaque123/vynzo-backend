@@ -28,14 +28,22 @@ export async function getStatusFeed(userId: string) {
   const statuses = await prisma.status.findMany({
     where: { userId: { in: authorIds }, expiresAt: { gt: new Date() } },
     orderBy: { createdAt: 'asc' },
-    include: { user: { select: authorSelect }, views: { where: { viewerId: userId }, select: { id: true, liked: true } } },
+    include: { user: { select: authorSelect }, views: { select: { viewerId: true, liked: true } } },
   });
   const grouped: Record<string, any> = {};
+  const closeFriendAuthorIds = [...new Set(statuses.filter((s) => s.visibility === 'close_friends' && s.userId !== userId).map((s) => s.userId))];
+  const closeFriendChecks = closeFriendAuthorIds.length
+    ? await prisma.closeFriend.findMany({ where: { ownerId: { in: closeFriendAuthorIds }, friendId: userId }, select: { ownerId: true } })
+    : [];
+  const allowedCloseFriendAuthors = new Set(closeFriendChecks.map((c) => c.ownerId));
   for (const s of statuses) {
+    if (s.visibility === 'close_friends' && s.userId !== userId && !allowedCloseFriendAuthors.has(s.userId)) continue;
     if (!grouped[s.userId]) grouped[s.userId] = { user: s.user, items: [], hasUnseen: false };
-    const seen = s.views.length > 0;
-    const liked = s.views[0]?.liked || false;
-    grouped[s.userId].items.push({ id: s.id, mediaUrl: s.mediaUrl, mediaType: s.mediaType, textContent: s.textContent, bgColor: s.bgColor, createdAt: s.createdAt, seen, liked });
+    const myView = s.views.find((v) => v.viewerId === userId);
+    const seen = !!myView;
+    const liked = myView?.liked || false;
+    const viewCount = s.userId === userId ? s.views.length : undefined;
+    grouped[s.userId].items.push({ id: s.id, mediaUrl: s.mediaUrl, mediaType: s.mediaType, textContent: s.textContent, bgColor: s.bgColor, visibility: s.visibility, createdAt: s.createdAt, seen, liked, viewCount });
     if (!seen && s.userId !== userId) grouped[s.userId].hasUnseen = true;
   }
   const list = Object.entries(grouped).map(([uid, g]: any) => ({ userId: uid, ...g }));
