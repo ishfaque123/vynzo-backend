@@ -7,7 +7,7 @@ const STATUS_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const DAILY_STATUS_LIMIT = 20;
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true };
 
-export async function createStatus(userId: string, data: { mediaUrl?: string; mediaType?: string; textContent?: string; bgColor?: string }) {
+export async function createStatus(userId: string, data: { mediaUrl?: string; mediaType?: string; textContent?: string; bgColor?: string; visibility?: string }) {
   if (!data.mediaUrl && !data.textContent) throw new ApiError(400, 'EMPTY_STATUS', 'Status must have media or text.');
 
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -16,9 +16,10 @@ export async function createStatus(userId: string, data: { mediaUrl?: string; me
     throw new ApiError(429, 'DAILY_LIMIT_REACHED', `You can only post ${DAILY_STATUS_LIMIT} statuses per day. Try again later.`);
   }
 
+  const visibility = data.visibility === 'close_friends' ? 'close_friends' : 'everyone';
   const expiresAt = new Date(Date.now() + STATUS_LIFETIME_MS);
   return prisma.status.create({
-    data: { userId, mediaUrl: data.mediaUrl, mediaType: data.mediaType || (data.mediaUrl ? 'image' : 'text'), textContent: data.textContent, bgColor: data.bgColor, expiresAt },
+    data: { userId, mediaUrl: data.mediaUrl, mediaType: data.mediaType || (data.mediaUrl ? 'image' : 'text'), textContent: data.textContent, bgColor: data.bgColor, visibility, expiresAt },
   });
 }
 
