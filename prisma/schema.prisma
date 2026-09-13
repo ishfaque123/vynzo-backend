@@ -114,6 +114,7 @@ model User {
   blocksReceived         Block[]           @relation("BlocksReceived")
   userReportsMade        UserReport[]      @relation("UserReportsMade")
   userReportsReceived    UserReport[]      @relation("UserReportsReceived")
+  commentReportsMade     CommentReport[]   @relation("CommentReportsMade")
 
   @@index([username])
   @@index([country])
@@ -228,6 +229,7 @@ model Comment {
   replies       Comment[]         @relation("Replies")
   reactions     CommentReaction[]
   tags          CommentTag[]
+  reports       CommentReport[]
 
   @@index([postId])
   @@index([parentCommentId])
@@ -438,4 +440,20 @@ model UserReport {
   @@unique([reporterId, reportedId])
   @@index([reportedId])
   @@map("user_reports")
+}
+
+model CommentReport {
+  id         String       @id @default(uuid())
+  commentId  String       @map("comment_id")
+  reporterId String       @map("reporter_id")
+  reason     ReportReason @default(other)
+  details    String?      @db.VarChar(500)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  comment  Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  reporter User    @relation("CommentReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, reporterId])
+  @@index([commentId])
+  @@map("comment_reports")
 }

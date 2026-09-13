@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
-import { addComment, getComments, toggleCommentsSetting, deleteComment, editComment, setCommentReaction } from '../services/commentService';
+import { addComment, getComments, toggleCommentsSetting, deleteComment, editComment, setCommentReaction, reportComment } from '../services/commentService';
 import { z } from 'zod';
 
 const commentSchema = z.object({
@@ -55,6 +55,19 @@ export async function toggleCommentsSettingHandler(req: Request, res: Response, 
   try {
     const { disabled } = z.object({ disabled: z.boolean() }).parse(req.body);
     const result = await toggleCommentsSetting(req.user!.id, disabled);
+    sendSuccess(res, result);
+  } catch (err) { next(err); }
+}
+
+const reportCommentSchema = z.object({
+  reason: z.enum(['spam', 'harassment', 'hate_speech', 'violence', 'nudity', 'misinformation', 'other']).default('other'),
+  details: z.string().max(500).optional(),
+});
+
+export async function reportCommentHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { reason, details } = reportCommentSchema.parse(req.body ?? {});
+    const result = await reportComment(req.user!.id, req.params.commentId, reason, details);
     sendSuccess(res, result);
   } catch (err) { next(err); }
 }

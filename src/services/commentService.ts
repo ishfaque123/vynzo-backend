@@ -167,3 +167,18 @@ export async function toggleCommentsSetting(userId: string, disabled: boolean) {
   const user = await prisma.user.update({ where: { id: userId }, data: { commentsDisabled: disabled } });
   return { commentsDisabled: user.commentsDisabled };
 }
+
+export async function reportComment(userId: string, commentId: string, reason: string = 'other', details?: string) {
+  const comment = await prisma.comment.findUnique({ where: { id: commentId } });
+  if (!comment) throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found.');
+
+  const existing = await prisma.commentReport.findUnique({
+    where: { commentId_reporterId: { commentId, reporterId: userId } },
+  });
+  if (existing) throw new ApiError(400, 'ALREADY_REPORTED', 'You have already reported this comment.');
+
+  await prisma.commentReport.create({
+    data: { commentId, reporterId: userId, reason: reason as any, details },
+  });
+  return { reported: true };
+}
