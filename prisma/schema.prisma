@@ -109,6 +109,8 @@ model User {
   hiddenMessages         HiddenMessage[]
   statuses               Status[]
   statusViews            StatusView[]
+  reels                  Reel[]
+  reelLikes              ReelLike[]
   closeFriendsOf         CloseFriend[] @relation("CloseFriendOwner")
   closeFriendedBy        CloseFriend[] @relation("CloseFriendTarget")
   reportsMade            Report[]          @relation("ReportsMade")
@@ -495,4 +497,35 @@ model CommentReport {
   @@unique([commentId, reporterId])
   @@index([commentId])
   @@map("comment_reports")
+}
+
+model Reel {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  videoUrl     String   @map("video_url")
+  thumbnailUrl String?  @map("thumbnail_url")
+  caption      String?  @db.VarChar(500)
+  durationSec  Int?     @map("duration_sec")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  likes ReelLike[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("reels")
+}
+
+model ReelLike {
+  id        String   @id @default(uuid())
+  reelId    String   @map("reel_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reelId, userId])
+  @@index([reelId])
+  @@map("reel_likes")
 }

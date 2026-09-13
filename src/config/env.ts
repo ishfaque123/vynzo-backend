@@ -22,4 +22,11 @@ export const env = {
   r2SecretAccessKey: requireEnv('R2_SECRET_ACCESS_KEY'),
   r2BucketName: requireEnv('R2_BUCKET_NAME'),
   r2PublicUrl: requireEnv('R2_PUBLIC_URL'),
+  // Kill-switch for the Reels feature. Set REELS_ENABLED=false in
+  // Railway's environment variables to turn uploading and viewing
+  // reels off app-wide without a deploy. Anything else (unset,
+  // 'true', etc.) keeps it on.
+  reelsEnabled: process.env.REELS_ENABLED !== 'false',
+  reelMaxDurationSec: 60,
+  reelDailyLimit: 1,
 };

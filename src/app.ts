@@ -21,6 +21,7 @@ import deviceRoutes from './routes/deviceRoutes';
 import usageRoutes from './routes/usageRoutes';
 import closeFriendRoutes from './routes/closeFriendRoutes';
 import statusRoutes from './routes/statusRoutes';
+import reelRoutes from './routes/reelRoutes';
 
 export const app = express();
 
@@ -48,6 +49,7 @@ app.use('/api/devices', deviceRoutes);
 app.use('/api/usage', usageRoutes);
 app.use('/api/close-friends', closeFriendRoutes);
 app.use('/api/statuses', statusRoutes);
+app.use('/api/reels', reelRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
