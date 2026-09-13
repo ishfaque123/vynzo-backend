@@ -395,6 +395,7 @@ model StatusView {
   statusId String   @map("status_id")
   viewerId String   @map("viewer_id")
   viewedAt DateTime @default(now()) @map("viewed_at")
+  liked    Boolean  @default(false)
 
   status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
   viewer User   @relation(fields: [viewerId], references: [id], onDelete: Cascade)

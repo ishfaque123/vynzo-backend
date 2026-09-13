@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
-import { createStatus, getStatusFeed, viewStatus, getStatusViewers, deleteStatus } from '../services/statusService';
+import { createStatus, getStatusFeed, viewStatus, getStatusViewers, deleteStatus, toggleStatusLike } from '../services/statusService';
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
 
@@ -30,4 +30,8 @@ export async function getStatusViewersHandler(req: Request, res: Response, next:
 }
 export async function deleteStatusHandler(req: Request, res: Response, next: NextFunction) {
   try { sendSuccess(res, await deleteStatus(req.user!.id, req.params.id)); } catch (err) { next(err); }
+}
+
+export async function toggleStatusLikeHandler(req: Request, res: Response, next: NextFunction) {
+  try { sendSuccess(res, await toggleStatusLike(req.user!.id, req.params.id)); } catch (err) { next(err); }
 }

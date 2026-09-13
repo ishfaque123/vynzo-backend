@@ -20,13 +20,14 @@ export async function getStatusFeed(userId: string) {
   const statuses = await prisma.status.findMany({
     where: { userId: { in: authorIds }, expiresAt: { gt: new Date() } },
     orderBy: { createdAt: 'asc' },
-    include: { user: { select: authorSelect }, views: { where: { viewerId: userId }, select: { id: true } } },
+    include: { user: { select: authorSelect }, views: { where: { viewerId: userId }, select: { id: true, liked: true } } },
   });
   const grouped: Record<string, any> = {};
   for (const s of statuses) {
     if (!grouped[s.userId]) grouped[s.userId] = { user: s.user, items: [], hasUnseen: false };
     const seen = s.views.length > 0;
-    grouped[s.userId].items.push({ id: s.id, mediaUrl: s.mediaUrl, mediaType: s.mediaType, textContent: s.textContent, bgColor: s.bgColor, createdAt: s.createdAt, seen });
+    const liked = s.views[0]?.liked || false;
+    grouped[s.userId].items.push({ id: s.id, mediaUrl: s.mediaUrl, mediaType: s.mediaType, textContent: s.textContent, bgColor: s.bgColor, createdAt: s.createdAt, seen, liked });
     if (!seen && s.userId !== userId) grouped[s.userId].hasUnseen = true;
   }
   const list = Object.entries(grouped).map(([uid, g]: any) => ({ userId: uid, ...g }));
@@ -49,7 +50,24 @@ export async function getStatusViewers(userId: string, statusId: string) {
   if (!status) throw new ApiError(404, 'STATUS_NOT_FOUND', 'Status not found.');
   if (status.userId !== userId) throw new ApiError(403, 'FORBIDDEN', 'Not your status.');
   const views = await prisma.statusView.findMany({ where: { statusId }, include: { viewer: { select: authorSelect } }, orderBy: { viewedAt: 'desc' } });
-  return views.map((v) => ({ ...v.viewer, viewedAt: v.viewedAt }));
+  return views.map((v) => ({ ...v.viewer, viewedAt: v.viewedAt, liked: v.liked }));
+}
+
+export async function toggleStatusLike(userId: string, statusId: string) {
+  const status = await prisma.status.findUnique({ where: { id: statusId } });
+  if (!status) throw new ApiError(404, 'STATUS_NOT_FOUND', 'Status not found.');
+  if (status.userId === userId) throw new ApiError(400, 'CANNOT_LIKE_OWN', 'You cannot like your own status.');
+  const blocked = await isEitherBlocked(userId, status.userId);
+  if (blocked) throw new ApiError(403, 'BLOCKED', 'Cannot like this status.');
+
+  const existing = await prisma.statusView.findUnique({ where: { statusId_viewerId: { statusId, viewerId: userId } } });
+  const nextLiked = !existing?.liked;
+  await prisma.statusView.upsert({
+    where: { statusId_viewerId: { statusId, viewerId: userId } },
+    update: { liked: nextLiked },
+    create: { statusId, viewerId: userId, liked: nextLiked },
+  });
+  return { liked: nextLiked };
 }
 
 export async function deleteStatus(userId: string, statusId: string) {
