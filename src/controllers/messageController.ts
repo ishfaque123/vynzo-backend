@@ -9,7 +9,9 @@ export async function listConversationsHandler(req: Request, res: Response, next
     const conversations = await listConversations(req.user!.id);
     const withPresence = conversations.map((c) => ({
       ...c,
-      otherUser: c.otherUser ? { ...c.otherUser, isOnline: isUserOnline(c.otherUser.id) } : null,
+      otherUser: c.otherUser
+        ? { ...c.otherUser, isOnline: c.otherUser.showOnlineStatus === false ? false : isUserOnline(c.otherUser.id) }
+        : null,
     }));
     sendSuccess(res, withPresence);
   } catch (err) {

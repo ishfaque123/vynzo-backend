@@ -2,7 +2,7 @@ import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { isEitherBlocked } from './blockService';
 
-const userSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, lastActiveAt: true, publicKey: true } as const;
+const userSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, lastActiveAt: true, publicKey: true, showOnlineStatus: true } as const;
 
 export async function getOrCreateConversation(userId: string, otherUserId: string) {
   if (userId === otherUserId) {
@@ -14,6 +14,16 @@ export async function getOrCreateConversation(userId: string, otherUserId: strin
 
   const blocked = await isEitherBlocked(userId, otherUserId);
   if (blocked) throw new ApiError(403, 'BLOCKED', 'You cannot message this user.');
+
+  if (otherUser.messagePermission === 'none') {
+    throw new ApiError(403, 'MESSAGES_DISABLED', 'This user is not accepting messages.');
+  }
+  if (otherUser.messagePermission === 'followers') {
+    const isFollower = await prisma.follow.findUnique({
+      where: { followerId_followingId: { followerId: userId, followingId: otherUserId } },
+    });
+    if (!isFollower) throw new ApiError(403, 'MESSAGES_RESTRICTED', 'This user only accepts messages from people they follow... wait, followers.');
+  }
 
   const existing = await prisma.conversation.findFirst({
     where: {
@@ -62,10 +72,14 @@ export async function listConversations(userId: string) {
       else lastMessageStatus = 'sent';
     }
 
+    const otherUserShaped = other?.user
+      ? { ...other.user, lastActiveAt: other.user.showOnlineStatus === false ? null : other.user.lastActiveAt }
+      : null;
+
     return {
       id: c.id,
       isGroup: c.isGroup,
-      otherUser: other?.user || null,
+      otherUser: otherUserShaped,
       lastMessage,
       lastMessageStatus,
       unread,
