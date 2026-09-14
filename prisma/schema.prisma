@@ -108,6 +108,7 @@ model User {
   messagesSent           Message[]
   hiddenMessages         HiddenMessage[]
   statuses               Status[]
+  reelComments           ReelComment[]
   statusViews            StatusView[]
   reels                  Reel[]
   reelLikes              ReelLike[]
@@ -512,10 +513,25 @@ model Reel {
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   likes     ReelLike[]
   favorites ReelFavorite[]
+  comments  ReelComment[]
 
   @@index([userId])
   @@index([createdAt])
   @@map("reels")
+}
+
+model ReelComment {
+  id        String   @id @default(uuid())
+  reelId    String   @map("reel_id")
+  userId    String   @map("user_id")
+  content   String   @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([reelId, createdAt])
+  @@map("reel_comments")
 }
 
 model ReelLike {
