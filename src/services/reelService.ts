@@ -6,6 +6,35 @@ import { getFriendStatus } from './followService';
 
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true };
 
+export async function addReelComment(userId: string, reelId: string, content: string) {
+  const reel = await prisma.reel.findUnique({ where: { id: reelId } });
+  if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
+  const trimmed = content.trim();
+  if (!trimmed) throw new ApiError(400, 'EMPTY_COMMENT', 'Comment cannot be empty.');
+  return prisma.reelComment.create({
+    data: { reelId, userId, content: trimmed },
+    include: { user: { select: authorSelect } },
+  });
+}
+
+export async function getReelComments(reelId: string) {
+  return prisma.reelComment.findMany({
+    where: { reelId },
+    orderBy: { createdAt: 'asc' },
+    include: { user: { select: authorSelect } },
+  });
+}
+
+export async function deleteReelComment(userId: string, commentId: string) {
+  const comment = await prisma.reelComment.findUnique({ where: { id: commentId }, include: { reel: true } });
+  if (!comment) throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found.');
+  if (comment.userId !== userId && comment.reel.userId !== userId) {
+    throw new ApiError(403, 'FORBIDDEN', 'You cannot delete this comment.');
+  }
+  await prisma.reelComment.delete({ where: { id: commentId } });
+  return { deleted: true };
+}
+
 export async function getReelsConfig() {
   return {
     enabled: env.reelsEnabled,

@@ -10,6 +10,9 @@ import {
   deleteReel,
   getReelsConfig,
   getMyDailyReelStatus,
+  addReelComment,
+  getReelComments,
+  deleteReelComment,
 } from '../services/reelService';
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
@@ -76,5 +79,26 @@ export async function deleteReelHandler(req: Request, res: Response, next: NextF
 export async function getMyReelStatusHandler(req: Request, res: Response, next: NextFunction) {
   try {
     sendSuccess(res, await getMyDailyReelStatus(req.user!.id));
+  } catch (err) { next(err); }
+}
+
+export async function addReelCommentHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const comment = await addReelComment(req.user!.id, req.params.id, req.body.content || '');
+    sendSuccess(res, { comment }, 201);
+  } catch (err) { next(err); }
+}
+
+export async function getReelCommentsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const comments = await getReelComments(req.params.id);
+    sendSuccess(res, { comments });
+  } catch (err) { next(err); }
+}
+
+export async function deleteReelCommentHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await deleteReelComment(req.user!.id, req.params.commentId);
+    sendSuccess(res, result);
   } catch (err) { next(err); }
 }
