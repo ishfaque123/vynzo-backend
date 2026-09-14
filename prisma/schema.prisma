@@ -109,6 +109,7 @@ model User {
   hiddenMessages         HiddenMessage[]
   statuses               Status[]
   reelComments           ReelComment[]
+  reelCommentReactions   ReelCommentReaction[]
   statusViews            StatusView[]
   reels                  Reel[]
   reelLikes              ReelLike[]
@@ -334,7 +335,7 @@ model ConversationParticipant {
   joinedAt        DateTime  @default(now()) @map("joined_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([conversationId, userId])
   @@index([userId])
@@ -521,17 +522,37 @@ model Reel {
 }
 
 model ReelComment {
-  id        String   @id @default(uuid())
-  reelId    String   @map("reel_id")
-  userId    String   @map("user_id")
-  content   String   @db.VarChar(500)
-  createdAt DateTime @default(now()) @map("created_at")
+  id              String            @id @default(uuid())
+  reelId          String            @map("reel_id")
+  userId          String            @map("user_id")
+  parentCommentId String?           @map("parent_comment_id")
+  content         String            @db.VarChar(500)
+  createdAt       DateTime          @default(now()) @map("created_at")
 
-  reel Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reel          Reel               @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentComment ReelComment?       @relation("ReelCommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies       ReelComment[]      @relation("ReelCommentReplies")
+  reactions     ReelCommentReaction[]
 
   @@index([reelId, createdAt])
+  @@index([parentCommentId])
   @@map("reel_comments")
+}
+
+model ReelCommentReaction {
+  id        String       @id @default(uuid())
+  userId    String       @map("user_id")
+  commentId String       @map("comment_id")
+  type      ReactionType @default(like)
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment ReelComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@index([commentId])
+  @@map("reel_comment_reactions")
 }
 
 model ReelLike {
