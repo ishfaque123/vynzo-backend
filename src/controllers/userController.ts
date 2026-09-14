@@ -5,6 +5,7 @@ import { profileSetupSchema, profileUpdateSchema } from '../utils/validators/pro
 import { completeProfile, updateProfile, getPublicProfileByUsername, toPrivateProfile, searchUsers } from '../services/userService';
 import { reportUser } from '../services/userReportService';
 import { prisma } from '../config/prisma';
+import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
 
 export async function getMyProfile(req: Request, res: Response, next: NextFunction) {
@@ -74,5 +75,23 @@ export async function reportUserHandler(req: Request, res: Response, next: NextF
     const { reason, details } = reportUserSchema.parse(req.body ?? {});
     const result = await reportUser(req.user!.id, req.params.userId, reason, details);
     sendSuccess(res, result);
+  } catch (err) { next(err); }
+}
+
+export async function updateAvatarHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) throw new ApiError(400, 'NO_FILE', 'No image uploaded.');
+    const url = await uploadToR2(req.file.buffer, req.file.mimetype, 'avatars');
+    const user = await updateProfile(req.user!.id, { profilePictureUrl: url } as any);
+    sendSuccess(res, { user: toPrivateProfile(user) });
+  } catch (err) { next(err); }
+}
+
+export async function updateCoverHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) throw new ApiError(400, 'NO_FILE', 'No image uploaded.');
+    const url = await uploadToR2(req.file.buffer, req.file.mimetype, 'covers');
+    const user = await updateProfile(req.user!.id, { coverPhotoUrl: url } as any);
+    sendSuccess(res, { user: toPrivateProfile(user) });
   } catch (err) { next(err); }
 }
