@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { createNotification } from './notificationService';
+import { isEitherBlocked } from './blockService';
 
 const FRIEND_LIMIT = 5000;
 
@@ -16,6 +17,10 @@ export async function toggleFollow(followerId: string, followingId: string) {
 
   const target = await prisma.user.findUnique({ where: { id: followingId } });
   if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+  if (await isEitherBlocked(followerId, followingId)) {
+    throw new ApiError(403, 'BLOCKED', 'You cannot follow this user.');
+  }
 
   const existing = await prisma.follow.findUnique({ where: { followerId_followingId: { followerId, followingId } } });
 
@@ -49,6 +54,7 @@ export async function getFollowCounts(userId: string) {
 export async function getFriendStatus(currentUserId: string | undefined, otherUserId: string): Promise<'none' | 'following' | 'follow_back' | 'friends' | 'self'> {
   if (!currentUserId) return 'none';
   if (currentUserId === otherUserId) return 'self';
+  if (await isEitherBlocked(currentUserId, otherUserId)) return 'none';
 
   const [iFollow, theyFollow] = await Promise.all([
     prisma.follow.findUnique({ where: { followerId_followingId: { followerId: currentUserId, followingId: otherUserId } } }),
