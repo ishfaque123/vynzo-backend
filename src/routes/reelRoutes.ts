@@ -12,6 +12,7 @@ import {
   getMyReelStatusHandler,
   addReelCommentHandler,
   getReelCommentsHandler,
+  toggleReelCommentReactionHandler,
   deleteReelCommentHandler,
 } from '../controllers/reelController';
 
@@ -24,8 +25,9 @@ router.post('/', authMiddleware, reelUpload.single('video'), createReelHandler);
 router.post('/:id/like', authMiddleware, toggleReelLikeHandler);
 router.post('/:id/favorite', authMiddleware, toggleReelFavoriteHandler);
 router.delete('/:id', authMiddleware, deleteReelHandler);
-router.get('/:id/comments', getReelCommentsHandler);
+router.get('/:id/comments', authMiddleware, getReelCommentsHandler);
 router.post('/:id/comments', authMiddleware, addReelCommentHandler);
+router.post('/comments/:commentId/reaction', authMiddleware, toggleReelCommentReactionHandler);
 router.delete('/comments/:commentId', authMiddleware, deleteReelCommentHandler);
 
 export default router;
