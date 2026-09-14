@@ -8,6 +8,7 @@ import { deleteMessageForMe, deleteMessageForEveryone } from '../services/messag
 
 interface AuthedSocket extends Socket {
   userId?: string;
+  accountSessionId?: string;
 }
 
 const onlineUsers = new Map<string, Set<string>>();
@@ -25,13 +26,6 @@ function parseCookie(header: string | undefined, name: string): string | undefin
   return match ? decodeURIComponent(match.slice(name.length + 1)) : undefined;
 }
 
-// Every conversation-scoped event (read receipts, typing, sending) must
-// verify the socket's own userId is actually a participant of the target
-// conversationId before touching the DB or broadcasting to that room.
-// socket.to(room) delivers to whoever is IN the room regardless of whether
-// the emitting socket is a member of it — so skipping this check lets any
-// authenticated user inject fake events into a conversation they were
-// never part of, as long as they know or guess its id.
 async function isParticipant(conversationId: string, userId: string): Promise<boolean> {
   const row = await prisma.conversationParticipant.findUnique({
     where: { conversationId_userId: { conversationId, userId } },
@@ -53,7 +47,13 @@ export function initSocketServer(httpServer: HttpServer) {
       const user = await prisma.user.findUnique({ where: { id: payload.userId } });
       if (!user || user.accountStatus !== 'active') return next(new Error('NOT_AUTHENTICATED'));
 
+      if (payload.accountSessionId) {
+        const session = await prisma.accountSession.findUnique({ where: { id: payload.accountSessionId } });
+        if (!session || session.userId !== user.id) return next(new Error('SESSION_REVOKED'));
+      }
+
       socket.userId = user.id;
+      socket.accountSessionId = payload.accountSessionId;
       next();
     } catch {
       next(new Error('NOT_AUTHENTICATED'));
@@ -90,107 +90,105 @@ export function initSocketServer(httpServer: HttpServer) {
       });
     }
 
-    socket.on(
-      'message:send',
-      async (
-        {
-          conversationId,
-          content,
-          mediaUrl,
-          mediaType,
-          voiceDuration,
-        }: {
-          conversationId: string;
-          content: string;
-          mediaUrl?: string;
-          mediaType?: 'image' | 'voice';
-          voiceDuration?: number;
-        },
-        ack?: (res: { success: boolean; data?: unknown; error?: string; delivered?: boolean }) => void
-      ) => {
-        try {
-          const trimmed = (content || '').trim();
-          if (!trimmed && !mediaUrl) return;
-          if (!conversationId) return;
+    socket.on('message:send', async ({ conversationId, content, mediaUrl, mediaType, voiceDuration }: {
+      conversationId: string;
+      content: string;
+      mediaUrl?: string;
+      mediaType?: 'image' | 'voice';
+      voiceDuration?: number;
+    }, ack?: (res: { success: boolean; data?: unknown; error?: string; delivered?: boolean }) => void) => {
+      try {
+        const trimmed = (content || '').trim();
+        if (!trimmed && !mediaUrl) {
+          if (ack) ack({ success: false, error: 'EMPTY_MESSAGE' });
+          return;
+        }
+        if (!conversationId) {
+          if (ack) ack({ success: false, error: 'MISSING_CONVERSATION' });
+          return;
+        }
 
-          const isParticipantRow = await prisma.conversationParticipant.findUnique({
-            where: { conversationId_userId: { conversationId, userId } },
-          });
-          if (!isParticipantRow) return;
+        const isParticipantRow = await prisma.conversationParticipant.findUnique({
+          where: { conversationId_userId: { conversationId, userId } },
+        });
+        if (!isParticipantRow) {
+          if (ack) ack({ success: false, error: 'NOT_A_PARTICIPANT' });
+          return;
+        }
 
-          const otherParticipant = await prisma.conversationParticipant.findFirst({
-            where: { conversationId, userId: { not: userId } },
+        const otherParticipant = await prisma.conversationParticipant.findFirst({
+          where: { conversationId, userId: { not: userId } },
+        });
+        if (otherParticipant) {
+          const blocked = await isEitherBlocked(userId, otherParticipant.userId);
+          if (blocked) {
+            if (ack) ack({ success: false, error: 'BLOCKED' });
+            return;
+          }
+
+          const target = await prisma.user.findUnique({
+            where: { id: otherParticipant.userId },
+            select: { messagePermission: true },
           });
-          if (otherParticipant) {
-            const blocked = await isEitherBlocked(userId, otherParticipant.userId);
-            if (blocked) {
-              if (ack) ack({ success: false, error: 'BLOCKED' });
+          if (target?.messagePermission === 'none') {
+            if (ack) ack({ success: false, error: 'MESSAGES_DISABLED' });
+            return;
+          }
+          if (target?.messagePermission === 'followers') {
+            const isFollower = await prisma.follow.findUnique({
+              where: { followerId_followingId: { followerId: userId, followingId: otherParticipant.userId } },
+            });
+            if (!isFollower) {
+              if (ack) ack({ success: false, error: 'MESSAGES_RESTRICTED' });
               return;
             }
           }
-
-          const message = await prisma.message.create({
-            data: {
-              conversationId,
-              senderId: userId,
-              content: trimmed,
-              mediaUrl: mediaUrl || null,
-              mediaType: mediaUrl ? mediaType || 'image' : null,
-              voiceDuration: mediaType === 'voice' ? voiceDuration || null : null,
-            },
-            include: {
-              sender: {
-                select: { id: true, username: true, displayName: true, profilePictureUrl: true },
-              },
-            },
-          });
-
-          await prisma.conversation.update({
-            where: { id: conversationId },
-            data: { updatedAt: new Date() },
-          });
-
-          io.to(`conversation:${conversationId}`).emit('message:new', message);
-
-          let delivered = false;
-          if (otherParticipant && isUserOnline(otherParticipant.userId)) {
-            await prisma.conversationParticipant.update({
-              where: { id: otherParticipant.id },
-              data: { lastDeliveredAt: new Date() },
-            });
-            delivered = true;
-          }
-
-          if (ack) ack({ success: true, data: message, delivered });
-        } catch {
-          if (ack) ack({ success: false, error: 'SEND_FAILED' });
         }
-      }
-    );
 
-    socket.on(
-      'message:delete',
-      async (
-        { messageId, mode }: { messageId: string; mode: 'me' | 'everyone' },
-        ack?: (res: { success: boolean; error?: string }) => void
-      ) => {
-        try {
-          if (!messageId) {
-            if (ack) ack({ success: false, error: 'MISSING_ID' });
-            return;
-          }
-          if (mode === 'everyone') {
-            const { conversationId } = await deleteMessageForEveryone(userId, messageId);
-            io.to(`conversation:${conversationId}`).emit('message:deleted', { messageId });
-          } else {
-            await deleteMessageForMe(userId, messageId);
-          }
-          if (ack) ack({ success: true });
-        } catch {
-          if (ack) ack({ success: false, error: 'DELETE_FAILED' });
+        const message = await prisma.message.create({
+          data: {
+            conversationId,
+            senderId: userId,
+            content: trimmed,
+            mediaUrl: mediaUrl || null,
+            mediaType: mediaUrl ? mediaType || 'image' : null,
+            voiceDuration: mediaType === 'voice' ? voiceDuration || null : null,
+          },
+          include: { sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } } },
+        });
+
+        await prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
+        io.to(`conversation:${conversationId}`).emit('message:new', message);
+
+        let delivered = false;
+        if (otherParticipant && isUserOnline(otherParticipant.userId)) {
+          await prisma.conversationParticipant.update({ where: { id: otherParticipant.id }, data: { lastDeliveredAt: new Date() } });
+          delivered = true;
         }
+
+        if (ack) ack({ success: true, data: message, delivered });
+      } catch {
+        if (ack) ack({ success: false, error: 'SEND_FAILED' });
       }
-    );
+    });
+
+    socket.on('message:delete', async ({ messageId, mode }: { messageId: string; mode: 'me' | 'everyone' }, ack?: (res: { success: boolean; error?: string }) => void) => {
+      try {
+        if (!messageId) {
+          if (ack) ack({ success: false, error: 'MISSING_ID' });
+          return;
+        }
+        if (mode === 'everyone') {
+          const { conversationId } = await deleteMessageForEveryone(userId, messageId);
+          io.to(`conversation:${conversationId}`).emit('message:deleted', { messageId });
+        } else {
+          await deleteMessageForMe(userId, messageId);
+        }
+        if (ack) ack({ success: true });
+      } catch {
+        if (ack) ack({ success: false, error: 'DELETE_FAILED' });
+      }
+    });
 
     socket.on('typing:start', async ({ conversationId }: { conversationId: string }) => {
       if (!conversationId) return;
@@ -209,10 +207,7 @@ export function initSocketServer(httpServer: HttpServer) {
       if (!(await isParticipant(conversationId, userId))) return;
 
       const readAt = new Date();
-      await prisma.conversationParticipant.updateMany({
-        where: { conversationId, userId },
-        data: { lastReadAt: readAt, lastDeliveredAt: readAt },
-      });
+      await prisma.conversationParticipant.updateMany({ where: { conversationId, userId }, data: { lastReadAt: readAt, lastDeliveredAt: readAt } });
       socket.to(`conversation:${conversationId}`).emit('conversation:read', { conversationId, userId, readAt });
     });
 
@@ -222,9 +217,7 @@ export function initSocketServer(httpServer: HttpServer) {
       set.delete(socket.id);
       if (set.size === 0) {
         onlineUsers.delete(userId);
-        await prisma.user
-          .update({ where: { id: userId }, data: { lastActiveAt: new Date() } })
-          .catch(() => {});
+        await prisma.user.update({ where: { id: userId }, data: { lastActiveAt: new Date() } }).catch(() => {});
         conversationIds.forEach((id) => {
           socket.to(`conversation:${id}`).emit('presence:offline', { userId, lastActiveAt: new Date() });
         });
