@@ -3,6 +3,7 @@ import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 import { createReel, getReelFeed, toggleReelLike, toggleReelFavorite, getMyFavoriteReels, deleteReel, getReelsConfig, getMyDailyReelStatus, addReelComment, getReelComments, toggleReelCommentReaction, deleteReelComment } from '../services/reelService';
 import { editReelComment } from '../services/reelCommentEditService';
+import { reportReelComment } from '../services/reelCommentReportService';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
 
@@ -27,4 +28,5 @@ export async function addReelCommentHandler(req: Request, res: Response, next: N
 export async function getReelCommentsHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, { comments: await getReelComments(req.params.id, req.user!.id) }); } catch (err) { next(err); } }
 export async function toggleReelCommentReactionHandler(req: Request, res: Response, next: NextFunction) { try { const type = typeof req.body?.type === 'string' ? req.body.type : 'like'; sendSuccess(res, await toggleReelCommentReaction(req.user!.id, req.params.commentId, type)); } catch (err) { next(err); } }
 export async function editReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { const content = typeof req.body?.content === 'string' ? req.body.content : ''; sendSuccess(res, { comment: await editReelComment(req.user!.id, req.params.commentId, content) }); } catch (err) { next(err); } }
+export async function reportReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { const reason = typeof req.body?.reason === 'string' ? req.body.reason : 'other'; const details = typeof req.body?.details === 'string' ? req.body.details : undefined; sendSuccess(res, await reportReelComment(req.user!.id, req.params.commentId, reason, details)); } catch (err) { next(err); } }
 export async function deleteReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await deleteReelComment(req.user!.id, req.params.commentId)); } catch (err) { next(err); } }
