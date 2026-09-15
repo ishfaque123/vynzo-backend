@@ -14,6 +14,7 @@ import {
   getReelCommentsHandler,
   toggleReelCommentReactionHandler,
   editReelCommentHandler,
+  reportReelCommentHandler,
   deleteReelCommentHandler,
 } from '../controllers/reelController';
 
@@ -30,6 +31,7 @@ router.get('/:id/comments', authMiddleware, getReelCommentsHandler);
 router.post('/:id/comments', authMiddleware, addReelCommentHandler);
 router.post('/comments/:commentId/reaction', authMiddleware, toggleReelCommentReactionHandler);
 router.put('/comments/:commentId', authMiddleware, editReelCommentHandler);
+router.post('/comments/:commentId/report', authMiddleware, reportReelCommentHandler);
 router.delete('/comments/:commentId', authMiddleware, deleteReelCommentHandler);
 
 export default router;
