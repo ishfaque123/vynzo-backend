@@ -34,3 +34,24 @@ export async function getGoogleUserFromCode(code: string) {
     email: payload.email,
   };
 }
+
+export async function getGoogleUserFromIdToken(idToken: string, expectedNonce: string) {
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: env.googleClientId,
+  });
+  const payload = ticket.getPayload();
+
+  if (!payload || !payload.sub) {
+    throw new Error('Invalid Google token payload');
+  }
+
+  if (!payload.nonce || payload.nonce !== expectedNonce) {
+    throw new Error('Invalid Google token nonce');
+  }
+
+  return {
+    googleId: payload.sub,
+    email: payload.email,
+  };
+}
