@@ -13,6 +13,7 @@ import {
   addReelCommentHandler,
   getReelCommentsHandler,
   toggleReelCommentReactionHandler,
+  editReelCommentHandler,
   deleteReelCommentHandler,
 } from '../controllers/reelController';
 
@@ -28,6 +29,7 @@ router.delete('/:id', authMiddleware, deleteReelHandler);
 router.get('/:id/comments', authMiddleware, getReelCommentsHandler);
 router.post('/:id/comments', authMiddleware, addReelCommentHandler);
 router.post('/comments/:commentId/reaction', authMiddleware, toggleReelCommentReactionHandler);
+router.put('/comments/:commentId', authMiddleware, editReelCommentHandler);
 router.delete('/comments/:commentId', authMiddleware, deleteReelCommentHandler);
 
 export default router;
