@@ -75,7 +75,7 @@ model User {
   phone                  String?
   province               String?
   city                   String?
-  country                String?
+  country               String?
   profileCompleted       Boolean           @default(false) @map("profile_completed")
   accountStatus          AccountStatus     @default(active) @map("account_status")
   role                   String            @default("user")
@@ -90,7 +90,7 @@ model User {
   dobChangedAt           DateTime?         @map("dob_changed_at")
   createdAt              DateTime          @default(now()) @map("created_at")
   updatedAt              DateTime          @updatedAt @map("updated_at")
-  lastActiveAt           DateTime?         @map("last_active_at")
+  lastActiveAt           DateTime?         
   publicKey              String?           @db.Text @map("public_key")
   posts                  Post[]
   likes                  Like[]
@@ -110,7 +110,8 @@ model User {
   statuses               Status[]
   reelComments           ReelComment[]
   reelCommentReactions   ReelCommentReaction[]
-  statusViews            StatusView[]
+  reelCommentReports     ReelCommentReport[] @relation("ReelCommentReportsMade")
+  statusViews             StatusView[]
   reels                  Reel[]
   reelLikes              ReelLike[]
   reelFavorites          ReelFavorite[]
@@ -534,6 +535,7 @@ model ReelComment {
   parentComment ReelComment?       @relation("ReelCommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
   replies       ReelComment[]      @relation("ReelCommentReplies")
   reactions     ReelCommentReaction[]
+  reports       ReelCommentReport[]
 
   @@index([reelId, createdAt])
   @@index([parentCommentId])
@@ -541,11 +543,11 @@ model ReelComment {
 }
 
 model ReelCommentReaction {
-  id        String       @id @default(uuid())
-  userId    String       @map("user_id")
-  commentId String       @map("comment_id")
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  commentId String   @map("comment_id")
   type      ReactionType @default(like)
-  createdAt DateTime     @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   comment ReelComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
@@ -581,4 +583,20 @@ model ReelFavorite {
   @@unique([reelId, userId])
   @@index([userId])
   @@map("reel_favorites")
+}
+
+model ReelCommentReport {
+  id         String       @id @default(uuid())
+  commentId  String       @map("comment_id")
+  reporterId String       @map("reporter_id")
+  reason     ReportReason @default(other)
+  details    String?      @db.VarChar(500)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  comment  ReelComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  reporter User        @relation("ReelCommentReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, reporterId])
+  @@index([commentId])
+  @@map("reel_comment_reports")
 }
