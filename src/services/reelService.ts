@@ -200,8 +200,18 @@ export async function toggleReelFavorite(userId: string, reelId: string) {
 }
 
 export async function getMyFavoriteReels(userId: string) {
+  const blockedRows = await prisma.block.findMany({
+    where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+    select: { blockerId: true, blockedId: true },
+  });
+  const blockedIds = new Set<string>();
+  for (const b of blockedRows) blockedIds.add(b.blockerId === userId ? b.blockedId : b.blockerId);
+
   const favorites = await prisma.reelFavorite.findMany({
-    where: { userId },
+    where: {
+      userId,
+      reel: blockedIds.size ? { userId: { notIn: [...blockedIds] } } : {},
+    },
     orderBy: { createdAt: 'desc' },
     include: { reel: { include: { user: { select: authorSelect }, _count: { select: { likes: true, comments: true } }, likes: { where: { userId }, select: { id: true } } } } },
   });
