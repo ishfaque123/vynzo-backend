@@ -45,13 +45,18 @@ function clearAuthCookies(res: Response) {
 
 export async function googleLoginStart(req: Request, res: Response) {
   const forceSelect = req.query.switch === '1';
-  res.redirect(getGoogleAuthUrl(forceSelect));
+  const mobileApp = req.query.app === '1';
+  res.redirect(getGoogleAuthUrl(forceSelect, mobileApp));
 }
 
 export async function googleCallback(req: Request, res: Response) {
   const code = req.query.code as string | undefined;
+  const mobileApp = req.query.state === 'frianzo_mobile';
 
   if (!code) {
+    if (mobileApp) {
+      return res.redirect('frianzo://oauth/callback?error=google_auth_failed');
+    }
     return res.redirect(`${env.frontendUrl}/login?error=google_auth_failed`);
   }
 
@@ -59,12 +64,24 @@ export async function googleCallback(req: Request, res: Response) {
     const meta = extractRequestMeta(req);
     const result = await loginWithGoogleCode(code, req.cookies?.vynzo_device, meta);
 
+    if (mobileApp) {
+      const params = new URLSearchParams({
+        token: result.token,
+        device: result.deviceToken,
+        newUser: result.isNewUser ? '1' : '0',
+      });
+      return res.redirect(`frianzo://oauth/callback?${params.toString()}`);
+    }
+
     clearAuthCookies(res);
     res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
     res.cookie('vynzo_device', result.deviceToken, DEVICE_COOKIE_OPTIONS);
 
     res.redirect(`${env.frontendUrl}${result.isNewUser ? '/profile-setup' : '/'}`);
   } catch (err) {
+    if (mobileApp) {
+      return res.redirect('frianzo://oauth/callback?error=google_auth_failed');
+    }
     res.redirect(`${env.frontendUrl}/login?error=google_auth_failed`);
   }
 }
