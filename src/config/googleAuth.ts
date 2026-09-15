@@ -7,11 +7,12 @@ export const googleClient = new OAuth2Client(
   env.googleRedirectUri
 );
 
-export function getGoogleAuthUrl(forceSelect?: boolean) {
+export function getGoogleAuthUrl(forceSelect?: boolean, mobileApp?: boolean) {
   return googleClient.generateAuthUrl({
     access_type: 'online',
     scope: ['openid', 'email', 'profile'],
     prompt: 'select_account',
+    ...(mobileApp ? { state: 'frianzo_mobile' } : {}),
   });
 }
 
