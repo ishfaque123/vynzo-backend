@@ -3,6 +3,7 @@ import { sendSuccess } from '../utils/ApiResponse';
 import { switchAccountSchema } from '../utils/validators/authValidators';
 import {
   loginWithGoogleCode,
+  loginWithGoogleIdToken,
   getSavedAccounts,
   switchAccount,
 } from '../services/authService';
@@ -11,9 +12,8 @@ import { getGoogleAuthUrl } from '../config/googleAuth';
 import { toPrivateProfile } from '../services/userService';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
+import { ApiError } from '../middleware/errorHandler';
 
-// No `domain` attribute — the backend is served from Railway's own domain
-// (via the api.frianzo.online custom domain), not frianzo.online itself.
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
@@ -28,14 +28,6 @@ const DEVICE_COOKIE_OPTIONS = {
   maxAge: 30 * 24 * 60 * 60 * 1000,
 };
 
-// An older version of this code set cookies with `domain: '.frianzo.online'`.
-// Any browser that ever received one of those still has it stored. Clearing
-// with today's (no-domain) options only removes the host-only variant, so a
-// leftover `.frianzo.online`-scoped cookie can stick around and get sent
-// alongside the new one — the browser then may present the OLD, stale token
-// to the backend instead of the fresh one, which looks exactly like "every
-// Gmail account I pick logs me into the same old account." Clearing BOTH
-// variants on every login/switch/logout guarantees no old cookie survives.
 function clearAuthCookies(res: Response) {
   res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
   res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
@@ -86,6 +78,40 @@ export async function googleCallback(req: Request, res: Response) {
   }
 }
 
+export function googleNativeConfig(_req: Request, res: Response) {
+  return sendSuccess(res, { clientId: env.googleClientId });
+}
+
+export async function googleNativeLogin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { idToken, nonce, deviceToken } = req.body as {
+      idToken?: string;
+      nonce?: string;
+      deviceToken?: string;
+    };
+
+    if (!idToken || !nonce) {
+      throw new ApiError(400, 'GOOGLE_CREDENTIAL_REQUIRED', 'Google credential is required.');
+    }
+
+    const meta = extractRequestMeta(req);
+    const result = await loginWithGoogleIdToken(
+      idToken,
+      nonce,
+      deviceToken,
+      meta,
+    );
+
+    return sendSuccess(res, {
+      token: result.token,
+      deviceToken: result.deviceToken,
+      isNewUser: result.isNewUser,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getMe(req: Request, res: Response, next: NextFunction) {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
@@ -121,7 +147,7 @@ export async function switchSavedAccount(req: Request, res: Response, next: Next
 export async function savePublicKeyHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { publicKey } = req.body as { publicKey?: string };
-    if (!publicKey) throw new (await import('../middleware/errorHandler')).ApiError(400, 'NO_KEY', 'publicKey is required.');
+    if (!publicKey) throw new ApiError(400, 'NO_KEY', 'publicKey is required.');
     await prisma.user.update({ where: { id: req.user!.id }, data: { publicKey } });
     sendSuccess(res, { saved: true });
   } catch (err) {
@@ -129,9 +155,7 @@ export async function savePublicKeyHandler(req: Request, res: Response, next: Ne
   }
 }
 
-
 export async function logout(_req: Request, res: Response) {
   clearAuthCookies(res);
-  // vynzo_device intentionally kept — saved accounts belong to this device.
   sendSuccess(res, { loggedOut: true });
 }
