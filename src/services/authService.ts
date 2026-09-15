@@ -1,13 +1,15 @@
 import { prisma } from '../config/prisma';
-import { getGoogleUserFromCode } from '../config/googleAuth';
+import { getGoogleUserFromCode, getGoogleUserFromIdToken } from '../config/googleAuth';
 import { signToken } from '../utils/jwt';
 import { getOrCreateDeviceSession, getDeviceSession, RequestMeta } from './deviceSessionService';
 import { createNotification } from './notificationService';
 import { ApiError } from '../middleware/errorHandler';
 
-export async function loginWithGoogleCode(code: string, deviceToken?: string, meta?: RequestMeta) {
-  const { googleId, email } = await getGoogleUserFromCode(code);
-
+async function loginWithGoogleIdentity(
+  googleId: string,
+  deviceToken?: string,
+  meta?: RequestMeta,
+) {
   let user = await prisma.user.findUnique({ where: { googleId } });
   let isNewUser = false;
 
@@ -67,6 +69,21 @@ export async function loginWithGoogleCode(code: string, deviceToken?: string, me
     isNewUser,
     deviceToken: device.rawToken,
   };
+}
+
+export async function loginWithGoogleCode(code: string, deviceToken?: string, meta?: RequestMeta) {
+  const { googleId } = await getGoogleUserFromCode(code);
+  return loginWithGoogleIdentity(googleId, deviceToken, meta);
+}
+
+export async function loginWithGoogleIdToken(
+  idToken: string,
+  nonce: string,
+  deviceToken?: string,
+  meta?: RequestMeta,
+) {
+  const { googleId } = await getGoogleUserFromIdToken(idToken, nonce);
+  return loginWithGoogleIdentity(googleId, deviceToken, meta);
 }
 
 export async function getSavedAccounts(deviceToken?: string) {
