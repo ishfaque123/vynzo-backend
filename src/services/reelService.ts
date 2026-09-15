@@ -11,29 +11,21 @@ export async function addReelComment(userId: string, reelId: string, content: st
   const reel = await prisma.reel.findUnique({ where: { id: reelId } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   if (await isEitherBlocked(userId, reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot comment on this reel.');
-
   const trimmed = content.trim();
   if (!trimmed) throw new ApiError(400, 'EMPTY_COMMENT', 'Comment cannot be empty.');
-
   if (parentCommentId) {
     const parent = await prisma.reelComment.findUnique({ where: { id: parentCommentId }, select: { id: true, reelId: true } });
     if (!parent || parent.reelId !== reelId) throw new ApiError(400, 'INVALID_PARENT', 'Reply target is invalid.');
   }
-
   return prisma.reelComment.create({ data: { reelId, userId, parentCommentId, content: trimmed }, include: { user: { select: authorSelect } } });
 }
 
 export async function getReelComments(reelId: string, currentUserId: string) {
   const rows = await prisma.reelComment.findMany({ where: { reelId }, orderBy: { createdAt: 'asc' }, include: { user: { select: authorSelect }, reactions: { select: { type: true, userId: true } } } });
   const nodes = new Map<string, any>();
-  for (const row of rows) {
-    nodes.set(row.id, { id: row.id, reelId: row.reelId, content: row.content, createdAt: row.createdAt, author: row.user, reactionCount: row.reactions.length, myReaction: row.reactions.find((r) => r.userId === currentUserId)?.type ?? null, replies: [] });
-  }
+  for (const row of rows) nodes.set(row.id, { id: row.id, reelId: row.reelId, content: row.content, createdAt: row.createdAt, author: row.user, reactionCount: row.reactions.length, myReaction: row.reactions.find((r) => r.userId === currentUserId)?.type ?? null, replies: [] });
   const roots: any[] = [];
-  for (const row of rows) {
-    const node = nodes.get(row.id)!;
-    if (row.parentCommentId && nodes.has(row.parentCommentId)) nodes.get(row.parentCommentId).replies.push(node); else roots.push(node);
-  }
+  for (const row of rows) { const node = nodes.get(row.id)!; if (row.parentCommentId && nodes.has(row.parentCommentId)) nodes.get(row.parentCommentId).replies.push(node); else roots.push(node); }
   return roots;
 }
 
@@ -44,11 +36,7 @@ export async function toggleReelCommentReaction(userId: string, commentId: strin
   if (!comment) throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found.');
   if (await isEitherBlocked(userId, comment.reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot react to this comment.');
   const existing = await prisma.reelCommentReaction.findUnique({ where: { userId_commentId: { userId, commentId } } });
-  if (existing) {
-    if (existing.type === type) { await prisma.reelCommentReaction.delete({ where: { id: existing.id } }); return { reaction: null }; }
-    const updated = await prisma.reelCommentReaction.update({ where: { id: existing.id }, data: { type: type as any } });
-    return { reaction: updated.type };
-  }
+  if (existing) { if (existing.type === type) { await prisma.reelCommentReaction.delete({ where: { id: existing.id } }); return { reaction: null }; } const updated = await prisma.reelCommentReaction.update({ where: { id: existing.id }, data: { type: type as any } }); return { reaction: updated.type }; }
   const created = await prisma.reelCommentReaction.create({ data: { userId, commentId, type: type as any } });
   return { reaction: created.type };
 }
@@ -114,7 +102,7 @@ export async function getMyFavoriteReels(userId: string) {
   const blockedIds = new Set<string>();
   for (const b of blockedRows) blockedIds.add(b.blockerId === userId ? b.blockedId : b.blockerId);
   const favorites = await prisma.reelFavorite.findMany({ where: { userId, reel: blockedIds.size ? { userId: { notIn: [...blockedIds] } } : {} }, orderBy: { createdAt: 'desc' }, include: { reel: { include: { user: { select: authorSelect }, _count: { select: { likes: true, comments: true } }, likes: { where: { userId }, select: { id: true } } } } } });
-  return favorites.filter((f) => f.reel).map((f) => ({
+  const reels = await Promise.all(favorites.filter((f) => f.reel).map(async (f) => ({
     id: f.reel.id,
     videoUrl: f.reel.videoUrl,
     caption: f.reel.caption,
@@ -127,7 +115,8 @@ export async function getMyFavoriteReels(userId: string) {
     isMine: f.reel.userId === userId,
     author: f.reel.user,
     friendStatus: await getFriendStatus(userId, f.reel.userId),
-  }));
+  })));
+  return reels;
 }
 
 export async function deleteReel(userId: string, reelId: string) {
