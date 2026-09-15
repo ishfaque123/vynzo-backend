@@ -177,10 +177,12 @@ export async function toggleReelLike(userId: string, reelId: string) {
   const existing = await prisma.reelLike.findUnique({ where: { reelId_userId: { reelId, userId } } });
   if (existing) {
     await prisma.reelLike.delete({ where: { id: existing.id } });
-    return { liked: false };
+  } else {
+    await prisma.reelLike.create({ data: { reelId, userId } });
   }
-  await prisma.reelLike.create({ data: { reelId, userId } });
-  return { liked: true };
+
+  const likeCount = await prisma.reelLike.count({ where: { reelId } });
+  return { liked: !existing, likeCount };
 }
 
 export async function toggleReelFavorite(userId: string, reelId: string) {
