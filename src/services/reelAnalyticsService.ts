@@ -5,7 +5,8 @@ const allowedReasons = new Set(['spam', 'harassment', 'hate_speech', 'violence',
 
 async function ensureTables() {
   await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS reel_reports (id VARCHAR(191) NOT NULL PRIMARY KEY, reel_id VARCHAR(191) NOT NULL, reporter_id VARCHAR(191) NOT NULL, reason VARCHAR(50) NOT NULL DEFAULT 'other', details VARCHAR(500) NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), UNIQUE KEY reel_report_unique (reel_id, reporter_id), KEY reel_reports_reel_id_idx (reel_id), KEY reel_reports_reporter_id_idx (reporter_id), CONSTRAINT reel_reports_reel_fk FOREIGN KEY (reel_id) REFERENCES reels(id) ON DELETE CASCADE, CONSTRAINT reel_reports_reporter_fk FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
-  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS reel_views (id VARCHAR(191) NOT NULL PRIMARY KEY, reel_id VARCHAR(191) NOT NULL, viewer_id VARCHAR(191) NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), UNIQUE KEY reel_view_unique (reel_id, viewer_id), KEY reel_views_reel_id_idx (reel_id), KEY reel_views_viewer_id_idx (viewer_id), CONSTRAINT reel_views_reel_fk FOREIGN KEY (reel_id) REFERENCES reels(id) ON DELETE CASCADE, CONSTRAINT reel_views_viewer_fk FOREIGN KEY (viewer_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS reel_views (id VARCHAR(191) NOT NULL PRIMARY KEY, reel_id VARCHAR(191) NOT NULL, viewer_id VARCHAR(191) NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), KEY reel_views_reel_id_idx (reel_id), KEY reel_views_viewer_id_idx (viewer_id), CONSTRAINT reel_views_reel_fk FOREIGN KEY (reel_id) REFERENCES reels(id) ON DELETE CASCADE, CONSTRAINT reel_views_viewer_fk FOREIGN KEY (viewer_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views DROP INDEX reel_view_unique`); } catch {}
 }
 
 export async function reportReel(userId: string, reelId: string, reason: string, details?: string) {
@@ -23,7 +24,7 @@ export async function recordReelView(userId: string, reelId: string) {
   const reel = await prisma.reel.findUnique({ where: { id: reelId }, select: { id: true } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   await ensureTables();
-  await prisma.$executeRawUnsafe(`INSERT IGNORE INTO reel_views (id, reel_id, viewer_id) VALUES (UUID(), ?, ?)`, reelId, userId);
+  await prisma.$executeRawUnsafe(`INSERT INTO reel_views (id, reel_id, viewer_id) VALUES (UUID(), ?, ?)`, reelId, userId);
   const rows = await prisma.$queryRawUnsafe<Array<{ viewCount: bigint }>>(`SELECT COUNT(*) AS viewCount FROM reel_views WHERE reel_id = ?`, reelId);
   return { viewed: true, viewCount: Number(rows[0]?.viewCount ?? 0) };
 }
