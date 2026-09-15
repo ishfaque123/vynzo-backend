@@ -119,6 +119,23 @@ export async function getMessages(userId: string, conversationId: string, cursor
   };
 }
 
+export async function deleteConversation(userId: string, conversationId: string) {
+  const participant = await prisma.conversationParticipant.findUnique({
+    where: { conversationId_userId: { conversationId, userId } },
+  });
+  if (!participant) throw new ApiError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found.');
+
+  await prisma.$transaction(async (tx) => {
+    const messages = await tx.message.findMany({ where: { conversationId }, select: { id: true } });
+    if (messages.length) {
+      await tx.hiddenMessage.deleteMany({ where: { userId, messageId: { in: messages.map((m) => m.id) } } });
+    }
+    await tx.conversationParticipant.delete({ where: { conversationId_userId: { conversationId, userId } } });
+  });
+
+  return { deleted: true };
+}
+
 export async function deleteMessageForMe(userId: string, messageId: string) {
   const message = await prisma.message.findUnique({ where: { id: messageId } });
   if (!message) throw new ApiError(404, 'MESSAGE_NOT_FOUND', 'Message not found.');
