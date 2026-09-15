@@ -67,7 +67,7 @@ model User {
   username               String?           @unique
   displayName            String?           @map("display_name")
   dateOfBirth            DateTime?         @map("date_of_birth")
-  bio                    String?           @db.VarChar(300)
+  bio                    String?            @db.VarChar(300)
   profilePictureUrl      String?           @map("profile_picture_url")
   coverPhotoUrl          String?           @map("cover_photo_url")
   gender                 Gender?
@@ -547,7 +547,7 @@ model ReelCommentReaction {
   userId    String   @map("user_id")
   commentId String   @map("comment_id")
   type      ReactionType @default(like)
-  createdAt DateTime     @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   comment ReelComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
@@ -599,4 +599,15 @@ model ReelCommentReport {
   @@unique([commentId, reporterId])
   @@index([commentId])
   @@map("reel_comment_reports")
+}
+
+model ReelView {
+  id        String   @id @default(uuid())
+  reelId    String   @map("reel_id")
+  viewerId  String   @map("viewer_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([reelId], name: "reel_views_reel_id_idx")
+  @@index([viewerId], name: "reel_views_viewer_id_idx")
+  @@map("reel_views")
 }
