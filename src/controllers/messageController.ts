@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
-import { getOrCreateConversation, listConversations, getMessages } from '../services/messageService';
+import { getOrCreateConversation, listConversations, getMessages, deleteConversation } from '../services/messageService';
 import { isUserOnline } from '../socket/socketServer';
 
 export async function listConversationsHandler(req: Request, res: Response, next: NextFunction) {
@@ -36,6 +36,16 @@ export async function getMessagesHandler(req: Request, res: Response, next: Next
     const cursor = req.query.cursor as string | undefined;
     const messages = await getMessages(req.user!.id, id, cursor);
     sendSuccess(res, messages);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteConversationHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    const result = await deleteConversation(req.user!.id, id);
+    sendSuccess(res, result);
   } catch (err) {
     next(err);
   }
