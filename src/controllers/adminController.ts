@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/prisma';
+import { AccountStatus } from '@prisma/client';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 
@@ -19,8 +20,10 @@ function skipFor(page: number, limit: number) {
   return (page - 1) * limit;
 }
 
-function normalizeStatus(value: unknown) {
-  if (value === 'active' || value === 'suspended' || value === 'deactivated') return value;
+function normalizeStatus(value: unknown): AccountStatus | undefined {
+  if (value === 'active') return AccountStatus.active;
+  if (value === 'suspended') return AccountStatus.suspended;
+  if (value === 'deactivated') return AccountStatus.deactivated;
   return undefined;
 }
 
