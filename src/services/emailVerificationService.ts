@@ -74,11 +74,19 @@ export async function requestEmailVerification(rawEmail: string) {
     data: { usedAt: new Date() },
   });
 
-  await sendVerificationEmail(email, code);
-
-  await prisma.emailVerificationCode.create({
+  const record = await prisma.emailVerificationCode.create({
     data: { email, codeHash, expiresAt },
   });
+
+  try {
+    await sendVerificationEmail(email, code);
+  } catch (error) {
+    await prisma.emailVerificationCode.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    });
+    throw error;
+  }
 
   return { sent: true };
 }
