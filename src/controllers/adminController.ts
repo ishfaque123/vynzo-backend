@@ -1,0 +1,354 @@
+import { Request, Response, NextFunction } from 'express';
+import { prisma } from '../config/prisma';
+import { sendSuccess } from '../utils/ApiResponse';
+import { ApiError } from '../middleware/errorHandler';
+
+const PAGE_SIZE_MAX = 50;
+
+function pageValue(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+}
+
+function limitValue(value: unknown) {
+  const parsed = Number(value);
+  return Math.min(PAGE_SIZE_MAX, Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 20);
+}
+
+function skipFor(page: number, limit: number) {
+  return (page - 1) * limit;
+}
+
+function normalizeStatus(value: unknown) {
+  if (value === 'active' || value === 'suspended' || value === 'deactivated') return value;
+  return undefined;
+}
+
+export async function getAdminOverview(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const [
+      totalUsers,
+      activeUsers,
+      suspendedUsers,
+      deactivatedUsers,
+      totalPosts,
+      totalComments,
+      totalReels,
+      postReports,
+      userReports,
+      commentReports,
+      reelCommentReports,
+      recentUsers,
+      recentReports,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { accountStatus: 'active' } }),
+      prisma.user.count({ where: { accountStatus: 'suspended' } }),
+      prisma.user.count({ where: { accountStatus: 'deactivated' } }),
+      prisma.post.count(),
+      prisma.comment.count(),
+      prisma.reel.count(),
+      prisma.report.count(),
+      prisma.userReport.count(),
+      prisma.commentReport.count(),
+      prisma.reelCommentReport.count(),
+      prisma.user.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          email: true,
+          role: true,
+          accountStatus: true,
+          profilePictureUrl: true,
+          createdAt: true,
+          lastActiveAt: true,
+        },
+      }),
+      prisma.report.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+        select: {
+          id: true,
+          reason: true,
+          details: true,
+          createdAt: true,
+          post: { select: { id: true, content: true } },
+          reporter: { select: { id: true, username: true, displayName: true } },
+        },
+      }),
+    ]);
+
+    return sendSuccess(res, {
+      counts: {
+        totalUsers,
+        activeUsers,
+        suspendedUsers,
+        deactivatedUsers,
+        totalPosts,
+        totalComments,
+        totalReels,
+        totalReports: postReports + userReports + commentReports + reelCommentReports,
+        postReports,
+        userReports,
+        commentReports,
+        reelCommentReports,
+      },
+      recentUsers,
+      recentReports,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listAdminUsers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const page = pageValue(req.query.page);
+    const limit = limitValue(req.query.limit);
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const status = normalizeStatus(req.query.status);
+
+    const where = {
+      ...(status ? { accountStatus: status } : {}),
+      ...(search
+        ? {
+            OR: [
+              { username: { contains: search } },
+              { displayName: { contains: search } },
+              { email: { contains: search } },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, users] = await Promise.all([
+      prisma.user.count({ where }),
+      prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: skipFor(page, limit),
+        take: limit,
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          email: true,
+          googleId: true,
+          role: true,
+          accountStatus: true,
+          profileCompleted: true,
+          profilePictureUrl: true,
+          createdAt: true,
+          updatedAt: true,
+          lastActiveAt: true,
+          _count: {
+            select: {
+              posts: true,
+              comments: true,
+              followers: true,
+              following: true,
+              accountSessions: true,
+              reportsMade: true,
+              userReportsReceived: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return sendSuccess(res, { users, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateAdminUserStatus(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.params.userId;
+    const { status } = req.body as { status?: string };
+    const nextStatus = normalizeStatus(status);
+
+    if (!nextStatus) {
+      throw new ApiError(400, 'INVALID_ACCOUNT_STATUS', 'Invalid account status.');
+    }
+
+    if (userId === req.user!.id && nextStatus !== 'active') {
+      throw new ApiError(400, 'CANNOT_RESTRICT_SELF', 'You cannot restrict your own admin account.');
+    }
+
+    const target = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, role: true } });
+    if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+    if ((target.role === 'admin' || target.role === 'superadmin') && req.user!.role !== 'superadmin') {
+      throw new ApiError(403, 'ADMIN_TARGET_REQUIRED', 'Only a superadmin can change another admin account.');
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { accountStatus: nextStatus },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        email: true,
+        role: true,
+        accountStatus: true,
+      },
+    });
+
+    return sendSuccess(res, { user });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listAdminPosts(req: Request, res: Response, next: NextFunction) {
+  try {
+    const page = pageValue(req.query.page);
+    const limit = limitValue(req.query.limit);
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+    const where = search
+      ? {
+          OR: [
+            { content: { contains: search } },
+            { user: { username: { contains: search } } },
+            { user: { displayName: { contains: search } } },
+          ],
+        }
+      : {};
+
+    const [total, posts] = await Promise.all([
+      prisma.post.count({ where }),
+      prisma.post.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: skipFor(page, limit),
+        take: limit,
+        select: {
+          id: true,
+          content: true,
+          imageUrl: true,
+          visibility: true,
+          createdAt: true,
+          user: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } },
+          _count: { select: { likes: true, comments: true, reports: true, reposts: true } },
+        },
+      }),
+    ]);
+
+    return sendSuccess(res, { posts, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteAdminPost(req: Request, res: Response, next: NextFunction) {
+  try {
+    const post = await prisma.post.findUnique({ where: { id: req.params.postId }, select: { id: true } });
+    if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+
+    await prisma.post.delete({ where: { id: post.id } });
+    return sendSuccess(res, { deleted: true, postId: post.id });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listAdminReports(req: Request, res: Response, next: NextFunction) {
+  try {
+    const page = pageValue(req.query.page);
+    const limit = limitValue(req.query.limit);
+
+    const [postReports, userReports, commentReports, reelCommentReports] = await Promise.all([
+      prisma.report.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: skipFor(page, limit),
+        take: limit,
+        select: {
+          id: true,
+          reason: true,
+          details: true,
+          createdAt: true,
+          post: { select: { id: true, content: true, user: { select: { username: true, displayName: true } } } },
+          reporter: { select: { id: true, username: true, displayName: true } },
+        },
+      }),
+      prisma.userReport.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: skipFor(page, limit),
+        take: limit,
+        select: {
+          id: true,
+          reason: true,
+          details: true,
+          createdAt: true,
+          reported: { select: { id: true, username: true, displayName: true, accountStatus: true } },
+          reporter: { select: { id: true, username: true, displayName: true } },
+        },
+      }),
+      prisma.commentReport.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: skipFor(page, limit),
+        take: limit,
+        select: {
+          id: true,
+          reason: true,
+          details: true,
+          createdAt: true,
+          comment: { select: { id: true, content: true, postId: true } },
+          reporter: { select: { id: true, username: true, displayName: true } },
+        },
+      }),
+      prisma.reelCommentReport.findMany({
+        orderBy: { createdAt: 'desc' },
+        skip: skipFor(page, limit),
+        take: limit,
+        select: {
+          id: true,
+          reason: true,
+          details: true,
+          createdAt: true,
+          comment: { select: { id: true, content: true, reelId: true } },
+          reporter: { select: { id: true, username: true, displayName: true } },
+        },
+      }),
+    ]);
+
+    return sendSuccess(res, {
+      postReports,
+      userReports,
+      commentReports,
+      reelCommentReports,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteAdminComment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const comment = await prisma.comment.findUnique({ where: { id: req.params.commentId }, select: { id: true } });
+    if (!comment) throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found.');
+
+    await prisma.comment.delete({ where: { id: comment.id } });
+    return sendSuccess(res, { deleted: true, commentId: comment.id });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteAdminReel(req: Request, res: Response, next: NextFunction) {
+  try {
+    const reel = await prisma.reel.findUnique({ where: { id: req.params.reelId }, select: { id: true } });
+    if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
+
+    await prisma.reel.delete({ where: { id: reel.id } });
+    return sendSuccess(res, { deleted: true, reelId: reel.id });
+  } catch (err) {
+    next(err);
+  }
+}
