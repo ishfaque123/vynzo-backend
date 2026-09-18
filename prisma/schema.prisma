@@ -63,7 +63,8 @@ enum ReportReason {
 
 model User {
   id                     String            @id @default(uuid())
-  googleId               String            @unique @map("google_id")
+  googleId               String?           @unique @map("google_id")
+  email                  String?           @unique
   username               String?           @unique
   displayName            String?           @map("display_name")
   dateOfBirth            DateTime?         @map("date_of_birth")
@@ -610,4 +611,17 @@ model ReelView {
   @@index([reelId], name: "reel_views_reel_id_idx")
   @@index([viewerId], name: "reel_views_viewer_id_idx")
   @@map("reel_views")
+}
+model EmailVerificationCode {
+  id         String    @id @default(uuid())
+  email      String
+  codeHash   String    @map("code_hash")
+  expiresAt  DateTime  @map("expires_at")
+  attempts   Int       @default(0)
+  usedAt     DateTime? @map("used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([email, createdAt])
+  @@index([expiresAt])
+  @@map("email_verification_codes")
 }
