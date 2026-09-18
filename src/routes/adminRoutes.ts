@@ -10,6 +10,7 @@ import {
   listAdminReports,
   deleteAdminComment,
   deleteAdminReel,
+  listAdminAuthFailures,
 } from '../controllers/adminController';
 
 const router = Router();
@@ -24,5 +25,6 @@ router.delete('/posts/:postId', deleteAdminPost);
 router.get('/reports', listAdminReports);
 router.delete('/comments/:commentId', deleteAdminComment);
 router.delete('/reels/:reelId', deleteAdminReel);
+router.get('/auth-failures', listAdminAuthFailures);
 
 export default router;
