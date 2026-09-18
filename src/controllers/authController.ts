@@ -15,6 +15,7 @@ import { toPrivateProfile } from '../services/userService';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { ApiError } from '../middleware/errorHandler';
+import { logAuthFailure } from '../services/authFailureLogService';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -73,6 +74,14 @@ export async function googleCallback(req: Request, res: Response) {
 
     res.redirect(`${env.frontendUrl}${result.isNewUser ? '/profile-setup' : '/'}`);
   } catch (err) {
+    await logAuthFailure({
+      platform: mobileApp ? 'webview' : 'web',
+      stage: 'google_callback',
+      code: err instanceof ApiError ? err.code : 'GOOGLE_AUTH_FAILED',
+      message: err instanceof Error ? err.message : 'Google authentication failed.',
+      userAgent: req.get('user-agent'),
+      ipAddress: req.ip,
+    });
     if (mobileApp) {
       return res.redirect('frianzo://oauth/callback?error=google_auth_failed');
     }
@@ -110,6 +119,16 @@ export async function googleNativeLogin(req: Request, res: Response, next: NextF
       isNewUser: result.isNewUser,
     });
   } catch (err) {
+    await logAuthFailure({
+      platform: 'android',
+      stage: 'google_native_login',
+      code: err instanceof ApiError ? err.code : 'GOOGLE_NATIVE_LOGIN_FAILED',
+      message: err instanceof Error ? err.message : 'Google native authentication failed.',
+      email: typeof req.body?.email === 'string' ? req.body.email : undefined,
+      appVersion: req.get('x-app-version'),
+      userAgent: req.get('user-agent'),
+      ipAddress: req.ip,
+    });
     next(err);
   }
 }
