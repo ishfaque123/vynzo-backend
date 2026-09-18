@@ -11,11 +11,12 @@ async function loginWithGoogleIdentity(
   deviceToken?: string,
   meta?: RequestMeta,
 ) {
+  const normalizedEmail = email?.trim().toLowerCase();
   let user = await prisma.user.findUnique({ where: { googleId } });
   let isNewUser = false;
 
-  if (!user && email) {
-    const emailUser = await prisma.user.findUnique({ where: { email } });
+  if (!user && normalizedEmail) {
+    const emailUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (emailUser) {
       if (emailUser.accountStatus !== 'active') {
         throw new ApiError(403, 'ACCOUNT_NOT_ACTIVE', 'This account is not active.');
@@ -31,7 +32,7 @@ async function loginWithGoogleIdentity(
   }
 
   if (!user) {
-    user = await prisma.user.create({ data: { googleId, email: email || null } });
+    user = await prisma.user.create({ data: { googleId, email: normalizedEmail || null } });
     isNewUser = true;
   } else {
     if (user.accountStatus !== 'active') {
@@ -39,7 +40,7 @@ async function loginWithGoogleIdentity(
     }
     user = await prisma.user.update({
       where: { id: user.id },
-      data: { ...(email && !user.email ? { email } : {}), lastActiveAt: new Date() },
+      data: { ...(normalizedEmail && !user.email ? { email: normalizedEmail } : {}), lastActiveAt: new Date() },
     });
   }
 
@@ -168,11 +169,12 @@ export async function switchAccount(accountId: string, deviceToken?: string) {
 
 
 export async function loginWithEmail(email: string, deviceToken?: string, meta?: RequestMeta) {
-  let user = await prisma.user.findUnique({ where: { email } });
+  const normalizedEmail = email.trim().toLowerCase();
+  let user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   let isNewUser = false;
 
   if (!user) {
-    user = await prisma.user.create({ data: { email } });
+    user = await prisma.user.create({ data: { email: normalizedEmail } });
     isNewUser = true;
   } else if (user.accountStatus !== 'active') {
     throw new ApiError(403, 'ACCOUNT_NOT_ACTIVE', 'This account is not active.');
