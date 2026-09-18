@@ -355,3 +355,28 @@ export async function deleteAdminReel(req: Request, res: Response, next: NextFun
     next(err);
   }
 }
+
+export async function listAdminAuthFailures(req: Request, res: Response, next: NextFunction) {
+  try {
+    const page = pageValue(req.query.page);
+    const limit = limitValue(req.query.limit);
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const where = search
+      ? { OR: [{ email: { contains: search } }, { code: { contains: search } }, { message: { contains: search } }, { stage: { contains: search } }] }
+      : {};
+
+    const [total, logs] = await Promise.all([
+      prisma.authFailureLog.count({ where }),
+      prisma.authFailureLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: skipFor(page, limit),
+        take: limit,
+      }),
+    ]);
+
+    return sendSuccess(res, { logs, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+  } catch (err) {
+    next(err);
+  }
+}
