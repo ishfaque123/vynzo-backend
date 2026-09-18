@@ -18,7 +18,7 @@ function hashCode(email: string, code: string) {
 }
 
 function validateEmail(email: string) {
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)) {
     throw new ApiError(400, 'INVALID_EMAIL', 'Enter a valid email address.');
   }
 }
@@ -48,6 +48,21 @@ async function sendVerificationEmail(email: string, code: string) {
   );
 
   if (!response.ok) {
+    let responseBody = '';
+    try {
+      responseBody = await response.text();
+    } catch {
+      responseBody = '';
+    }
+
+    console.error('[emailVerification] Hostinger send failed', {
+      status: response.status,
+      statusText: response.statusText,
+      body: responseBody.slice(0, 1000),
+      mailboxConfigured: Boolean(env.hostingerMailboxResourceId),
+      tokenConfigured: Boolean(env.hostingerMailApiToken),
+    });
+
     throw new ApiError(502, 'EMAIL_SEND_FAILED', 'Could not send the verification email.');
   }
 }
