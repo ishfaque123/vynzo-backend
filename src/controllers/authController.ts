@@ -6,7 +6,9 @@ import {
   loginWithGoogleIdToken,
   getSavedAccounts,
   switchAccount,
+  loginWithEmail,
 } from '../services/authService';
+import { requestEmailVerification, consumeEmailVerification } from '../services/emailVerificationService';
 import { extractRequestMeta } from '../services/deviceSessionService';
 import { getGoogleAuthUrl } from '../config/googleAuth';
 import { toPrivateProfile } from '../services/userService';
@@ -106,6 +108,47 @@ export async function googleNativeLogin(req: Request, res: Response, next: NextF
       token: result.token,
       deviceToken: result.deviceToken,
       isNewUser: result.isNewUser,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+
+export async function requestEmailCode(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { email } = req.body as { email?: string };
+    if (!email) throw new ApiError(400, 'EMAIL_REQUIRED', 'Email is required.');
+    await requestEmailVerification(email);
+    return sendSuccess(res, { sent: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function verifyEmailCode(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { email, code, deviceToken } = req.body as {
+      email?: string;
+      code?: string;
+      deviceToken?: string;
+    };
+    if (!email || !code) {
+      throw new ApiError(400, 'VERIFICATION_REQUIRED', 'Email and verification code are required.');
+    }
+
+    const verifiedEmail = await consumeEmailVerification(email, code);
+    const meta = extractRequestMeta(req);
+    const result = await loginWithEmail(verifiedEmail, deviceToken || req.cookies?.vynzo_device, meta);
+
+    clearAuthCookies(res);
+    res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
+    res.cookie('vynzo_device', result.deviceToken, DEVICE_COOKIE_OPTIONS);
+
+    return sendSuccess(res, {
+      user: toPrivateProfile(result.user),
+      isNewUser: result.isNewUser,
+      deviceToken: result.deviceToken,
     });
   } catch (err) {
     next(err);
