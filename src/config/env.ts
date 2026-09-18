@@ -29,4 +29,7 @@ export const env = {
   reelsEnabled: process.env.REELS_ENABLED !== 'false',
   reelMaxDurationSec: 60,
   reelDailyLimit: 1,
+  emailLoginEnabled: Boolean(process.env.HOSTINGER_MAIL_API_TOKEN && process.env.HOSTINGER_MAILBOX_RESOURCE_ID),
+  hostingerMailApiToken: process.env.HOSTINGER_MAIL_API_TOKEN || '',
+  hostingerMailboxResourceId: process.env.HOSTINGER_MAILBOX_RESOURCE_ID || '',
 };
