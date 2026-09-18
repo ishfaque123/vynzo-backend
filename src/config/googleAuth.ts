@@ -26,8 +26,8 @@ export async function getGoogleUserFromCode(code: string) {
     audience: env.googleClientId,
   });
   const payload = ticket.getPayload();
-  if (!payload || !payload.sub) {
-    throw new Error('Invalid Google token payload');
+  if (!payload || !payload.sub || !payload.email) {
+    throw new Error('Invalid Google token payload: email is required');
   }
   return {
     googleId: payload.sub,
@@ -42,8 +42,8 @@ export async function getGoogleUserFromIdToken(idToken: string, expectedNonce: s
   });
   const payload = ticket.getPayload();
 
-  if (!payload || !payload.sub) {
-    throw new Error('Invalid Google token payload');
+  if (!payload || !payload.sub || !payload.email) {
+    throw new Error('Invalid Google token payload: email is required');
   }
 
   if (!payload.nonce || payload.nonce !== expectedNonce) {
