@@ -18,7 +18,7 @@ function hashCode(email: string, code: string) {
 }
 
 function validateEmail(email: string) {
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\\.[^\s@]+$/.test(email)) {
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new ApiError(400, 'INVALID_EMAIL', 'Enter a valid email address.');
   }
 }
