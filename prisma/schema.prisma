@@ -625,3 +625,21 @@ model EmailVerificationCode {
   @@index([expiresAt])
   @@map("email_verification_codes")
 }
+
+model AuthFailureLog {
+  id          String   @id @default(uuid())
+  platform    String   @default("unknown")
+  stage       String   @default("unknown")
+  code        String   @default("UNKNOWN")
+  message     String   @db.VarChar(1000)
+  email       String?
+  appVersion  String?  @map("app_version")
+  userAgent   String?  @map("user_agent")
+  ipAddress   String?  @map("ip_address")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([code, createdAt])
+  @@index([email, createdAt])
+  @@map("auth_failure_logs")
+}
