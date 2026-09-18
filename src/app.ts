@@ -23,6 +23,7 @@ import closeFriendRoutes from './routes/closeFriendRoutes';
 import statusRoutes from './routes/statusRoutes';
 import reelRoutes from './routes/reelRoutes';
 import adminRoutes from './routes/adminRoutes';
+import authFailureRoutes from './routes/authFailureRoutes';
 
 export const app = express();
 
@@ -52,6 +53,7 @@ app.use('/api/close-friends', closeFriendRoutes);
 app.use('/api/statuses', statusRoutes);
 app.use('/api/reels', reelRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/auth-failures', authFailureRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
