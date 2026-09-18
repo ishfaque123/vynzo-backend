@@ -17,6 +17,9 @@ async function loginWithGoogleIdentity(
   if (!user && email) {
     const emailUser = await prisma.user.findUnique({ where: { email } });
     if (emailUser) {
+      if (emailUser.accountStatus !== 'active') {
+        throw new ApiError(403, 'ACCOUNT_NOT_ACTIVE', 'This account is not active.');
+      }
       if (emailUser.googleId && emailUser.googleId !== googleId) {
         throw new ApiError(409, 'EMAIL_ALREADY_LINKED', 'This email is already linked to another account.');
       }
