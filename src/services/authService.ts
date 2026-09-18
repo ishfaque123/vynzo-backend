@@ -215,13 +215,6 @@ export async function loginWithEmail(email: string, deviceToken?: string, meta?:
       data: { lastActiveAt: new Date() },
     });
   }
-    throw new ApiError(403, 'ACCOUNT_NOT_ACTIVE', 'This account is not active.');
-  } else {
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: { lastActiveAt: new Date() },
-    });
-  }
 
   const device = await getOrCreateDeviceSession(deviceToken, meta);
   const existingAccountSession = await prisma.accountSession.findUnique({
