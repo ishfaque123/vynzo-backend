@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { Prisma } from '@prisma/client';
 import { getGoogleUserFromCode, getGoogleUserFromIdToken } from '../config/googleAuth';
 import { signToken } from '../utils/jwt';
 import { getOrCreateDeviceSession, getDeviceSession, RequestMeta } from './deviceSessionService';
@@ -32,9 +33,27 @@ async function loginWithGoogleIdentity(
   }
 
   if (!user) {
-    user = await prisma.user.create({ data: { googleId, email: normalizedEmail || null } });
-    isNewUser = true;
-  } else {
+    try {
+      user = await prisma.user.create({ data: { googleId, email: normalizedEmail || null } });
+      isNewUser = true;
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+        throw error;
+      }
+
+      user = await prisma.user.findUnique({ where: { googleId } });
+      if (!user && normalizedEmail) {
+        user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+        if (user?.googleId && user.googleId !== googleId) {
+          throw new ApiError(409, 'EMAIL_ALREADY_LINKED', 'This email is already linked to another account.');
+        }
+      }
+
+      if (!user) throw error;
+    }
+  }
+
+  if (!isNewUser) {
     if (user.accountStatus !== 'active') {
       throw new ApiError(403, 'ACCOUNT_NOT_ACTIVE', 'This account is not active.');
     }
@@ -174,9 +193,28 @@ export async function loginWithEmail(email: string, deviceToken?: string, meta?:
   let isNewUser = false;
 
   if (!user) {
-    user = await prisma.user.create({ data: { email: normalizedEmail } });
-    isNewUser = true;
-  } else if (user.accountStatus !== 'active') {
+    try {
+      user = await prisma.user.create({ data: { email: normalizedEmail } });
+      isNewUser = true;
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+        throw error;
+      }
+      user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+      if (!user) throw error;
+    }
+  }
+
+  if (user && user.accountStatus !== 'active') {
+    throw new ApiError(403, 'ACCOUNT_NOT_ACTIVE', 'This account is not active.');
+  }
+
+  if (!isNewUser) {
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: { lastActiveAt: new Date() },
+    });
+  }
     throw new ApiError(403, 'ACCOUNT_NOT_ACTIVE', 'This account is not active.');
   } else {
     user = await prisma.user.update({
