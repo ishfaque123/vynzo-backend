@@ -4,6 +4,8 @@ import {
   googleCallback,
   googleNativeConfig,
   googleNativeLogin,
+  requestEmailCode,
+  verifyEmailCode,
   getMe,
   getAccounts,
   switchSavedAccount,
@@ -17,6 +19,8 @@ router.get('/google/start', googleLoginStart);
 router.get('/google/callback', googleCallback);
 router.get('/google/native-config', googleNativeConfig);
 router.post('/google/native', googleNativeLogin);
+router.post('/email/request-code', requestEmailCode);
+router.post('/email/verify-code', verifyEmailCode);
 router.get('/me', authMiddleware, getMe);
 router.get('/accounts', getAccounts);
 router.post('/switch', switchSavedAccount);
