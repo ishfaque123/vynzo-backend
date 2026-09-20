@@ -1,14 +1,18 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 
+let viewTableReady = false;
+
 const allowedReasons = new Set(['spam', 'harassment', 'hate_speech', 'violence', 'nudity', 'misinformation', 'other']);
 
 async function ensureViewTable() {
+  if (viewTableReady) return;
   await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS reel_views (id VARCHAR(191) NOT NULL PRIMARY KEY, reel_id VARCHAR(191) NOT NULL, viewer_id VARCHAR(191) NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), KEY reel_views_reel_id_idx (reel_id), KEY reel_views_viewer_id_idx (viewer_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
   try {
     await prisma.$executeRawUnsafe(`DELETE rv1 FROM reel_views rv1 INNER JOIN reel_views rv2 ON rv1.reel_id = rv2.reel_id AND rv1.viewer_id = rv2.viewer_id AND rv1.id > rv2.id`);
   } catch {}
   try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views ADD UNIQUE KEY reel_view_unique (reel_id, viewer_id)`); } catch {}
+  viewTableReady = true;
 }
 
 async function ensureReportTable() {
