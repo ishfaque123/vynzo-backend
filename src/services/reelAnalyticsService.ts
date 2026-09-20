@@ -15,18 +15,22 @@ async function ensureViewTable() {
   viewTableReady = true;
 }
 
-async function ensureReportTable() {
-  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS reel_reports (id VARCHAR(191) NOT NULL PRIMARY KEY, reel_id VARCHAR(191) NOT NULL, reporter_id VARCHAR(191) NOT NULL, reason VARCHAR(50) NOT NULL DEFAULT 'other', details VARCHAR(500) NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), UNIQUE KEY reel_report_unique (reel_id, reporter_id), KEY reel_reports_reel_id_idx (reel_id), KEY reel_reports_reporter_id_idx (reporter_id), CONSTRAINT reel_reports_reel_fk FOREIGN KEY (reel_id) REFERENCES reels(id) ON DELETE CASCADE, CONSTRAINT reel_reports_reporter_fk FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
-}
-
 export async function reportReel(userId: string, reelId: string, reason: string, details?: string) {
   if (!allowedReasons.has(reason)) throw new ApiError(400, 'INVALID_REPORT_REASON', 'Invalid report reason.');
   const reel = await prisma.reel.findUnique({ where: { id: reelId }, select: { id: true, userId: true } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   if (reel.userId === userId) throw new ApiError(400, 'CANNOT_REPORT_OWN_REEL', 'You cannot report your own reel.');
   if (details && details.length > 500) throw new ApiError(400, 'DETAILS_TOO_LONG', 'Report details are too long.');
-  await ensureReportTable();
-  await prisma.$executeRawUnsafe(`INSERT IGNORE INTO reel_reports (id, reel_id, reporter_id, reason, details) VALUES (UUID(), ?, ?, ?, ?)`, reelId, userId, reason, details ?? null);
+  await prisma.reelReport.upsert({
+    where: { reelId_reporterId: { reelId, reporterId: userId } },
+    update: {},
+    create: {
+      reelId,
+      reporterId: userId,
+      reason: reason as any,
+      details: details ?? null,
+    },
+  });
   return { reported: true };
 }
 
