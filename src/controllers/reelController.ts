@@ -1,11 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
+import { createReadStream } from 'fs';
+import { unlink } from 'fs/promises';
+import path from 'path';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 import { createReel, getReelFeed, toggleReelLike, toggleReelFavorite, getMyFavoriteReels, deleteReel, getReelsConfig, getMyDailyReelStatus, addReelComment, getReelComments, toggleReelCommentReaction, deleteReelComment } from '../services/reelService';
 import { editReelComment } from '../services/reelCommentEditService';
 import { reportReelComment } from '../services/reelCommentReportService';
 import { reportReel, recordReelView } from '../services/reelAnalyticsService';
-import { uploadToR2, deleteFromR2 } from '../config/r2';
+import { uploadStreamToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
 
 export async function getReelsConfigHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getReelsConfig()); } catch (err) { next(err); } }
@@ -14,9 +17,22 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
   try {
     if (!req.file) throw new ApiError(400, 'NO_VIDEO', 'Please select a video to upload.');
     const { caption, durationSec } = createReelSchema.parse(req.body);
-    const videoUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'reels');
-    try { sendSuccess(res, { reel: await createReel(req.user!.id, { videoUrl, caption, durationSec }) }, 201); }
-    catch (err) { await deleteFromR2(videoUrl).catch(() => {}); throw err; }
+    const tempPath = req.file.path;
+    let videoUrl: string | undefined;
+    try {
+      videoUrl = await uploadStreamToR2(
+        createReadStream(tempPath),
+        req.file.mimetype,
+        'reels',
+        path.extname(req.file.originalname).slice(1).toLowerCase() || 'mp4'
+      );
+      sendSuccess(res, { reel: await createReel(req.user!.id, { videoUrl, caption, durationSec }) }, 201);
+    } catch (err) {
+      if (videoUrl) await deleteFromR2(videoUrl).catch(() => {});
+      throw err;
+    } finally {
+      await unlink(tempPath).catch(() => {});
+    }
   } catch (err) { next(err); }
 }
 export async function getReelFeedHandler(req: Request, res: Response, next: NextFunction) { try { const rawOffset = parseInt(String(req.query.offset ?? '0'), 10); const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0; sendSuccess(res, await getReelFeed(req.user!.id, 10, offset)); } catch (err) { next(err); } }
