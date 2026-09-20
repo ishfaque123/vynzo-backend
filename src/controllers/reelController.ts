@@ -10,13 +10,15 @@ import { reportReelComment } from '../services/reelCommentReportService';
 import { reportReel, recordReelView } from '../services/reelAnalyticsService';
 import { uploadStreamToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
+import { env } from '../config/env';
 
 export async function getReelsConfigHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getReelsConfig()); } catch (err) { next(err); } }
-const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive().max(60) });
+const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive() });
 export async function createReelHandler(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.file) throw new ApiError(400, 'NO_VIDEO', 'Please select a video to upload.');
     const { caption, durationSec } = createReelSchema.parse(req.body);
+    if (durationSec > env.reelMaxDurationSec) throw new ApiError(400, 'INVALID_DURATION', `Reel duration must be between 1 and ${env.reelMaxDurationSec} seconds.`);
     const tempPath = req.file.path;
     let videoUrl: string | undefined;
     try {
