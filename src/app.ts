@@ -6,6 +6,7 @@ import { env } from './config/env';
 import { errorHandler } from './middleware/errorHandler';
 import { notFound } from './middleware/notFound';
 import { verifyOrigin } from './middleware/verifyOrigin';
+import { globalLimiter } from './middleware/rateLimiter';
 import { sendSuccess } from './utils/ApiResponse';
 import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
@@ -32,6 +33,7 @@ app.use(cors({ origin: env.frontendUrl, credentials: true }));
 app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));
 app.use(verifyOrigin);
+app.use(globalLimiter);
 
 app.get('/api/health', (_req, res) => {
   sendSuccess(res, { status: 'ok', environment: env.nodeEnv });
