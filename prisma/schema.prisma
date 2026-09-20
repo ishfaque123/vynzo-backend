@@ -518,6 +518,7 @@ model Reel {
   likes     ReelLike[]
   favorites ReelFavorite[]
   comments  ReelComment[]
+  reports   ReelReport[]
 
   @@index([userId])
   @@index([createdAt])
