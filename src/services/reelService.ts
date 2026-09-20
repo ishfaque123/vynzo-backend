@@ -35,10 +35,19 @@ export async function toggleReelCommentReaction(userId: string, commentId: strin
   const comment = await prisma.reelComment.findUnique({ where: { id: commentId }, include: { reel: true } });
   if (!comment) throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found.');
   if (await isEitherBlocked(userId, comment.reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot react to this comment.');
-  const existing = await prisma.reelCommentReaction.findUnique({ where: { userId_commentId: { userId, commentId } } });
-  if (existing) { if (existing.type === type) { await prisma.reelCommentReaction.delete({ where: { id: existing.id } }); return { reaction: null }; } const updated = await prisma.reelCommentReaction.update({ where: { id: existing.id }, data: { type: type as any } }); return { reaction: updated.type }; }
-  const created = await prisma.reelCommentReaction.create({ data: { userId, commentId, type: type as any } });
-  return { reaction: created.type };
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.reelCommentReaction.findUnique({ where: { userId_commentId: { userId, commentId } } });
+    if (existing) {
+      if (existing.type === type) {
+        await tx.reelCommentReaction.delete({ where: { id: existing.id } });
+        return { reaction: null };
+      }
+      const updated = await tx.reelCommentReaction.update({ where: { id: existing.id }, data: { type: type as any } });
+      return { reaction: updated.type };
+    }
+    const created = await tx.reelCommentReaction.create({ data: { userId, commentId, type: type as any } });
+    return { reaction: created.type };
+  }, { isolationLevel: 'Serializable' });
 }
 
 export async function deleteReelComment(userId: string, commentId: string) {
@@ -73,7 +82,28 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
     prisma.reel.findMany({ where, orderBy: { createdAt: 'desc' }, skip: safeOffset, take: safeLimit, include: { user: { select: authorSelect }, _count: { select: { likes: true, comments: true } }, likes: { where: { userId: currentUserId }, select: { id: true } }, favorites: { where: { userId: currentUserId }, select: { id: true } } } }),
     prisma.reel.count({ where }),
   ]);
-  const reelsWithStatus = await Promise.all(reels.map(async (r) => ({ id: r.id, videoUrl: r.videoUrl, caption: r.caption, durationSec: r.durationSec, createdAt: r.createdAt, likeCount: r._count.likes, commentCount: r._count.comments, liked: r.likes.length > 0, favorited: r.favorites.length > 0, isMine: r.userId === currentUserId, author: r.user, friendStatus: await getFriendStatus(currentUserId, r.userId) })));
+  const authorIds = [...new Set(reels.map((r) => r.userId))];
+  const followRows = authorIds.length
+    ? await prisma.follow.findMany({
+        where: {
+          OR: [
+            { followerId: currentUserId, followingId: { in: authorIds } },
+            { followerId: { in: authorIds }, followingId: currentUserId },
+          ],
+        },
+        select: { followerId: true, followingId: true },
+      })
+    : [];
+  const followingSet = new Set(followRows.filter((f) => f.followerId === currentUserId).map((f) => f.followingId));
+  const followerSet = new Set(followRows.filter((f) => f.followingId === currentUserId).map((f) => f.followerId));
+
+  const reelsWithStatus = reels.map((r) => {
+    const isMine = r.userId === currentUserId;
+    const iFollow = followingSet.has(r.userId);
+    const theyFollow = followerSet.has(r.userId);
+    const friendStatus = isMine ? 'self' : iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follow_back' : 'none';
+    return { id: r.id, videoUrl: r.videoUrl, caption: r.caption, durationSec: r.durationSec, createdAt: r.createdAt, likeCount: r._count.likes, commentCount: r._count.comments, liked: r.likes.length > 0, favorited: r.favorites.length > 0, isMine, author: r.user, friendStatus };
+  });
   return { reels: reelsWithStatus, hasMore: safeOffset + reels.length < total };
 }
 
@@ -81,20 +111,28 @@ export async function toggleReelLike(userId: string, reelId: string) {
   const reel = await prisma.reel.findUnique({ where: { id: reelId } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   if (await isEitherBlocked(userId, reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot like this reel.');
-  const existing = await prisma.reelLike.findUnique({ where: { reelId_userId: { reelId, userId } } });
-  if (existing) await prisma.reelLike.delete({ where: { id: existing.id } }); else await prisma.reelLike.create({ data: { reelId, userId } });
-  const likeCount = await prisma.reelLike.count({ where: { reelId } });
-  return { liked: !existing, likeCount };
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.reelLike.findUnique({ where: { reelId_userId: { reelId, userId } } });
+    if (existing) await tx.reelLike.delete({ where: { id: existing.id } });
+    else await tx.reelLike.create({ data: { reelId, userId } });
+    const likeCount = await tx.reelLike.count({ where: { reelId } });
+    return { liked: !existing, likeCount };
+  }, { isolationLevel: 'Serializable' });
 }
 
 export async function toggleReelFavorite(userId: string, reelId: string) {
   const reel = await prisma.reel.findUnique({ where: { id: reelId } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   if (await isEitherBlocked(userId, reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot favorite this reel.');
-  const existing = await prisma.reelFavorite.findUnique({ where: { reelId_userId: { reelId, userId } } });
-  if (existing) { await prisma.reelFavorite.delete({ where: { id: existing.id } }); return { favorited: false }; }
-  await prisma.reelFavorite.create({ data: { reelId, userId } });
-  return { favorited: true };
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.reelFavorite.findUnique({ where: { reelId_userId: { reelId, userId } } });
+    if (existing) {
+      await tx.reelFavorite.delete({ where: { id: existing.id } });
+      return { favorited: false };
+    }
+    await tx.reelFavorite.create({ data: { reelId, userId } });
+    return { favorited: true };
+  }, { isolationLevel: 'Serializable' });
 }
 
 export async function getMyFavoriteReels(userId: string) {
