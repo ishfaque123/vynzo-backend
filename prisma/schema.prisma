@@ -112,6 +112,7 @@ model User {
   reelComments           ReelComment[]
   reelCommentReactions   ReelCommentReaction[]
   reelCommentReports     ReelCommentReport[] @relation("ReelCommentReportsMade")
+  reelReportsMade         ReelReport[]        @relation("ReelReportsMade")
   statusViews             StatusView[]
   reels                  Reel[]
   reelLikes              ReelLike[]
@@ -600,6 +601,23 @@ model ReelCommentReport {
   @@unique([commentId, reporterId])
   @@index([commentId])
   @@map("reel_comment_reports")
+}
+
+model ReelReport {
+  id         String       @id @default(uuid())
+  reelId     String       @map("reel_id")
+  reporterId String       @map("reporter_id")
+  reason     ReportReason @default(other)
+  details    String?      @db.VarChar(500)
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  reel     Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  reporter User @relation("ReelReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@unique([reelId, reporterId])
+  @@index([reelId])
+  @@index([reporterId])
+  @@map("reel_reports")
 }
 
 model ReelView {
