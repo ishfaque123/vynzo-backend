@@ -4,7 +4,7 @@ import { ApiError } from '../middleware/errorHandler';
 const allowedReasons = new Set(['spam', 'harassment', 'hate_speech', 'violence', 'nudity', 'misinformation', 'other']);
 
 async function ensureViewTable() {
-  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS reel_views (id VARCHAR(191) NOT NULL PRIMARY KEY, reel_id VARCHAR(191) NOT NULL, viewer_id VARCHAR(191) NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), KEY reel_views_reel_id_idx (reel_id), KEY reel_views_viewer_id_idx (viewer_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS reel_views (id VARCHAR(191) NOT NULL PRIMARY KEY, reel_id VARCHAR(191) NOT NULL, viewer_id VARCHAR(191) NOT NULL, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), KEY reel_views_reel_id_idx (reel_id), KEY reel_views_viewer_id_idx (viewer_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
   try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views DROP INDEX reel_view_unique`); } catch {}
 }
 
