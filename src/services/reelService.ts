@@ -47,14 +47,14 @@ export async function getReelComments(reelId: string, currentUserId: string, cur
   const rootWhere: any = { reelId, parentCommentId: null };
   if (decodedCursor) {
     rootWhere.OR = [
-      { createdAt: { gt: decodedCursor.createdAt } },
-      { createdAt: decodedCursor.createdAt, id: { gt: decodedCursor.id } },
+      { createdAt: { lt: decodedCursor.createdAt } },
+      { createdAt: decodedCursor.createdAt, id: { lt: decodedCursor.id } },
     ];
   }
 
   const roots = await prisma.reelComment.findMany({
     where: rootWhere,
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: safeLimit + 1,
     include: {
       user: { select: authorSelect },
@@ -69,7 +69,7 @@ export async function getReelComments(reelId: string, currentUserId: string, cur
   const replies = rootIds.length
     ? await prisma.reelComment.findMany({
         where: { reelId, parentCommentId: { in: rootIds } },
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: {
           user: { select: authorSelect },
           reactions: { select: { type: true, userId: true } },
