@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { sendPushToUser } from './pushService';
 
 type NotificationType =
   | 'follow'
@@ -20,7 +21,7 @@ function toAuthorDTO(user: any) {
   };
 }
 
-export async function createNotification(params: {
+async function createNotificationRecord(params: {
   userId: string;
   actorId?: string | null;
   type: NotificationType;
@@ -78,4 +79,44 @@ export async function deleteNotifications(userId: string, ids: string[]) {
 export async function deleteAllNotifications(userId: string) {
   const result = await prisma.notification.deleteMany({ where: { userId } });
   return { deletedCount: result.count };
+}
+
+type NotificationParams = Parameters<typeof createNotificationRecord>[0];
+
+const PUSH_TEXT: Record<string, (name: string) => string> = {
+  follow: (n) => `${n} started following you`,
+  post_like: (n) => `${n} liked your post`,
+  post_comment: (n) => `${n} commented on your post`,
+  comment_like: (n) => `${n} liked your comment`,
+  comment_reply: (n) => `${n} replied to your comment`,
+  post_share: (n) => `${n} shared your post`,
+  new_device_login: () => 'New login detected on your account',
+  account_restricted: () => 'Your account has been restricted',
+  account_banned: () => 'Your account has been banned',
+};
+
+async function sendPushForNotification(params: NotificationParams) {
+  let name = 'Someone';
+  let username: string | null = null;
+  if (params.actorId) {
+    const actor = await prisma.user.findUnique({
+      where: { id: params.actorId },
+      select: { displayName: true, username: true },
+    });
+    name = actor?.displayName || actor?.username || name;
+    username = actor?.username ?? null;
+  }
+  const body = (PUSH_TEXT[params.type] ?? (() => 'New notification'))(name);
+  let url = '/notifications';
+  if (params.type === 'follow' && username) url = `/u/${username}`;
+  else if (params.postId) url = `/post/${params.postId}`;
+  await sendPushToUser(params.userId, { title: 'Frianzo', body, url });
+}
+
+export async function createNotification(params: NotificationParams) {
+  const notification = await createNotificationRecord(params);
+  if (notification) {
+    sendPushForNotification(params).catch((err) => console.error('[push] send failed', err));
+  }
+  return notification;
 }
