@@ -20,13 +20,92 @@ export async function addReelComment(userId: string, reelId: string, content: st
   return prisma.reelComment.create({ data: { reelId, userId, parentCommentId, content: trimmed }, include: { user: { select: authorSelect } } });
 }
 
-export async function getReelComments(reelId: string, currentUserId: string) {
-  const rows = await prisma.reelComment.findMany({ where: { reelId }, orderBy: { createdAt: 'asc' }, include: { user: { select: authorSelect }, reactions: { select: { type: true, userId: true } } } });
+const REEL_COMMENT_PAGE_SIZE = 20;
+
+function encodeReelCommentCursor(createdAt: Date, id: string) {
+  return Buffer.from(JSON.stringify({ createdAt: createdAt.toISOString(), id }), 'utf8').toString('base64url');
+}
+
+function decodeReelCommentCursor(cursor?: string) {
+  if (!cursor) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (typeof parsed?.createdAt !== 'string' || typeof parsed?.id !== 'string') return null;
+    const createdAt = new Date(parsed.createdAt);
+    if (Number.isNaN(createdAt.getTime())) return null;
+    return { createdAt, id: parsed.id };
+  } catch {
+    return null;
+  }
+}
+
+export async function getReelComments(reelId: string, currentUserId: string, cursor?: string, limit = REEL_COMMENT_PAGE_SIZE) {
+  const safeLimit = Math.min(Math.max(limit, 1), REEL_COMMENT_PAGE_SIZE);
+  const decodedCursor = decodeReelCommentCursor(cursor);
+  if (cursor && !decodedCursor) throw new ApiError(400, 'INVALID_CURSOR', 'Invalid comment pagination cursor.');
+
+  const rootWhere: any = { reelId, parentCommentId: null };
+  if (decodedCursor) {
+    rootWhere.OR = [
+      { createdAt: { gt: decodedCursor.createdAt } },
+      { createdAt: decodedCursor.createdAt, id: { gt: decodedCursor.id } },
+    ];
+  }
+
+  const roots = await prisma.reelComment.findMany({
+    where: rootWhere,
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    take: safeLimit + 1,
+    include: {
+      user: { select: authorSelect },
+      reactions: { select: { type: true, userId: true } },
+    },
+  });
+
+  const hasMore = roots.length > safeLimit;
+  const pageRoots = hasMore ? roots.slice(0, safeLimit) : roots;
+  const rootIds = pageRoots.map((row) => row.id);
+
+  const replies = rootIds.length
+    ? await prisma.reelComment.findMany({
+        where: { reelId, parentCommentId: { in: rootIds } },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        include: {
+          user: { select: authorSelect },
+          reactions: { select: { type: true, userId: true } },
+        },
+      })
+    : [];
+
   const nodes = new Map<string, any>();
-  for (const row of rows) nodes.set(row.id, { id: row.id, reelId: row.reelId, content: row.content, createdAt: row.createdAt, author: row.user, reactionCount: row.reactions.length, myReaction: row.reactions.find((r) => r.userId === currentUserId)?.type ?? null, replies: [] });
-  const roots: any[] = [];
-  for (const row of rows) { const node = nodes.get(row.id)!; if (row.parentCommentId && nodes.has(row.parentCommentId)) nodes.get(row.parentCommentId).replies.push(node); else roots.push(node); }
-  return roots;
+  for (const row of [...pageRoots, ...replies]) {
+    nodes.set(row.id, {
+      id: row.id,
+      reelId: row.reelId,
+      content: row.content,
+      createdAt: row.createdAt,
+      author: row.user,
+      reactionCount: row.reactions.length,
+      myReaction: row.reactions.find((r) => r.userId === currentUserId)?.type ?? null,
+      replies: [],
+    });
+  }
+
+  for (const row of replies) {
+    const parent = nodes.get(row.parentCommentId!);
+    if (parent) parent.replies.push(nodes.get(row.id));
+  }
+
+  const result = pageRoots.map((row) => nodes.get(row.id));
+  const last = pageRoots[pageRoots.length - 1];
+
+  return {
+    comments: result,
+    pagination: {
+      hasMore,
+      nextCursor: hasMore && last ? encodeReelCommentCursor(last.createdAt, last.id) : null,
+    },
+  };
 }
 
 export async function toggleReelCommentReaction(userId: string, commentId: string, type: string) {
