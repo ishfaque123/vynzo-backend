@@ -1,6 +1,18 @@
 import multer from 'multer';
+import { mkdirSync } from 'fs';
+import { randomUUID } from 'crypto';
+import path from 'path';
 
-const storage = multer.memoryStorage();
+const uploadDir = '/tmp/frianzo-reels';
+mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${randomUUID()}${ext}`);
+  },
+});
 
 export const reelUpload = multer({
   storage,
