@@ -21,6 +21,9 @@ import { logAuthFailure } from '../services/authFailureLogService';
 // cookies can safely be scoped to the Frianzo parent domain. This keeps the
 // browser on one consistent cookie scope instead of mixing old host-only and
 // domain-scoped session cookies.
+const AUTH_COOKIE_NAME = 'vynzo_auth_token';
+const LEGACY_AUTH_COOKIE_NAME = 'vynzo_token';
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
@@ -51,7 +54,8 @@ function clearAuthCookies(res: Response) {
       path: '/',
       ...(domain ? { domain } : {}),
     };
-    res.clearCookie('vynzo_token', options);
+    res.clearCookie(AUTH_COOKIE_NAME, options);
+    res.clearCookie(LEGACY_AUTH_COOKIE_NAME, options);
     res.clearCookie('vynzo_device', options);
   }
 }
@@ -87,7 +91,7 @@ export async function googleCallback(req: Request, res: Response) {
     }
 
     clearAuthCookies(res);
-    res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
+    res.cookie(AUTH_COOKIE_NAME, result.token, COOKIE_OPTIONS);
     res.cookie('vynzo_device', result.deviceToken, DEVICE_COOKIE_OPTIONS);
 
     res.redirect(`${env.frontendUrl}${result.isNewUser ? '/profile-setup' : '/'}`);
@@ -179,7 +183,7 @@ export async function verifyEmailCode(req: Request, res: Response, next: NextFun
     const result = await loginWithEmail(verifiedEmail, deviceToken || req.cookies?.vynzo_device, meta);
 
     clearAuthCookies(res);
-    res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
+    res.cookie(AUTH_COOKIE_NAME, result.token, COOKIE_OPTIONS);
     res.cookie('vynzo_device', result.deviceToken, DEVICE_COOKIE_OPTIONS);
 
     return sendSuccess(res, {
@@ -216,7 +220,7 @@ export async function switchSavedAccount(req: Request, res: Response, next: Next
     const result = await switchAccount(accountId, req.cookies?.vynzo_device);
 
     clearAuthCookies(res);
-    res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
+    res.cookie(AUTH_COOKIE_NAME, result.token, COOKIE_OPTIONS);
     sendSuccess(res, { user: toPrivateProfile(result.user) });
   } catch (err) {
     next(err);
