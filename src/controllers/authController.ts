@@ -10,7 +10,7 @@ import {
 } from '../services/authService';
 import { requestEmailVerification, consumeEmailVerification } from '../services/emailVerificationService';
 import { extractRequestMeta } from '../services/deviceSessionService';
-import { getGoogleAuthUrl } from '../config/googleAuth';
+import { getGoogleAuthUrl, parseOAuthState } from '../config/googleAuth';
 import { toPrivateProfile } from '../services/userService';
 import { prisma } from '../config/prisma';
 import { env } from '../config/env';
@@ -64,7 +64,9 @@ export async function googleLoginStart(req: Request, res: Response) {
 
 export async function googleCallback(req: Request, res: Response) {
   const code = req.query.code as string | undefined;
-  const mobileApp = req.query.state === 'frianzo_mobile';
+  const stateParams = parseOAuthState(req.query.state as string | undefined);
+  const mobileApp = stateParams.mobileApp;
+  const switchMode = stateParams.switch;
 
   if (!code) {
     if (mobileApp) {
@@ -75,7 +77,7 @@ export async function googleCallback(req: Request, res: Response) {
 
   try {
     const meta = extractRequestMeta(req);
-    const result = await loginWithGoogleCode(code, req.cookies?.vynzo_device, meta);
+    const result = await loginWithGoogleCode(code, switchMode ? undefined : req.cookies?.vynzo_device, meta);
 
     if (mobileApp) {
       const params = new URLSearchParams({
