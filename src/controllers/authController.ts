@@ -17,10 +17,16 @@ import { env } from '../config/env';
 import { ApiError } from '../middleware/errorHandler';
 import { logAuthFailure } from '../services/authFailureLogService';
 
+// The API now runs on the custom api.frianzo.online domain, so the auth
+// cookies can safely be scoped to the Frianzo parent domain. This keeps the
+// browser on one consistent cookie scope instead of mixing old host-only and
+// domain-scoped session cookies.
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
   sameSite: 'none' as const,
+  domain: '.frianzo.online',
+  path: '/',
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
@@ -28,14 +34,26 @@ const DEVICE_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: true,
   sameSite: 'none' as const,
+  domain: '.frianzo.online',
+  path: '/',
   maxAge: 30 * 24 * 60 * 60 * 1000,
 };
 
 function clearAuthCookies(res: Response) {
-  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
-  res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
-  res.clearCookie('vynzo_device', { secure: true, sameSite: 'none' as const });
-  res.clearCookie('vynzo_device', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
+  // Clear the current host-only cookie, the current explicit API-host cookie,
+  // and the older parent-domain cookie variants before issuing the fresh
+  // session. This prevents duplicate vynzo_token cookies from making the
+  // browser send an older account session after Google account selection.
+  for (const domain of [undefined, 'api.frianzo.online', '.frianzo.online']) {
+    const options = {
+      secure: true,
+      sameSite: 'none' as const,
+      path: '/',
+      ...(domain ? { domain } : {}),
+    };
+    res.clearCookie('vynzo_token', options);
+    res.clearCookie('vynzo_device', options);
+  }
 }
 
 export async function googleLoginStart(req: Request, res: Response) {
@@ -197,8 +215,7 @@ export async function switchSavedAccount(req: Request, res: Response, next: Next
     const { accountId } = switchAccountSchema.parse(req.body);
     const result = await switchAccount(accountId, req.cookies?.vynzo_device);
 
-    res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const });
-    res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
+    clearAuthCookies(res);
     res.cookie('vynzo_token', result.token, COOKIE_OPTIONS);
     sendSuccess(res, { user: toPrivateProfile(result.user) });
   } catch (err) {
