@@ -28,6 +28,9 @@ import authFailureRoutes from './routes/authFailureRoutes';
 
 export const app = express();
 
+// Behind Railway's proxy: use the real client IP for rate limiting.
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(cors({ origin: env.frontendUrl, credentials: true }));
 app.use(cookieParser());
