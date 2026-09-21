@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
+import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
 
 function toAuthorDTO(user: any) {
@@ -75,6 +76,17 @@ export async function addComment(
     }
   } else {
     await createNotification({ userId: post.userId, actorId: userId, type: 'post_comment', postId });
+  }
+
+  // Tell people who were tagged in the comment. The post owner and the person
+  // being replied to already get their own notification, so skip them here.
+  const parentAuthorId = parentCommentId
+    ? (await prisma.comment.findUnique({ where: { id: parentCommentId }, select: { userId: true } }))?.userId
+    : undefined;
+  for (const taggedId of taggedUserIds.slice(0, 2)) {
+    if (taggedId === userId || taggedId === post.userId || taggedId === parentAuthorId) continue;
+    if (await isEitherBlocked(userId, taggedId)) continue;
+    await createNotification({ userId: taggedId, actorId: userId, type: 'comment_mention', postId, commentId: comment.id });
   }
 
   return toCommentDTO(comment, userId);
@@ -157,7 +169,7 @@ export async function setCommentReaction(userId: string, commentId: string, type
   });
 
   if (!existing) {
-    await createNotification({ userId: comment.userId, actorId: userId, type: 'comment_like', postId: comment.postId, commentId });
+    await createNotification({ userId: comment.userId, actorId: userId, type: 'comment_like', postId: comment.postId, commentId, reaction: type });
   }
 
   const count = await prisma.commentReaction.count({ where: { commentId } });

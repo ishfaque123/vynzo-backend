@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { deleteFromR2 } from '../config/r2';
 import { getFriendStatus } from './followService';
 import { isEitherBlocked } from './blockService';
+import { createNotification } from './notificationService';
 
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true };
 
@@ -17,7 +18,18 @@ export async function addReelComment(userId: string, reelId: string, content: st
     const parent = await prisma.reelComment.findUnique({ where: { id: parentCommentId }, select: { id: true, reelId: true } });
     if (!parent || parent.reelId !== reelId) throw new ApiError(400, 'INVALID_PARENT', 'Reply target is invalid.');
   }
-  return prisma.reelComment.create({ data: { reelId, userId, parentCommentId, content: trimmed }, include: { user: { select: authorSelect } } });
+  const created = await prisma.reelComment.create({ data: { reelId, userId, parentCommentId, content: trimmed }, include: { user: { select: authorSelect } } });
+  try {
+    if (parentCommentId) {
+      const parentAuthor = await prisma.reelComment.findUnique({ where: { id: parentCommentId }, select: { userId: true } });
+      if (parentAuthor) await createNotification({ userId: parentAuthor.userId, actorId: userId, type: 'reel_reply', reelId, commentId: parentCommentId });
+    } else {
+      await createNotification({ userId: reel.userId, actorId: userId, type: 'reel_comment', reelId });
+    }
+  } catch (err) {
+    console.error('[notify] reel comment notification failed', err);
+  }
+  return created;
 }
 
 const REEL_COMMENT_PAGE_SIZE = 20;
@@ -187,6 +199,19 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
 }
 
 export async function toggleReelLike(userId: string, reelId: string) {
+  const result = await toggleReelLikeCore(userId, reelId);
+  if (result.liked) {
+    try {
+      const reel = await prisma.reel.findUnique({ where: { id: reelId }, select: { userId: true } });
+      if (reel) await createNotification({ userId: reel.userId, actorId: userId, type: 'reel_like', reelId });
+    } catch (err) {
+      console.error('[notify] reel like notification failed', err);
+    }
+  }
+  return result;
+}
+
+async function toggleReelLikeCore(userId: string, reelId: string) {
   const reel = await prisma.reel.findUnique({ where: { id: reelId } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   if (await isEitherBlocked(userId, reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot like this reel.');

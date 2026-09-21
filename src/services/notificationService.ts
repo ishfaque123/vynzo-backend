@@ -10,11 +10,15 @@ type NotificationType =
   | 'post_share'
   | 'new_device_login'
   | 'account_restricted'
-  | 'account_banned';
+  | 'account_banned'
+  | 'reel_like'
+  | 'reel_comment'
+  | 'reel_reply'
+  | 'comment_mention';
 
 // Toggle-style actions (like/unlike, follow/unfollow) must not notify the
 // same person about the same thing again and again.
-const DEDUPE_TYPES = new Set<string>(['follow', 'post_like', 'comment_like']);
+const DEDUPE_TYPES = new Set<string>(['follow', 'post_like', 'comment_like', 'reel_like']);
 const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function toAuthorDTO(user: any) {
@@ -32,6 +36,8 @@ async function createNotificationRecord(params: {
   type: NotificationType;
   postId?: string;
   commentId?: string;
+  reelId?: string;
+  reaction?: string; // only used for the push text, not stored
 }) {
   if (params.actorId && params.actorId === params.userId) return null;
   if (params.actorId && DEDUPE_TYPES.has(params.type)) {
@@ -42,6 +48,7 @@ async function createNotificationRecord(params: {
         type: params.type,
         postId: params.postId ?? null,
         commentId: params.commentId ?? null,
+        reelId: params.reelId ?? null,
         createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) },
       },
       select: { id: true },
@@ -55,6 +62,7 @@ async function createNotificationRecord(params: {
       type: params.type,
       postId: params.postId,
       commentId: params.commentId,
+      reelId: params.reelId,
     },
   });
 }
@@ -73,6 +81,7 @@ export async function getNotifications(userId: string) {
     createdAt: n.createdAt,
     postId: n.postId,
     commentId: n.commentId,
+    reelId: n.reelId,
     actor: n.actor ? toAuthorDTO(n.actor) : null,
   }));
 }
@@ -106,13 +115,32 @@ function withOthers(name: string, others: number): string {
   return others > 0 ? `${name} and ${others} other${others > 1 ? 's' : ''}` : name;
 }
 
-const PUSH_TEXT: Record<string, (name: string, others: number) => string> = {
+const REACTION_VERB: Record<string, string> = {
+  like: 'liked',
+  love: 'loved',
+  haha: 'reacted 😆 to',
+  wow: 'reacted 😮 to',
+  sad: 'reacted 😢 to',
+  angry: 'reacted 😠 to',
+};
+
+function reactionVerb(reaction: string | undefined, others: number): string {
+  const r = reaction ?? 'like';
+  if (others > 0) return r === 'like' ? 'liked' : 'reacted to';
+  return REACTION_VERB[r] ?? 'liked';
+}
+
+const PUSH_TEXT: Record<string, (name: string, others: number, reaction?: string) => string> = {
   follow: (n, o) => `${withOthers(n, o)} started following you`,
-  post_like: (n, o) => `${withOthers(n, o)} liked your post`,
+  post_like: (n, o, r) => `${withOthers(n, o)} ${reactionVerb(r, o)} your post`,
   post_comment: (n, o) => `${withOthers(n, o)} commented on your post`,
-  comment_like: (n, o) => `${withOthers(n, o)} liked your comment`,
+  comment_like: (n, o, r) => `${withOthers(n, o)} ${reactionVerb(r, o)} your comment`,
   comment_reply: (n, o) => `${withOthers(n, o)} replied to your comment`,
   post_share: (n, o) => `${withOthers(n, o)} shared your post`,
+  reel_like: (n, o) => `${withOthers(n, o)} liked your reel`,
+  reel_comment: (n, o) => `${withOthers(n, o)} commented on your reel`,
+  reel_reply: (n, o) => `${withOthers(n, o)} replied to your comment on a reel`,
+  comment_mention: (n, o) => `${withOthers(n, o)} mentioned you in a comment`,
   new_device_login: () => 'New login detected on your account',
   account_restricted: () => 'Your account has been restricted',
   account_banned: () => 'Your account has been banned',
@@ -120,7 +148,10 @@ const PUSH_TEXT: Record<string, (name: string, others: number) => string> = {
 
 // Several people doing the same thing to the same target are merged into
 // one phone notification ("A and 2 others liked your post").
-const GROUPED_TYPES = new Set<string>(['follow', 'post_like', 'post_comment', 'comment_like', 'comment_reply', 'post_share']);
+const GROUPED_TYPES = new Set<string>([
+  'follow', 'post_like', 'post_comment', 'comment_like', 'comment_reply', 'post_share',
+  'reel_like', 'reel_comment', 'reel_reply', 'comment_mention',
+]);
 
 async function sendPushForNotification(params: NotificationParams) {
   let name = 'Someone';
@@ -144,6 +175,7 @@ async function sendPushForNotification(params: NotificationParams) {
         read: false,
         postId: params.postId ?? null,
         commentId: params.commentId ?? null,
+        reelId: params.reelId ?? null,
         createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) },
       },
       select: { actorId: true },
@@ -154,11 +186,12 @@ async function sendPushForNotification(params: NotificationParams) {
   }
 
   const makeText = PUSH_TEXT[params.type];
-  const body = makeText ? makeText(name, others) : 'New notification';
+  const body = makeText ? makeText(name, others, params.reaction) : 'New notification';
   let url = '/notifications';
   if (params.type === 'follow' && username) url = `/u/${username}`;
+  else if (params.reelId) url = '/reels';
   else if (params.postId) url = `/post/${params.postId}`;
-  const tag = grouped ? `${params.type}:${params.postId ?? ''}:${params.commentId ?? ''}` : undefined;
+  const tag = grouped ? `${params.type}:${params.postId ?? ''}:${params.commentId ?? ''}:${params.reelId ?? ''}` : undefined;
   await sendPushToUser(params.userId, { title: 'Frianzo', body, url, tag });
 }
 

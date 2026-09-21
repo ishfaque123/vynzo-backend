@@ -25,7 +25,7 @@ export async function setReaction(userId: string, postId: string, type: Reaction
   });
 
   if (!existing) {
-    await createNotification({ userId: post.userId, actorId: userId, type: 'post_like', postId });
+    await createNotification({ userId: post.userId, actorId: userId, type: 'post_like', postId, reaction: type });
   }
 
   const count = await prisma.like.count({ where: { postId } });

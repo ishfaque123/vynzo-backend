@@ -49,6 +49,10 @@ enum NotificationType {
   new_device_login
   account_restricted
   account_banned
+  reel_like
+  reel_comment
+  reel_reply
+  comment_mention
 }
 
 enum ReportReason {
@@ -297,6 +301,7 @@ model Notification {
   type      NotificationType
   postId    String?          @map("post_id")
   commentId String?          @map("comment_id")
+  reelId    String?          @map("reel_id")
   read      Boolean          @default(false)
   createdAt DateTime         @default(now()) @map("created_at")
 
