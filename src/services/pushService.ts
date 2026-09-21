@@ -39,12 +39,19 @@ export async function sendPushToUser(
   payload: { title: string; body: string; url?: string }
 ) {
   const a = getAuth();
-  if (!a || !projectId) return;
+  if (!a || !projectId) {
+    console.warn('[push] skipped: FIREBASE_SERVICE_ACCOUNT_JSON missing or invalid');
+    return;
+  }
   const tokens = await prisma.pushToken.findMany({ where: { userId }, select: { token: true } });
+  console.log(`[push] user ${userId} has ${tokens.length} device token(s)`);
   if (!tokens.length) return;
 
   const accessToken = await a.getAccessToken();
-  if (!accessToken) return;
+  if (!accessToken) {
+    console.warn('[push] skipped: could not get Google access token');
+    return;
+  }
 
   await Promise.all(
     tokens.map(async ({ token }) => {
@@ -60,6 +67,7 @@ export async function sendPushToUser(
           },
         }),
       });
+      console.log('[push] FCM response', res.status);
       if (!res.ok) {
         const text = await res.text();
         if (res.status === 404 || text.includes('UNREGISTERED')) {
@@ -71,3 +79,7 @@ export async function sendPushToUser(
     })
   );
 }
+
+// Log once at startup whether push is configured (no secrets printed).
+if (getAuth()) console.log(`[push] FCM configured for project ${projectId}`);
+else console.warn('[push] FCM NOT configured: FIREBASE_SERVICE_ACCOUNT_JSON missing or invalid');
