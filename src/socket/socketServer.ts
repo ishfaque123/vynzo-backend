@@ -5,10 +5,34 @@ import { prisma } from '../config/prisma';
 import { env } from '../config/env';
 import { isEitherBlocked } from '../services/blockService';
 import { deleteMessageForMe, deleteMessageForEveryone } from '../services/messageService';
+import { sendPushToUser } from '../services/pushService';
 
 interface AuthedSocket extends Socket {
   userId?: string;
   accountSessionId?: string;
+}
+
+// Phone push for a new chat message. Never includes the message text
+// (chats are end-to-end encrypted): only who sent it and what kind it is.
+async function pushNewMessage(
+  message: { conversationId: string; mediaType: string | null; sender?: { displayName?: string | null; username?: string | null } | null },
+  recipient: { userId: string; lastReadAt: Date | null },
+  senderId: string
+) {
+  const unread = await prisma.message.count({
+    where: { conversationId: message.conversationId, senderId, createdAt: { gt: recipient.lastReadAt ?? new Date(0) } },
+  });
+  const senderName = message.sender?.displayName || message.sender?.username || 'Someone';
+  let body = 'New message';
+  if (unread > 1) body = `${unread} new messages`;
+  else if (message.mediaType === 'image') body = 'Sent you a photo';
+  else if (message.mediaType === 'voice') body = 'Sent you a voice message';
+  await sendPushToUser(recipient.userId, {
+    title: senderName,
+    body,
+    url: `/messages/${message.conversationId}`,
+    tag: `chat:${message.conversationId}`,
+  });
 }
 
 const onlineUsers = new Map<string, Set<string>>();
@@ -164,6 +188,10 @@ export function initSocketServer(httpServer: HttpServer) {
         if (otherParticipant && isUserOnline(otherParticipant.userId)) {
           await prisma.conversationParticipant.update({ where: { id: otherParticipant.id }, data: { lastDeliveredAt: new Date() } });
           delivered = true;
+        }
+
+        if (otherParticipant) {
+          pushNewMessage(message, otherParticipant, userId).catch((err) => console.error('[push] chat push failed', err));
         }
 
         if (ack) ack({ success: true, data: message, delivered });

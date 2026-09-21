@@ -12,6 +12,11 @@ type NotificationType =
   | 'account_restricted'
   | 'account_banned';
 
+// Toggle-style actions (like/unlike, follow/unfollow) must not notify the
+// same person about the same thing again and again.
+const DEDUPE_TYPES = new Set<string>(['follow', 'post_like', 'comment_like']);
+const DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 function toAuthorDTO(user: any) {
   return {
     id: user.id,
@@ -29,6 +34,20 @@ async function createNotificationRecord(params: {
   commentId?: string;
 }) {
   if (params.actorId && params.actorId === params.userId) return null;
+  if (params.actorId && DEDUPE_TYPES.has(params.type)) {
+    const recent = await prisma.notification.findFirst({
+      where: {
+        userId: params.userId,
+        actorId: params.actorId,
+        type: params.type,
+        postId: params.postId ?? null,
+        commentId: params.commentId ?? null,
+        createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) },
+      },
+      select: { id: true },
+    });
+    if (recent) return null;
+  }
   return prisma.notification.create({
     data: {
       userId: params.userId,
@@ -83,17 +102,25 @@ export async function deleteAllNotifications(userId: string) {
 
 type NotificationParams = Parameters<typeof createNotificationRecord>[0];
 
-const PUSH_TEXT: Record<string, (name: string) => string> = {
-  follow: (n) => `${n} started following you`,
-  post_like: (n) => `${n} liked your post`,
-  post_comment: (n) => `${n} commented on your post`,
-  comment_like: (n) => `${n} liked your comment`,
-  comment_reply: (n) => `${n} replied to your comment`,
-  post_share: (n) => `${n} shared your post`,
+function withOthers(name: string, others: number): string {
+  return others > 0 ? `${name} and ${others} other${others > 1 ? 's' : ''}` : name;
+}
+
+const PUSH_TEXT: Record<string, (name: string, others: number) => string> = {
+  follow: (n, o) => `${withOthers(n, o)} started following you`,
+  post_like: (n, o) => `${withOthers(n, o)} liked your post`,
+  post_comment: (n, o) => `${withOthers(n, o)} commented on your post`,
+  comment_like: (n, o) => `${withOthers(n, o)} liked your comment`,
+  comment_reply: (n, o) => `${withOthers(n, o)} replied to your comment`,
+  post_share: (n, o) => `${withOthers(n, o)} shared your post`,
   new_device_login: () => 'New login detected on your account',
   account_restricted: () => 'Your account has been restricted',
   account_banned: () => 'Your account has been banned',
 };
+
+// Several people doing the same thing to the same target are merged into
+// one phone notification ("A and 2 others liked your post").
+const GROUPED_TYPES = new Set<string>(['follow', 'post_like', 'post_comment', 'comment_like', 'comment_reply', 'post_share']);
 
 async function sendPushForNotification(params: NotificationParams) {
   let name = 'Someone';
@@ -106,11 +133,33 @@ async function sendPushForNotification(params: NotificationParams) {
     name = actor?.displayName || actor?.username || name;
     username = actor?.username ?? null;
   }
-  const body = (PUSH_TEXT[params.type] ?? (() => 'New notification'))(name);
+
+  const grouped = GROUPED_TYPES.has(params.type);
+  let others = 0;
+  if (grouped) {
+    const recent = await prisma.notification.findMany({
+      where: {
+        userId: params.userId,
+        type: params.type,
+        read: false,
+        postId: params.postId ?? null,
+        commentId: params.commentId ?? null,
+        createdAt: { gte: new Date(Date.now() - DEDUPE_WINDOW_MS) },
+      },
+      select: { actorId: true },
+      distinct: ['actorId'],
+      take: 100,
+    });
+    others = Math.max(0, recent.length - 1);
+  }
+
+  const makeText = PUSH_TEXT[params.type];
+  const body = makeText ? makeText(name, others) : 'New notification';
   let url = '/notifications';
   if (params.type === 'follow' && username) url = `/u/${username}`;
   else if (params.postId) url = `/post/${params.postId}`;
-  await sendPushToUser(params.userId, { title: 'Frianzo', body, url });
+  const tag = grouped ? `${params.type}:${params.postId ?? ''}:${params.commentId ?? ''}` : undefined;
+  await sendPushToUser(params.userId, { title: 'Frianzo', body, url, tag });
 }
 
 export async function createNotification(params: NotificationParams) {

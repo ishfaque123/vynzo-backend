@@ -36,7 +36,7 @@ export async function removePushToken(userId: string, token: string) {
 
 export async function sendPushToUser(
   userId: string,
-  payload: { title: string; body: string; url?: string }
+  payload: { title: string; body: string; url?: string; tag?: string }
 ) {
   const a = getAuth();
   if (!a || !projectId) {
@@ -63,7 +63,7 @@ export async function sendPushToUser(
             token,
             notification: { title: payload.title, body: payload.body },
             data: { url: payload.url ?? '/notifications' },
-            android: { priority: 'HIGH', notification: { channel_id: 'frianzo_default' } },
+            android: { priority: 'HIGH', notification: { channel_id: 'frianzo_default', ...(payload.tag ? { tag: payload.tag } : {}) } },
           },
         }),
       });
