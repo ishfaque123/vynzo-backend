@@ -7,7 +7,7 @@ export const googleClient = new OAuth2Client(
   env.googleRedirectUri
 );
 
-export function getGoogleAuthUrl(forceSelect?: boolean, mobileApp?: boolean) {
+export function getGoogleAuthUrl(mobileApp?: boolean) {
   return googleClient.generateAuthUrl({
     access_type: 'online',
     scope: ['openid', 'email', 'profile'],

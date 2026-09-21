@@ -57,9 +57,8 @@ function clearAuthCookies(res: Response) {
 }
 
 export async function googleLoginStart(req: Request, res: Response) {
-  const forceSelect = req.query.switch === '1';
   const mobileApp = req.query.app === '1';
-  res.redirect(getGoogleAuthUrl(forceSelect, mobileApp));
+  res.redirect(getGoogleAuthUrl(mobileApp));
 }
 
 export async function googleCallback(req: Request, res: Response) {
@@ -75,7 +74,7 @@ export async function googleCallback(req: Request, res: Response) {
 
   try {
     const meta = extractRequestMeta(req);
-    const result = await loginWithGoogleCode(code, req.cookies?.vynzo_device, meta);
+    const result = await loginWithGoogleCode(code, null, meta);
 
     if (mobileApp) {
       const params = new URLSearchParams({
