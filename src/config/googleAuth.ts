@@ -11,7 +11,7 @@ export function getGoogleAuthUrl(forceSelect?: boolean, mobileApp?: boolean) {
   return googleClient.generateAuthUrl({
     access_type: 'online',
     scope: ['openid', 'email', 'profile'],
-    prompt: 'select_account',
+    prompt: forceSelect ? 'consent' : 'select_account',
     ...(mobileApp ? { state: 'frianzo_mobile' } : {}),
   });
 }
