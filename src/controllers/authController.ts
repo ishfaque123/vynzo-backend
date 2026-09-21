@@ -71,6 +71,7 @@ export async function googleCallback(req: Request, res: Response) {
   const mobileApp = req.query.state === 'frianzo_mobile';
 
   if (!code) {
+    console.error('[google_callback] no code; google error:', req.query.error || 'none');
     if (mobileApp) {
       return res.redirect('frianzo://oauth/callback?error=google_auth_failed');
     }
@@ -96,6 +97,13 @@ export async function googleCallback(req: Request, res: Response) {
 
     res.redirect(`${env.frontendUrl}${result.isNewUser ? '/profile-setup' : '/'}`);
   } catch (err) {
+    const reason =
+      err instanceof ApiError
+        ? `${err.code}: ${err.message}`
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    console.error('[google_callback] failed:', reason);
     await logAuthFailure({
       platform: mobileApp ? 'webview' : 'web',
       stage: 'google_callback',
