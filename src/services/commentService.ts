@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
@@ -232,24 +233,57 @@ export async function setCommentReaction(userId: string, commentId: string, type
   const comment = await prisma.comment.findUnique({ where: { id: commentId } });
   if (!comment) throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found.');
 
-  const existing = await prisma.commentReaction.findUnique({ where: { userId_commentId: { userId, commentId } } });
-  if (existing && existing.type === type) {
-    await prisma.commentReaction.delete({ where: { id: existing.id } });
-    const count = await prisma.commentReaction.count({ where: { commentId } });
-    return { reaction: null, reactionCount: count };
-  }
-  await prisma.commentReaction.upsert({
-    where: { userId_commentId: { userId, commentId } },
-    update: { type: type as any },
-    create: { userId, commentId, type: type as any },
-  });
+  let result: { reaction: string | null; reactionCount: number; shouldNotify: boolean } | null = null;
 
-  if (!existing) {
-    await createNotification({ userId: comment.userId, actorId: userId, type: 'comment_like', postId: comment.postId, commentId, reaction: type });
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      result = await prisma.$transaction(async (tx) => {
+        const existing = await tx.commentReaction.findUnique({
+          where: { userId_commentId: { userId, commentId } },
+        });
+
+        if (existing && existing.type === type) {
+          await tx.commentReaction.delete({ where: { id: existing.id } });
+          const count = await tx.commentReaction.count({ where: { commentId } });
+          return { reaction: null, reactionCount: count, shouldNotify: false };
+        }
+
+        await tx.commentReaction.upsert({
+          where: { userId_commentId: { userId, commentId } },
+          update: { type: type as any },
+          create: { userId, commentId, type: type as any },
+        });
+
+        const count = await tx.commentReaction.count({ where: { commentId } });
+        return { reaction: type, reactionCount: count, shouldNotify: !existing };
+      }, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+
+      break;
+    } catch (err: any) {
+      const retryable = err?.code === 'P2034' || err?.code === 'P2002';
+      if (!retryable || attempt === 3) throw err;
+    }
   }
 
-  const count = await prisma.commentReaction.count({ where: { commentId } });
-  return { reaction: type, reactionCount: count };
+  if (!result) throw new ApiError(500, 'COMMENT_REACTION_FAILED', 'Could not update comment reaction.');
+
+  if (result.shouldNotify) {
+    await createNotification({
+      userId: comment.userId,
+      actorId: userId,
+      type: 'comment_like',
+      postId: comment.postId,
+      commentId,
+      reaction: type,
+    });
+  }
+
+  return {
+    reaction: result.reaction,
+    reactionCount: result.reactionCount,
+  };
 }
 
 export async function editComment(userId: string, commentId: string, content: string) {
