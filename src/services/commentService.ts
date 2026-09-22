@@ -78,8 +78,6 @@ export async function addComment(
     await createNotification({ userId: post.userId, actorId: userId, type: 'post_comment', postId });
   }
 
-  // Tell people who were tagged in the comment. The post owner and the person
-  // being replied to already get their own notification, so skip them here.
   const parentAuthorId = parentCommentId
     ? (await prisma.comment.findUnique({ where: { id: parentCommentId }, select: { userId: true } }))?.userId
     : undefined;
@@ -92,7 +90,26 @@ export async function addComment(
   return toCommentDTO(comment, userId);
 }
 
-export async function getComments(postId: string, currentUserId?: string) {
+const COMMENT_PAGE_SIZE = 20;
+
+function encodeCommentCursor(createdAt: Date, id: string) {
+  return Buffer.from(JSON.stringify({ createdAt: createdAt.toISOString(), id }), 'utf8').toString('base64url');
+}
+
+function decodeCommentCursor(cursor?: string) {
+  if (!cursor) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (typeof parsed?.createdAt !== 'string' || typeof parsed?.id !== 'string') return null;
+    const createdAt = new Date(parsed.createdAt);
+    if (Number.isNaN(createdAt.getTime())) return null;
+    return { createdAt, id: parsed.id };
+  } catch {
+    return null;
+  }
+}
+
+export async function getComments(postId: string, currentUserId?: string, cursor?: string, limit = COMMENT_PAGE_SIZE) {
   // Bug fix: comments on a post used to be readable by anyone (even logged
   // out), regardless of whether they were allowed to see the post itself.
   // Same two checks as getPostById in postService.ts, for consistency:
@@ -106,50 +123,109 @@ export async function getComments(postId: string, currentUserId?: string) {
       throw new ApiError(403, 'PRIVATE_ACCOUNT', 'This account is private.');
     }
   }
-
   if (post.visibility === 'private' && post.userId !== currentUserId) {
     throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
   }
 
-  const allComments = await prisma.comment.findMany({
-    where: { postId },
-    orderBy: { createdAt: 'asc' },
-    include: {
-      user: true,
-      reactions: true,
-      tags: { include: { user: true } },
-    },
+  const safeLimit = Math.min(Math.max(limit, 1), COMMENT_PAGE_SIZE);
+  const decodedCursor = decodeCommentCursor(cursor);
+  if (cursor && !decodedCursor) throw new ApiError(400, 'INVALID_CURSOR', 'Invalid comment pagination cursor.');
+
+  const rootWhere: any = { postId, parentCommentId: null };
+  if (decodedCursor) {
+    rootWhere.OR = [
+      { createdAt: { lt: decodedCursor.createdAt } },
+      { createdAt: decodedCursor.createdAt, id: { lt: decodedCursor.id } },
+    ];
+  }
+
+  const roots = await prisma.comment.findMany({
+    where: rootWhere,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: safeLimit + 1,
+    include: { user: true, reactions: true, tags: { include: { user: true } } },
   });
 
-  const byId = new Map<string, any>();
-  for (const c of allComments) byId.set(c.id, { ...c, children: [] as any[] });
+  const hasMore = roots.length > safeLimit;
+  const pageRoots = hasMore ? roots.slice(0, safeLimit) : roots;
+  const rootIds = pageRoots.map((r) => r.id);
 
-  const roots: any[] = [];
-  for (const c of byId.values()) {
-    if (c.parentCommentId && byId.has(c.parentCommentId)) {
-      byId.get(c.parentCommentId).children.push(c);
-    } else {
-      roots.push(c);
+  // Fetch this page's replies level by level instead of the whole post's
+  // comment tree — threads rarely go more than a few levels deep, so this
+  // is a handful of small queries instead of one giant one.
+  const allReplies: any[] = [];
+  if (rootIds.length) {
+    let frontier = rootIds;
+    while (frontier.length) {
+      const level = await prisma.comment.findMany({
+        where: { postId, parentCommentId: { in: frontier } },
+        orderBy: { createdAt: 'asc' },
+        include: { user: true, reactions: true, tags: { include: { user: true } } },
+      });
+      if (!level.length) break;
+      allReplies.push(...level);
+      frontier = level.map((c) => c.id);
     }
   }
 
-  async function buildDTO(c: any): Promise<any> {
+  // Batch friendStatus for every author on this page in one query instead
+  // of one getFriendStatus() call per comment (was N+1).
+  const authorIds = [...new Set([...pageRoots, ...allReplies].map((c) => c.userId))];
+  const friendStatusByAuthor = new Map<string, string>();
+  if (currentUserId && authorIds.length) {
+    const followRows = await prisma.follow.findMany({
+      where: {
+        OR: [
+          { followerId: currentUserId, followingId: { in: authorIds } },
+          { followerId: { in: authorIds }, followingId: currentUserId },
+        ],
+      },
+      select: { followerId: true, followingId: true },
+    });
+    const followingSet = new Set(followRows.filter((f) => f.followerId === currentUserId).map((f) => f.followingId));
+    const followerSet = new Set(followRows.filter((f) => f.followingId === currentUserId).map((f) => f.followerId));
+    for (const id of authorIds) {
+      if (id === currentUserId) friendStatusByAuthor.set(id, 'self');
+      else {
+        const iFollow = followingSet.has(id);
+        const theyFollow = followerSet.has(id);
+        friendStatusByAuthor.set(id, iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follow_back' : 'none');
+      }
+    }
+  }
+
+  function toDTO(c: any) {
     const myReaction = currentUserId ? c.reactions?.find((r: any) => r.userId === currentUserId) : null;
-    const friendStatus = await getFriendStatus(currentUserId, c.userId);
     return {
       id: c.id,
       content: c.content,
       createdAt: c.createdAt,
       author: toAuthorDTO(c.user),
-      friendStatus,
+      friendStatus: friendStatusByAuthor.get(c.userId) ?? 'none',
       reactionCount: c.reactions?.length ?? 0,
       myReaction: myReaction ? myReaction.type : null,
       taggedUsers: c.tags?.map((t: any) => toAuthorDTO(t.user)) ?? [],
-      replies: await Promise.all(c.children.map((r: any) => buildDTO(r))),
+      replies: [] as any[],
     };
   }
 
-  return Promise.all(roots.map((r) => buildDTO(r)));
+  const nodes = new Map<string, any>();
+  for (const c of [...pageRoots, ...allReplies]) nodes.set(c.id, toDTO(c));
+  for (const c of allReplies) {
+    const parent = nodes.get(c.parentCommentId);
+    if (parent) parent.replies.push(nodes.get(c.id));
+  }
+
+  const result = pageRoots.map((r) => nodes.get(r.id));
+  const last = pageRoots[pageRoots.length - 1];
+
+  return {
+    comments: result,
+    pagination: {
+      hasMore,
+      nextCursor: hasMore && last ? encodeCommentCursor(last.createdAt, last.id) : null,
+    },
+  };
 }
 
 export async function setCommentReaction(userId: string, commentId: string, type: string) {

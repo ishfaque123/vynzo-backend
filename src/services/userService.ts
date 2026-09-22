@@ -15,6 +15,7 @@ export function toPrivateProfile(user: any) {
     profilePictureUrl: user.profilePictureUrl,
     coverPhotoUrl: user.coverPhotoUrl,
     gender: user.gender,
+    email: user.email,
     website: user.website,
     phone: user.phone,
     province: user.province,

@@ -19,8 +19,10 @@ export async function addCommentHandler(req: Request, res: Response, next: NextF
 
 export async function getCommentsHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const comments = await getComments(req.params.postId, req.user?.id);
-    sendSuccess(res, { comments });
+    const cursor = typeof req.query.cursor === 'string' ? req.query.cursor : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const result = await getComments(req.params.postId, req.user?.id, cursor, limit);
+    sendSuccess(res, result);
   } catch (err) { next(err); }
 }
 
