@@ -91,6 +91,17 @@ export async function deleteStatus(userId: string, statusId: string) {
   const status = await prisma.status.findUnique({ where: { id: statusId } });
   if (!status) throw new ApiError(404, 'STATUS_NOT_FOUND', 'Status not found.');
   if (status.userId !== userId) throw new ApiError(403, 'FORBIDDEN', 'Not your status.');
+
+  // Delete the media object as part of manual status deletion, matching
+  // the existing expired-status cleanup behavior.
+  if (status.mediaUrl) {
+    try {
+      await deleteFromR2(status.mediaUrl);
+    } catch (err) {
+      console.error('Failed to delete manually deleted status media from R2:', err);
+    }
+  }
+
   await prisma.status.delete({ where: { id: statusId } });
   return { deleted: true };
 }
