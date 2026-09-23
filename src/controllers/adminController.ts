@@ -189,21 +189,38 @@ export async function updateAdminUserVerification(req: Request, res: Response, n
       throw new ApiError(403, 'ADMIN_TARGET_REQUIRED', 'Only a superadmin can change another admin account.');
     }
 
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        isVerified: verified,
-        verifiedAt: verified ? new Date() : null,
-        verifiedBy: verified ? req.user!.id : null,
-      },
-      select: {
-        id: true,
-        username: true,
-        displayName: true,
-        isVerified: true,
-        verifiedAt: true,
-        verifiedBy: true,
-      },
+    const now = new Date();
+    const user = await prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: {
+          isVerified: verified,
+          verifiedAt: verified ? now : null,
+          verifiedBy: verified ? req.user!.id : null,
+        },
+        select: {
+          id: true,
+          username: true,
+          displayName: true,
+          isVerified: true,
+          verifiedAt: true,
+          verifiedBy: true,
+        },
+      });
+
+      if (verified) {
+        await tx.verificationRequest.updateMany({
+          where: { userId, status: VerificationRequestStatus.pending },
+          data: {
+            status: VerificationRequestStatus.approved,
+            adminNote: 'Approved directly by admin.',
+            reviewedBy: req.user!.id,
+            reviewedAt: now,
+          },
+        });
+      }
+
+      return updatedUser;
     });
 
     return sendSuccess(res, { user });
