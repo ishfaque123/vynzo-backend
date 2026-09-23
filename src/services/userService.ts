@@ -31,6 +31,7 @@ export function toPrivateProfile(user: any) {
     usernameChangedAt: user.usernameChangedAt,
     displayNameChangedAt: user.displayNameChangedAt,
     dobChangedAt: user.dobChangedAt,
+    isVerified: user.isVerified ?? false,
   };
 }
 
@@ -56,6 +57,7 @@ export function toPublicProfile(
     lastActiveAt: extra?.lastActiveAt ?? null,
     blockedByMe: extra?.blockedByMe ?? false,
     blockedByOther: extra?.blockedByOther ?? false,
+    isVerified: user.isVerified ?? false,
   };
 }
 
