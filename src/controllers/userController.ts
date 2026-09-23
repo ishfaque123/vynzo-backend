@@ -127,6 +127,61 @@ export async function updateCoverHandler(req: Request, res: Response, next: Next
 }
 
 
+async function getVerificationEligibility(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { createdAt: true, isVerified: true },
+  });
+  if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+  const accountAgeDays = Math.floor((Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24));
+  const [posts, reels, comments, sharedPosts] = await Promise.all([
+    prisma.post.count({ where: { userId } }),
+    prisma.reel.count({ where: { userId } }),
+    prisma.comment.count({ where: { userId } }),
+    prisma.post.count({ where: { userId, originalPostId: { not: null } } }),
+  ]);
+
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(start.getDate() - 30);
+  start.setHours(0, 0, 0, 0);
+
+  const pings = await prisma.usagePing.findMany({
+    where: { userId, pingedAt: { gte: start, lte: now } },
+    select: { pingedAt: true },
+  });
+
+  const minutesByDay = new Map<string, number>();
+  for (const ping of pings) {
+    const key = ping.pingedAt.toISOString().slice(0, 10);
+    minutesByDay.set(key, (minutesByDay.get(key) || 0) + 1);
+  }
+
+  const dailyScreenTime = Array.from({ length: 30 }, (_, index) => {
+    const day = new Date(start);
+    day.setDate(start.getDate() + index);
+    const key = day.toISOString().slice(0, 10);
+    return { date: key, minutes: minutesByDay.get(key) || 0 };
+  });
+
+  const daysWithTenMinutes = dailyScreenTime.filter((day) => day.minutes >= 10).length;
+  const requirements = {
+    accountAge: { current: accountAgeDays, required: 30, met: accountAgeDays >= 30 },
+    posts: { current: posts, required: 10, met: posts >= 10 },
+    reels: { current: reels, required: 2, met: reels >= 2 },
+    comments: { current: comments, required: 10, met: comments >= 10 },
+    sharedPosts: { current: sharedPosts, required: 3, met: sharedPosts >= 3 },
+    dailyScreenTime: { current: daysWithTenMinutes, required: 30, met: daysWithTenMinutes >= 30 },
+  };
+
+  return {
+    eligible: Object.values(requirements).every((item) => item.met),
+    requirements,
+    isVerified: user.isVerified,
+  };
+}
+
 export async function createVerificationRequest(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.id;
@@ -135,12 +190,11 @@ export async function createVerificationRequest(req: Request, res: Response, nex
     if (!reason) throw new ApiError(400, 'VERIFICATION_REASON_REQUIRED', 'Please tell us why you are requesting verification.');
     if (reason.length > 1000) throw new ApiError(400, 'VERIFICATION_REASON_TOO_LONG', 'Verification request details must be 1000 characters or fewer.');
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, isVerified: true },
-    });
-    if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
-    if (user.isVerified) throw new ApiError(400, 'ALREADY_VERIFIED', 'Your account is already verified.');
+    const eligibility = await getVerificationEligibility(userId);
+    if (!eligibility.eligible) {
+      throw new ApiError(403, 'VERIFICATION_REQUIREMENTS_NOT_MET', 'Your account does not meet all verification requirements yet.');
+    }
+    if (eligibility.isVerified) throw new ApiError(400, 'ALREADY_VERIFIED', 'Your account is already verified.');
 
     const pending = await prisma.verificationRequest.findFirst({
       where: { userId, status: 'pending' },
@@ -153,12 +207,28 @@ export async function createVerificationRequest(req: Request, res: Response, nex
       select: { id: true, status: true, reason: true, adminNote: true, reviewedAt: true, createdAt: true },
     });
 
-    return sendSuccess(res, { request });
+    return sendSuccess(res, { request, eligibility });
   } catch (err) {
     next(err);
   }
 }
 
+export async function getMyVerificationRequest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const [request, eligibility] = await Promise.all([
+      prisma.verificationRequest.findFirst({
+        where: { userId: req.user!.id },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, status: true, reason: true, adminNote: true, reviewedAt: true, createdAt: true },
+      }),
+      getVerificationEligibility(req.user!.id),
+    ]);
+
+    return sendSuccess(res, { request, eligibility });
+  } catch (err) {
+    next(err);
+  }
+}
 export async function getMyVerificationRequest(req: Request, res: Response, next: NextFunction) {
   try {
     const request = await prisma.verificationRequest.findFirst({
