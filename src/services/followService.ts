@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { createNotification } from './notificationService';
@@ -22,24 +23,54 @@ export async function toggleFollow(followerId: string, followingId: string) {
     throw new ApiError(403, 'BLOCKED', 'You cannot follow this user.');
   }
 
-  const existing = await prisma.follow.findUnique({ where: { followerId_followingId: { followerId, followingId } } });
+  let result: { following: boolean; shouldNotify: boolean } | null = null;
 
-  if (existing) {
-    await prisma.follow.delete({ where: { id: existing.id } });
-    return { following: false };
-  }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      result = await prisma.$transaction(async (tx) => {
+        const existing = await tx.follow.findUnique({
+          where: { followerId_followingId: { followerId, followingId } },
+        });
 
-  const reverseExists = await prisma.follow.findUnique({ where: { followerId_followingId: { followerId: followingId, followingId: followerId } } });
-  if (reverseExists) {
-    const [myFriends, theirFriends] = await Promise.all([getFriendCount(followerId), getFriendCount(followingId)]);
-    if (myFriends >= FRIEND_LIMIT || theirFriends >= FRIEND_LIMIT) {
-      throw new ApiError(403, 'FRIEND_LIMIT_REACHED', 'Friend limit of 5,000 reached.');
+        if (existing) {
+          await tx.follow.delete({ where: { id: existing.id } });
+          return { following: false, shouldNotify: false };
+        }
+
+        const reverseExists = await tx.follow.findUnique({
+          where: { followerId_followingId: { followerId: followingId, followingId: followerId } },
+        });
+
+        if (reverseExists) {
+          const [myFriends, theirFriends] = await Promise.all([
+            getFriendCount(followerId),
+            getFriendCount(followingId),
+          ]);
+          if (myFriends >= FRIEND_LIMIT || theirFriends >= FRIEND_LIMIT) {
+            throw new ApiError(403, 'FRIEND_LIMIT_REACHED', 'Friend limit of 5,000 reached.');
+          }
+        }
+
+        await tx.follow.create({ data: { followerId, followingId } });
+        return { following: true, shouldNotify: true };
+      }, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+
+      break;
+    } catch (err: any) {
+      const retryable = err?.code === 'P2034' || err?.code === 'P2002';
+      if (!retryable || attempt === 3) throw err;
     }
   }
 
-  await prisma.follow.create({ data: { followerId, followingId } });
-  await createNotification({ userId: followingId, actorId: followerId, type: 'follow' });
-  return { following: true };
+  if (!result) throw new ApiError(500, 'FOLLOW_FAILED', 'Could not update follow.');
+
+  if (result.shouldNotify) {
+    await createNotification({ userId: followingId, actorId: followerId, type: 'follow' });
+  }
+
+  return { following: result.following };
 }
 
 export async function getFollowCounts(userId: string) {
