@@ -13,6 +13,8 @@ import {
   deleteAdminComment,
   deleteAdminReel,
   listAdminAuthFailures,
+  listAdminVerificationRequests,
+  reviewAdminVerificationRequest,
 } from '../controllers/adminController';
 
 const router = Router();
@@ -30,5 +32,7 @@ router.get('/comments', listAdminComments);
 router.delete('/comments/:commentId', deleteAdminComment);
 router.delete('/reels/:reelId', deleteAdminReel);
 router.get('/auth-failures', listAdminAuthFailures);
+router.get('/verification-requests', listAdminVerificationRequests);
+router.patch('/verification-requests/:requestId', reviewAdminVerificationRequest);
 
 export default router;
