@@ -476,7 +476,7 @@ async function getVerificationEligibilityForUsers(userIds: string[]) {
 
   const [users, postCounts, reelCounts, commentCounts, sharedPostCounts] = await Promise.all([
     prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, createdAt: true, isVerified: true } }),
-    prisma.post.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } }),
+    prisma.post.groupBy({ by: ['userId'], where: { userId: { in: userIds }, originalPostId: null }, _count: { _all: true } }),
     prisma.reel.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } }),
     prisma.comment.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } }),
     prisma.post.groupBy({ by: ['userId'], where: { userId: { in: userIds }, originalPostId: { not: null } }, _count: { _all: true } }),
