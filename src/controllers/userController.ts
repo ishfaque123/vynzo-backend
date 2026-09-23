@@ -229,16 +229,4 @@ export async function getMyVerificationRequest(req: Request, res: Response, next
     next(err);
   }
 }
-export async function getMyVerificationRequest(req: Request, res: Response, next: NextFunction) {
-  try {
-    const request = await prisma.verificationRequest.findFirst({
-      where: { userId: req.user!.id },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, status: true, reason: true, adminNote: true, reviewedAt: true, createdAt: true },
-    });
 
-    return sendSuccess(res, { request });
-  } catch (err) {
-    next(err);
-  }
-}
