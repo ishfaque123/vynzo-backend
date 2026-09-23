@@ -45,7 +45,7 @@ export async function patchMyProfile(req: Request, res: Response, next: NextFunc
 export async function searchUsersHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const query = (req.query.q as string) || '';
-    const users = query.length > 0 ? await searchUsers(query) : [];
+    const users = query.length > 0 ? await searchUsers(query, req.user?.id) : [];
     sendSuccess(res, { users });
   } catch (err) { next(err); }
 }
