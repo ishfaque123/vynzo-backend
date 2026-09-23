@@ -10,7 +10,7 @@ router.patch('/me', authMiddleware, patchMyProfile);
 router.delete('/me', authMiddleware, deleteMyAccount);
 router.post('/me/profile-setup', authMiddleware, postProfileSetup);
 router.get('/me/dashboard', authMiddleware, getMyDashboard);
-router.get('/search', searchUsersHandler);
+router.get('/search', optionalAuth, searchUsersHandler);
 router.post('/:userId/report', authMiddleware, reportUserHandler);
 router.post('/me/avatar', authMiddleware, upload.single('image'), updateAvatarHandler);
 router.post('/me/cover', authMiddleware, upload.single('image'), updateCoverHandler);
