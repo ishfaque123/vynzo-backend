@@ -142,6 +142,8 @@ export async function listAdminUsers(req: Request, res: Response, next: NextFunc
           googleId: true,
           role: true,
           accountStatus: true,
+          isVerified: true,
+          verifiedAt: true,
           profileCompleted: true,
           profilePictureUrl: true,
           createdAt: true,
