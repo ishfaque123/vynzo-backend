@@ -332,6 +332,51 @@ export async function listAdminReports(req: Request, res: Response, next: NextFu
   }
 }
 
+export async function listAdminComments(req: Request, res: Response, next: NextFunction) {
+  try {
+    const page = pageValue(req.query.page);
+    const limit = limitValue(req.query.limit);
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+    const where = search
+      ? {
+          OR: [
+            { content: { contains: search } },
+            { user: { username: { contains: search } } },
+            { user: { displayName: { contains: search } } },
+            { post: { content: { contains: search } } },
+          ],
+        }
+      : {};
+
+    const [total, comments] = await Promise.all([
+      prisma.comment.count({ where }),
+      prisma.comment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: skipFor(page, limit),
+        take: limit,
+        select: {
+          id: true,
+          content: true,
+          createdAt: true,
+          parentCommentId: true,
+          user: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } },
+          post: { select: { id: true, content: true } },
+          _count: { select: { replies: true, reactions: true, reports: true } },
+        },
+      }),
+    ]);
+
+    return sendSuccess(res, {
+      comments,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function deleteAdminComment(req: Request, res: Response, next: NextFunction) {
   try {
     const comment = await prisma.comment.findUnique({ where: { id: req.params.commentId }, select: { id: true } });
