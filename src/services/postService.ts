@@ -4,7 +4,7 @@ import { getFriendStatus } from './followService';
 import { createNotification } from './notificationService';
 
 function toAuthorDTO(user: any) {
-  return { id: user.id, username: user.username, displayName: user.displayName, profilePictureUrl: user.profilePictureUrl };
+  return { id: user.id, username: user.username, displayName: user.displayName, profilePictureUrl: user.profilePictureUrl, isVerified: user.isVerified ?? false };
 }
 
 async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
