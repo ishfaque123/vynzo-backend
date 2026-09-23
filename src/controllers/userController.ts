@@ -5,7 +5,7 @@ import { profileSetupSchema, profileUpdateSchema } from '../utils/validators/pro
 import { completeProfile, updateProfile, getPublicProfileByUsername, toPrivateProfile, searchUsers } from '../services/userService';
 import { reportUser } from '../services/userReportService';
 import { prisma } from '../config/prisma';
-import { uploadToR2 } from '../config/r2';
+import { uploadToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
 
 export async function getMyProfile(req: Request, res: Response, next: NextFunction) {
@@ -59,7 +59,37 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
 
 export async function deleteMyAccount(req: Request, res: Response, next: NextFunction) {
   try {
-    await prisma.user.delete({ where: { id: req.user!.id } });
+    const userId = req.user!.id;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { profilePictureUrl: true, coverPhotoUrl: true },
+    });
+    if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+    const [posts, reels, statuses, messages] = await Promise.all([
+      prisma.post.findMany({ where: { userId }, select: { imageUrl: true } }),
+      prisma.reel.findMany({ where: { userId }, select: { videoUrl: true, thumbnailUrl: true } }),
+      prisma.status.findMany({ where: { userId }, select: { mediaUrl: true } }),
+      prisma.message.findMany({ where: { senderId: userId }, select: { mediaUrl: true } }),
+    ]);
+
+    const mediaUrls = [
+      user.profilePictureUrl,
+      user.coverPhotoUrl,
+      ...posts.map((p) => p.imageUrl),
+      ...reels.flatMap((r) => [r.videoUrl, r.thumbnailUrl]),
+      ...statuses.map((s) => s.mediaUrl),
+      ...messages.map((m) => m.mediaUrl),
+    ].filter((url): url is string => Boolean(url));
+
+    const results = await Promise.allSettled(mediaUrls.map((url) => deleteFromR2(url)));
+    const failed = results.filter((result) => result.status === 'rejected');
+    if (failed.length) {
+      console.error(`Failed to delete ${failed.length} account media file(s) from R2; account deletion aborted.`);
+      throw new ApiError(500, 'MEDIA_CLEANUP_FAILED', 'Could not remove all account media. Please try again.');
+    }
+
+    await prisma.user.delete({ where: { id: userId } });
     res.clearCookie('vynzo_token', { secure: true, sameSite: 'none' as const, domain: '.frianzo.online' });
     sendSuccess(res, { deleted: true });
   } catch (err) { next(err); }
