@@ -125,3 +125,50 @@ export async function updateCoverHandler(req: Request, res: Response, next: Next
     sendSuccess(res, { user: toPrivateProfile(user) });
   } catch (err) { next(err); }
 }
+
+
+export async function createVerificationRequest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user!.id;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+
+    if (!reason) throw new ApiError(400, 'VERIFICATION_REASON_REQUIRED', 'Please tell us why you are requesting verification.');
+    if (reason.length > 1000) throw new ApiError(400, 'VERIFICATION_REASON_TOO_LONG', 'Verification request details must be 1000 characters or fewer.');
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, isVerified: true },
+    });
+    if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+    if (user.isVerified) throw new ApiError(400, 'ALREADY_VERIFIED', 'Your account is already verified.');
+
+    const pending = await prisma.verificationRequest.findFirst({
+      where: { userId, status: 'pending' },
+      select: { id: true, status: true, createdAt: true },
+    });
+    if (pending) throw new ApiError(409, 'VERIFICATION_REQUEST_PENDING', 'Your verification request is already pending.');
+
+    const request = await prisma.verificationRequest.create({
+      data: { userId, reason },
+      select: { id: true, status: true, reason: true, adminNote: true, reviewedAt: true, createdAt: true },
+    });
+
+    return sendSuccess(res, { request });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getMyVerificationRequest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const request = await prisma.verificationRequest.findFirst({
+      where: { userId: req.user!.id },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, status: true, reason: true, adminNote: true, reviewedAt: true, createdAt: true },
+    });
+
+    return sendSuccess(res, { request });
+  } catch (err) {
+    next(err);
+  }
+}
