@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../config/prisma';
-import { AccountStatus } from '@prisma/client';
+import { AccountStatus, VerificationRequestStatus } from '@prisma/client';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 
@@ -465,6 +465,125 @@ export async function listAdminAuthFailures(req: Request, res: Response, next: N
     ]);
 
     return sendSuccess(res, { logs, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+
+export async function listAdminVerificationRequests(req: Request, res: Response, next: NextFunction) {
+  try {
+    const page = pageValue(req.query.page);
+    const limit = limitValue(req.query.limit);
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const rawStatus = typeof req.query.status === 'string' ? req.query.status : '';
+    const status = rawStatus === 'pending' || rawStatus === 'approved' || rawStatus === 'rejected'
+      ? rawStatus as VerificationRequestStatus
+      : undefined;
+
+    const where = {
+      ...(status ? { status } : {}),
+      ...(search
+        ? {
+            OR: [
+              { reason: { contains: search } },
+              { user: { username: { contains: search } } },
+              { user: { displayName: { contains: search } } },
+              { user: { email: { contains: search } } },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, requests] = await Promise.all([
+      prisma.verificationRequest.count({ where }),
+      prisma.verificationRequest.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: skipFor(page, limit),
+        take: limit,
+        select: {
+          id: true,
+          reason: true,
+          status: true,
+          adminNote: true,
+          reviewedBy: true,
+          reviewedAt: true,
+          createdAt: true,
+          user: {
+            select: {
+              id: true,
+              username: true,
+              displayName: true,
+              email: true,
+              profilePictureUrl: true,
+              isVerified: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return sendSuccess(res, { requests, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function reviewAdminVerificationRequest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const requestId = req.params.requestId;
+    const action = req.body?.action;
+    const adminNote = typeof req.body?.adminNote === 'string' ? req.body.adminNote.trim() : '';
+
+    if (action !== 'approve' && action !== 'reject') {
+      throw new ApiError(400, 'INVALID_VERIFICATION_ACTION', 'Action must be approve or reject.');
+    }
+    if (adminNote.length > 1000) {
+      throw new ApiError(400, 'VERIFICATION_NOTE_TOO_LONG', 'Admin note must be 1000 characters or fewer.');
+    }
+
+    const request = await prisma.verificationRequest.findUnique({
+      where: { id: requestId },
+      select: { id: true, userId: true, status: true },
+    });
+    if (!request) throw new ApiError(404, 'VERIFICATION_REQUEST_NOT_FOUND', 'Verification request not found.');
+    if (request.status !== 'pending') {
+      throw new ApiError(409, 'VERIFICATION_REQUEST_ALREADY_REVIEWED', 'This verification request has already been reviewed.');
+    }
+
+    const now = new Date();
+    const nextStatus: VerificationRequestStatus = action === 'approve'
+      ? VerificationRequestStatus.approved
+      : VerificationRequestStatus.rejected;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.verificationRequest.updateMany({
+        where: { id: request.id, status: VerificationRequestStatus.pending },
+        data: {
+          status: nextStatus,
+          adminNote: adminNote || null,
+          reviewedBy: req.user!.id,
+          reviewedAt: now,
+        },
+      });
+
+      if (updated.count !== 1) {
+        throw new ApiError(409, 'VERIFICATION_REQUEST_ALREADY_REVIEWED', 'This verification request has already been reviewed.');
+      }
+
+      const user = await tx.user.update({
+        where: { id: request.userId },
+        data: action === 'approve'
+          ? { isVerified: true, verifiedAt: now, verifiedBy: req.user!.id }
+          : {},
+        select: { id: true, username: true, displayName: true, isVerified: true, verifiedAt: true, verifiedBy: true },
+      });
+
+      return user;
+    });
+
+    return sendSuccess(res, { user: result, action });
   } catch (err) {
     next(err);
   }
