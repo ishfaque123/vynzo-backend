@@ -588,6 +588,13 @@ export async function reviewAdminVerificationRequest(req: Request, res: Response
       throw new ApiError(409, 'VERIFICATION_REQUEST_ALREADY_REVIEWED', 'This verification request has already been reviewed.');
     }
 
+    if (action === 'approve') {
+      const eligibility = (await getVerificationEligibilityForUsers([request.userId])).get(request.userId);
+      if (!eligibility?.eligible) {
+        throw new ApiError(403, 'VERIFICATION_REQUIREMENTS_NOT_MET', 'This user no longer meets all verification requirements.');
+      }
+    }
+
     const now = new Date();
     const nextStatus: VerificationRequestStatus = action === 'approve'
       ? VerificationRequestStatus.approved
