@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getMyProfile, getPublicProfile, postProfileSetup, patchMyProfile, searchUsersHandler, getMyDashboard, deleteMyAccount, reportUserHandler, updateAvatarHandler, updateCoverHandler } from '../controllers/userController';
+import { getMyProfile, getPublicProfile, postProfileSetup, patchMyProfile, searchUsersHandler, getMyDashboard, deleteMyAccount, reportUserHandler, updateAvatarHandler, updateCoverHandler, createVerificationRequest, getMyVerificationRequest } from '../controllers/userController';
 import { upload } from '../middleware/upload';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { optionalAuth } from '../middleware/optionalAuth';
@@ -10,6 +10,8 @@ router.patch('/me', authMiddleware, patchMyProfile);
 router.delete('/me', authMiddleware, deleteMyAccount);
 router.post('/me/profile-setup', authMiddleware, postProfileSetup);
 router.get('/me/dashboard', authMiddleware, getMyDashboard);
+router.get('/me/verification-request', authMiddleware, getMyVerificationRequest);
+router.post('/me/verification-request', authMiddleware, createVerificationRequest);
 router.get('/search', optionalAuth, searchUsersHandler);
 router.post('/:userId/report', authMiddleware, reportUserHandler);
 router.post('/me/avatar', authMiddleware, upload.single('image'), updateAvatarHandler);
