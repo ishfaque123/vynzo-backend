@@ -6,7 +6,7 @@ import { getFriendStatus } from './followService';
 import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
 
-const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true };
+const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true };
 
 export async function addReelComment(userId: string, reelId: string, content: string, parentCommentId?: string) {
   const reel = await prisma.reel.findUnique({ where: { id: reelId } });
