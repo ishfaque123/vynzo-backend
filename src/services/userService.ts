@@ -146,10 +146,58 @@ export async function updateProfile(userId: string, data: any) {
   return prisma.user.update({ where: { id: userId }, data: updateData });
 }
 
-export async function searchUsers(query: string) {
+export async function searchUsers(query: string, currentUserId?: string) {
   const users = await prisma.user.findMany({
     where: { OR: [{ username: { contains: query } }, { displayName: { contains: query } }] },
     take: 20,
   });
-  return users.map((u) => toPublicProfile(u));
+
+  if (!currentUserId || users.length === 0) {
+    return users.map((u) => toPublicProfile(u));
+  }
+
+  const userIds = users.map((u) => u.id);
+
+  const [blockedUsers, followingRows, followerRows] = await Promise.all([
+    prisma.block.findMany({
+      where: {
+        OR: [
+          { blockerId: currentUserId, blockedId: { in: userIds } },
+          { blockerId: { in: userIds }, blockedId: currentUserId },
+        ],
+      },
+      select: { blockerId: true, blockedId: true },
+    }),
+    prisma.follow.findMany({
+      where: { followerId: currentUserId, followingId: { in: userIds } },
+      select: { followingId: true },
+    }),
+    prisma.follow.findMany({
+      where: { followerId: { in: userIds }, followingId: currentUserId },
+      select: { followerId: true },
+    }),
+  ]);
+
+  const blockedIds = new Set(
+    blockedUsers.map((block) => block.blockerId === currentUserId ? block.blockedId : block.blockerId)
+  );
+  const followingIds = new Set(followingRows.map((row) => row.followingId));
+  const followerIds = new Set(followerRows.map((row) => row.followerId));
+
+  return users
+    .filter((user) => !blockedIds.has(user.id))
+    .map((user) => {
+      const friendStatus =
+        user.id === currentUserId
+          ? 'self'
+          : followingIds.has(user.id) && followerIds.has(user.id)
+            ? 'friends'
+            : followingIds.has(user.id)
+              ? 'following'
+              : followerIds.has(user.id)
+                ? 'follow_back'
+                : 'none';
+
+      return toPublicProfile(user, friendStatus);
+    });
 }
