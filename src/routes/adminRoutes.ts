@@ -5,6 +5,7 @@ import {
   getAdminOverview,
   listAdminUsers,
   updateAdminUserStatus,
+  updateAdminUserVerification,
   listAdminPosts,
   deleteAdminPost,
   listAdminReports,
@@ -21,6 +22,7 @@ router.use(authMiddleware, adminMiddleware);
 router.get('/overview', getAdminOverview);
 router.get('/users', listAdminUsers);
 router.patch('/users/:userId/status', updateAdminUserStatus);
+router.patch('/users/:userId/verification', updateAdminUserVerification);
 router.get('/posts', listAdminPosts);
 router.delete('/posts/:postId', deleteAdminPost);
 router.get('/reports', listAdminReports);
