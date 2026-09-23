@@ -136,7 +136,7 @@ async function getVerificationEligibility(userId: string) {
 
   const accountAgeDays = Math.floor((Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24));
   const [posts, reels, comments, sharedPosts] = await Promise.all([
-    prisma.post.count({ where: { userId } }),
+    prisma.post.count({ where: { userId, originalPostId: null } }),
     prisma.reel.count({ where: { userId } }),
     prisma.comment.count({ where: { userId } }),
     prisma.post.count({ where: { userId, originalPostId: { not: null } } }),
