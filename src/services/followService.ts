@@ -6,11 +6,11 @@ import { isEitherBlocked } from './blockService';
 
 const FRIEND_LIMIT = 5000;
 
-async function getFriendCount(userId: string): Promise<number> {
-  const following = await prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } });
+async function getFriendCount(userId: string, db: Prisma.TransactionClient | typeof prisma = prisma): Promise<number> {
+  const following = await db.follow.findMany({ where: { followerId: userId }, select: { followingId: true } });
   const followingIds = following.map((f) => f.followingId);
   if (followingIds.length === 0) return 0;
-  return prisma.follow.count({ where: { followerId: { in: followingIds }, followingId: userId } });
+  return db.follow.count({ where: { followerId: { in: followingIds }, followingId: userId } });
 }
 
 export async function toggleFollow(followerId: string, followingId: string) {
@@ -43,8 +43,8 @@ export async function toggleFollow(followerId: string, followingId: string) {
 
         if (reverseExists) {
           const [myFriends, theirFriends] = await Promise.all([
-            getFriendCount(followerId),
-            getFriendCount(followingId),
+            getFriendCount(followerId, tx),
+            getFriendCount(followingId, tx),
           ]);
           if (myFriends >= FRIEND_LIMIT || theirFriends >= FRIEND_LIMIT) {
             throw new ApiError(403, 'FRIEND_LIMIT_REACHED', 'Friend limit of 5,000 reached.');
