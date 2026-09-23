@@ -142,37 +142,12 @@ async function getVerificationEligibility(userId: string) {
     prisma.post.count({ where: { userId, originalPostId: { not: null } } }),
   ]);
 
-  const now = new Date();
-  const start = new Date(now);
-  start.setDate(start.getDate() - 30);
-  start.setHours(0, 0, 0, 0);
-
-  const pings = await prisma.usagePing.findMany({
-    where: { userId, pingedAt: { gte: start, lte: now } },
-    select: { pingedAt: true },
-  });
-
-  const minutesByDay = new Map<string, number>();
-  for (const ping of pings) {
-    const key = ping.pingedAt.toISOString().slice(0, 10);
-    minutesByDay.set(key, (minutesByDay.get(key) || 0) + 1);
-  }
-
-  const dailyScreenTime = Array.from({ length: 30 }, (_, index) => {
-    const day = new Date(start);
-    day.setDate(start.getDate() + index);
-    const key = day.toISOString().slice(0, 10);
-    return { date: key, minutes: minutesByDay.get(key) || 0 };
-  });
-
-  const daysWithTenMinutes = dailyScreenTime.filter((day) => day.minutes >= 10).length;
   const requirements = {
     accountAge: { current: accountAgeDays, required: 30, met: accountAgeDays >= 30 },
     posts: { current: posts, required: 10, met: posts >= 10 },
     reels: { current: reels, required: 2, met: reels >= 2 },
     comments: { current: comments, required: 10, met: comments >= 10 },
     sharedPosts: { current: sharedPosts, required: 3, met: sharedPosts >= 3 },
-    dailyScreenTime: { current: daysWithTenMinutes, required: 30, met: daysWithTenMinutes >= 30 },
   };
 
   return {
