@@ -55,6 +55,12 @@ enum NotificationType {
   comment_mention
 }
 
+enum VerificationRequestStatus {
+  pending
+  approved
+  rejected
+}
+
 enum ReportReason {
   spam
   harassment
@@ -100,6 +106,7 @@ model User {
   isVerified             Boolean           @default(false) @map("is_verified")
   verifiedAt             DateTime?         @map("verified_at")
   verifiedBy             String?           @map("verified_by")
+  verificationRequests   VerificationRequest[]
   posts                  Post[]
   likes                  Like[]
   comments               Comment[]
@@ -641,6 +648,24 @@ model ReelView {
   @@index([viewerId], name: "reel_views_viewer_id_idx")
   @@map("reel_views")
 }
+model VerificationRequest {
+  id           String                    @id @default(uuid())
+  userId       String                    @map("user_id")
+  reason       String                    @db.VarChar(1000)
+  status       VerificationRequestStatus @default(pending)
+  adminNote    String?                   @db.VarChar(1000) @map("admin_note")
+  reviewedBy   String?                   @map("reviewed_by")
+  reviewedAt   DateTime?                 @map("reviewed_at")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  updatedAt    DateTime                  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@map("verification_requests")
+}
+
 model EmailVerificationCode {
   id         String    @id @default(uuid())
   email      String
