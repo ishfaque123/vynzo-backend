@@ -168,6 +168,48 @@ export async function listAdminUsers(req: Request, res: Response, next: NextFunc
   }
 }
 
+export async function updateAdminUserVerification(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.params.userId;
+    const { verified } = req.body as { verified?: boolean };
+
+    if (typeof verified !== 'boolean') {
+      throw new ApiError(400, 'INVALID_VERIFICATION_STATUS', 'Verification status must be true or false.');
+    }
+
+    const target = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true },
+    });
+    if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+    if ((target.role === 'admin' || target.role === 'superadmin') && req.user!.role !== 'superadmin') {
+      throw new ApiError(403, 'ADMIN_TARGET_REQUIRED', 'Only a superadmin can change another admin account.');
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        isVerified: verified,
+        verifiedAt: verified ? new Date() : null,
+        verifiedBy: verified ? req.user!.id : null,
+      },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        isVerified: true,
+        verifiedAt: true,
+        verifiedBy: true,
+      },
+    });
+
+    return sendSuccess(res, { user });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function updateAdminUserStatus(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.params.userId;
