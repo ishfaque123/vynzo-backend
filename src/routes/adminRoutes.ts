@@ -8,6 +8,7 @@ import {
   listAdminPosts,
   deleteAdminPost,
   listAdminReports,
+  listAdminComments,
   deleteAdminComment,
   deleteAdminReel,
   listAdminAuthFailures,
@@ -23,6 +24,7 @@ router.patch('/users/:userId/status', updateAdminUserStatus);
 router.get('/posts', listAdminPosts);
 router.delete('/posts/:postId', deleteAdminPost);
 router.get('/reports', listAdminReports);
+router.get('/comments', listAdminComments);
 router.delete('/comments/:commentId', deleteAdminComment);
 router.delete('/reels/:reelId', deleteAdminReel);
 router.get('/auth-failures', listAdminAuthFailures);
