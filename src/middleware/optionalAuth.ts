@@ -4,7 +4,7 @@ import { prisma } from '../config/prisma';
 
 export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
   try {
-    const token = req.cookies?.vynzo_token;
+    const token = req.cookies?.vynzo_auth_token || req.cookies?.vynzo_token;
     if (!token) return next();
 
     const payload = verifyToken(token);
