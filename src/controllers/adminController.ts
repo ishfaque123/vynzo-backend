@@ -471,6 +471,36 @@ export async function listAdminAuthFailures(req: Request, res: Response, next: N
 }
 
 
+async function getVerificationEligibilityForUsers(userIds: string[]) {
+  if (!userIds.length) return new Map<string, any>();
+
+  const [users, postCounts, reelCounts, commentCounts, sharedPostCounts] = await Promise.all([
+    prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, createdAt: true, isVerified: true } }),
+    prisma.post.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } }),
+    prisma.reel.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } }),
+    prisma.comment.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } }),
+    prisma.post.groupBy({ by: ['userId'], where: { userId: { in: userIds }, originalPostId: { not: null } }, _count: { _all: true } }),
+  ]);
+
+  const map = new Map<string, any>();
+  for (const user of users) {
+    const age = Math.floor((Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24));
+    const posts = postCounts.find((x) => x.userId === user.id)?._count._all ?? 0;
+    const reels = reelCounts.find((x) => x.userId === user.id)?._count._all ?? 0;
+    const comments = commentCounts.find((x) => x.userId === user.id)?._count._all ?? 0;
+    const sharedPosts = sharedPostCounts.find((x) => x.userId === user.id)?._count._all ?? 0;
+    const requirements = {
+      accountAge: { current: age, required: 30, met: age >= 30 },
+      posts: { current: posts, required: 10, met: posts >= 10 },
+      reels: { current: reels, required: 2, met: reels >= 2 },
+      comments: { current: comments, required: 10, met: comments >= 10 },
+      sharedPosts: { current: sharedPosts, required: 3, met: sharedPosts >= 3 },
+    };
+    map.set(user.id, { eligible: Object.values(requirements).every((r) => r.met), requirements, isVerified: user.isVerified });
+  }
+  return map;
+}
+
 export async function listAdminVerificationRequests(req: Request, res: Response, next: NextFunction) {
   try {
     const page = pageValue(req.query.page);
@@ -524,7 +554,13 @@ export async function listAdminVerificationRequests(req: Request, res: Response,
       }),
     ]);
 
-    return sendSuccess(res, { requests, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+    const eligibilityMap = await getVerificationEligibilityForUsers(requests.map((request) => request.user.id));
+    const enrichedRequests = requests.map((request) => ({
+      ...request,
+      eligibility: eligibilityMap.get(request.user.id) ?? null,
+    }));
+
+    return sendSuccess(res, { requests: enrichedRequests, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
   } catch (err) {
     next(err);
   }
