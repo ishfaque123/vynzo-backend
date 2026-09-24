@@ -107,6 +107,8 @@ model User {
   verifiedAt             DateTime?         @map("verified_at")
   verifiedBy             String?           @map("verified_by")
   verificationRequests   VerificationRequest[]
+  referralsMade           Referral[]         @relation("ReferralsMade")
+  referralReceived        Referral?         @relation("ReferralReceived")
   posts                  Post[]
   likes                  Like[]
   comments               Comment[]
@@ -648,6 +650,21 @@ model ReelView {
   @@index([viewerId], name: "reel_views_viewer_id_idx")
   @@map("reel_views")
 }
+model Referral {
+  id                String   @id @default(uuid())
+  referrerId        String   @map("referrer_id")
+  referredUserId    String   @unique @map("referred_user_id")
+  deviceFingerprint String   @unique @map("device_fingerprint")
+  installReferrer   String?  @db.VarChar(1000) @map("install_referrer")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  referrer     User @relation("ReferralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredUser User @relation("ReferralReceived", fields: [referredUserId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId, createdAt])
+  @@map("referrals")
+}
+
 model VerificationRequest {
   id           String                    @id @default(uuid())
   userId       String                    @map("user_id")
