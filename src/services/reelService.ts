@@ -275,3 +275,41 @@ export async function getMyDailyReelStatus(userId: string) {
   const count = await prisma.reel.count({ where: { userId, createdAt: { gt: oneDayAgo } } });
   return { postedToday: count, remaining: Math.max(0, env.reelDailyLimit - count) };
 }
+
+export async function getReelsByUsername(username: string, currentUserId: string) {
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+  const isOwner = currentUserId === user.id;
+  if (!isOwner) {
+    if (await isEitherBlocked(currentUserId, user.id)) return [];
+    if (user.isPrivate) {
+      const friendStatus = await getFriendStatus(currentUserId, user.id);
+      if (friendStatus !== 'following' && friendStatus !== 'friends') return [];
+    }
+  }
+  const reels = await prisma.reel.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      user: { select: authorSelect },
+      _count: { select: { likes: true, comments: true } },
+      likes: { where: { userId: currentUserId }, select: { id: true } },
+      favorites: { where: { userId: currentUserId }, select: { id: true } },
+    },
+  });
+  const friendStatus = isOwner ? 'self' : await getFriendStatus(currentUserId, user.id);
+  return reels.map((r) => ({
+    id: r.id,
+    videoUrl: r.videoUrl,
+    caption: r.caption,
+    durationSec: r.durationSec,
+    createdAt: r.createdAt,
+    likeCount: r._count.likes,
+    commentCount: r._count.comments,
+    liked: r.likes.length > 0,
+    favorited: r.favorites.length > 0,
+    isMine: isOwner,
+    author: r.user,
+    friendStatus,
+  }));
+}
