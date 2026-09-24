@@ -53,14 +53,22 @@ export async function listConversations(userId: string) {
     orderBy: { updatedAt: 'desc' },
     include: {
       participants: { include: { user: { select: userSelect } } },
-      messages: { orderBy: { createdAt: 'desc' }, take: 1 },
+      // Never surface a message the user deleted for themselves, and never
+      // let a "deleted for everyone" message leak its original content into
+      // the inbox preview.
+      messages: { where: { hiddenFor: { none: { userId } } }, orderBy: { createdAt: 'desc' }, take: 1 },
     },
   });
 
   return conversations.map((c) => {
     const me = c.participants.find((p) => p.userId === userId);
     const other = c.participants.find((p) => p.userId !== userId);
-    const lastMessage = c.messages[0] || null;
+    const rawLastMessage = c.messages[0] || null;
+    const lastMessage = rawLastMessage
+      ? rawLastMessage.deletedAt
+        ? { ...rawLastMessage, content: '', mediaUrl: null, mediaType: null, isDeleted: true }
+        : { ...rawLastMessage, isDeleted: false }
+      : null;
     const unread = lastMessage
       ? lastMessage.senderId !== userId && (!me?.lastReadAt || lastMessage.createdAt > me.lastReadAt)
       : false;
