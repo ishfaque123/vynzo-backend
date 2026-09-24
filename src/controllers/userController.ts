@@ -8,6 +8,7 @@ import { prisma } from '../config/prisma';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
 import { getFollowCounts } from '../services/followService';
+import { claimReferral, getMyReferralInfo } from '../services/referralService';
 
 export async function getMyProfile(req: Request, res: Response, next: NextFunction) {
   try {
@@ -48,6 +49,22 @@ export async function searchUsersHandler(req: Request, res: Response, next: Next
     const query = (req.query.q as string) || '';
     const users = query.length > 0 ? await searchUsers(query, req.user?.id) : [];
     sendSuccess(res, { users });
+  } catch (err) { next(err); }
+}
+
+export async function getMyReferral(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await getMyReferralInfo(req.user!.id);
+    sendSuccess(res, data);
+  } catch (err) { next(err); }
+}
+
+export async function claimMyReferral(req: Request, res: Response, next: NextFunction) {
+  try {
+    const rawInstallReferrer = typeof req.body?.installReferrer === 'string' ? req.body.installReferrer : '';
+    const deviceFingerprint = typeof req.body?.deviceFingerprint === 'string' ? req.body.deviceFingerprint : '';
+    const data = await claimReferral(req.user!.id, rawInstallReferrer, deviceFingerprint);
+    sendSuccess(res, data);
   } catch (err) { next(err); }
 }
 
