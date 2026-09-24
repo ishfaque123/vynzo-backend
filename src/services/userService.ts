@@ -32,6 +32,7 @@ export function toPrivateProfile(user: any) {
     displayNameChangedAt: user.displayNameChangedAt,
     dobChangedAt: user.dobChangedAt,
     isVerified: user.isVerified ?? false,
+    publicKey: user.publicKey ?? null,
   };
 }
 
