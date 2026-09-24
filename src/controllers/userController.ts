@@ -7,6 +7,7 @@ import { reportUser } from '../services/userReportService';
 import { prisma } from '../config/prisma';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
+import { getFollowCounts } from '../services/followService';
 
 export async function getMyProfile(req: Request, res: Response, next: NextFunction) {
   try {
@@ -52,8 +53,25 @@ export async function searchUsersHandler(req: Request, res: Response, next: Next
 
 export async function getMyDashboard(req: Request, res: Response, next: NextFunction) {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
-    sendSuccess(res, { earnings: user?.walletBalance ?? 0 });
+    const user = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { walletBalance: true },
+    });
+    if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+    const followCounts = await getFollowCounts(req.user!.id);
+    const friends = followCounts.friends;
+    const requiredFriends = 25;
+
+    sendSuccess(res, {
+      earnings: user.walletBalance,
+      monetization: {
+        status: friends >= requiredFriends ? 'eligible' : 'locked',
+        friends,
+        requiredFriends,
+        progress: Math.min(100, Math.round((friends / requiredFriends) * 100)),
+      },
+    });
   } catch (err) { next(err); }
 }
 
