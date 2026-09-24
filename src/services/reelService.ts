@@ -276,6 +276,42 @@ export async function getMyDailyReelStatus(userId: string) {
   return { postedToday: count, remaining: Math.max(0, env.reelDailyLimit - count) };
 }
 
+export async function getReelById(reelId: string, currentUserId: string) {
+  const reel = await prisma.reel.findUnique({
+    where: { id: reelId },
+    include: {
+      user: true,
+      _count: { select: { likes: true, comments: true } },
+      likes: { where: { userId: currentUserId }, select: { id: true } },
+      favorites: { where: { userId: currentUserId }, select: { id: true } },
+    },
+  });
+  if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
+  const isMine = reel.userId === currentUserId;
+  if (!isMine) {
+    if (await isEitherBlocked(currentUserId, reel.userId)) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
+    if (reel.user.isPrivate) {
+      const status = await getFriendStatus(currentUserId, reel.userId);
+      if (status !== 'following' && status !== 'friends') throw new ApiError(403, 'PRIVATE_ACCOUNT', 'This account is private.');
+    }
+  }
+  const friendStatus = isMine ? 'self' : await getFriendStatus(currentUserId, reel.userId);
+  return {
+    id: reel.id,
+    videoUrl: reel.videoUrl,
+    caption: reel.caption,
+    durationSec: reel.durationSec,
+    createdAt: reel.createdAt,
+    likeCount: reel._count.likes,
+    commentCount: reel._count.comments,
+    liked: reel.likes.length > 0,
+    favorited: reel.favorites.length > 0,
+    isMine,
+    author: { id: reel.user.id, username: reel.user.username, displayName: reel.user.displayName, profilePictureUrl: reel.user.profilePictureUrl, isVerified: reel.user.isVerified },
+    friendStatus,
+  };
+}
+
 export async function getReelsByUsername(username: string, currentUserId: string) {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');

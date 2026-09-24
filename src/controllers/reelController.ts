@@ -4,7 +4,7 @@ import { unlink } from 'fs/promises';
 import path from 'path';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
-import { createReel, getReelFeed, toggleReelLike, toggleReelFavorite, getMyFavoriteReels, deleteReel, getReelsConfig, getMyDailyReelStatus, addReelComment, getReelComments, toggleReelCommentReaction, deleteReelComment, getReelsByUsername } from '../services/reelService';
+import { createReel, getReelFeed, toggleReelLike, toggleReelFavorite, getMyFavoriteReels, deleteReel, getReelsConfig, getMyDailyReelStatus, addReelComment, getReelComments, toggleReelCommentReaction, deleteReelComment, getReelsByUsername, getReelById } from '../services/reelService';
 import { editReelComment } from '../services/reelCommentEditService';
 import { reportReelComment } from '../services/reelCommentReportService';
 import { reportReel, recordReelView } from '../services/reelAnalyticsService';
@@ -42,6 +42,7 @@ export async function toggleReelLikeHandler(req: Request, res: Response, next: N
 export async function toggleReelFavoriteHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await toggleReelFavorite(req.user!.id, req.params.id)); } catch (err) { next(err); } }
 export async function getMyFavoriteReelsHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, { reels: await getMyFavoriteReels(req.user!.id) }); } catch (err) { next(err); } }
 export async function getReelsByUsernameHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, { reels: await getReelsByUsername(req.params.username, req.user!.id) }); } catch (err) { next(err); } }
+export async function getReelByIdHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, { reel: await getReelById(req.params.id, req.user!.id) }); } catch (err) { next(err); } }
 export async function deleteReelHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await deleteReel(req.user!.id, req.params.id)); } catch (err) { next(err); } }
 export async function getMyReelStatusHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getMyDailyReelStatus(req.user!.id)); } catch (err) { next(err); } }
 export async function addReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { const content = typeof req.body?.content === 'string' ? req.body.content : ''; const parentCommentId = typeof req.body?.parentCommentId === 'string' && req.body.parentCommentId.trim() ? req.body.parentCommentId.trim() : undefined; sendSuccess(res, { comment: await addReelComment(req.user!.id, req.params.id, content, parentCommentId) }, 201); } catch (err) { next(err); } }
