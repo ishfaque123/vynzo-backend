@@ -7,7 +7,6 @@ import { reportUser } from '../services/userReportService';
 import { prisma } from '../config/prisma';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
-import { getFollowCounts } from '../services/followService';
 import { claimReferral, getMyReferralInfo } from '../services/referralService';
 
 export async function getMyProfile(req: Request, res: Response, next: NextFunction) {
@@ -76,17 +75,18 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
     });
     if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
 
-    const followCounts = await getFollowCounts(req.user!.id);
-    const friends = followCounts.friends;
-    const requiredFriends = 25;
+    const referralInfo = await getMyReferralInfo(req.user!.id);
+    const referrals = referralInfo.count;
+    const requiredReferrals = 25;
 
     sendSuccess(res, {
       earnings: user.walletBalance,
       monetization: {
-        status: friends >= requiredFriends ? 'eligible' : 'locked',
-        friends,
-        requiredFriends,
-        progress: Math.min(100, Math.round((friends / requiredFriends) * 100)),
+        status: referrals >= requiredReferrals ? 'eligible' : 'locked',
+        referrals,
+        requiredReferrals,
+        progress: Math.min(100, Math.round((referrals / requiredReferrals) * 100)),
+        referralLink: referralInfo.referralLink,
       },
     });
   } catch (err) { next(err); }
