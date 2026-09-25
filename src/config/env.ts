@@ -27,7 +27,7 @@ export const env = {
   // reels off app-wide without a deploy. Anything else (unset,
   // 'true', etc.) keeps it on.
   reelsEnabled: process.env.REELS_ENABLED !== 'false',
-  reelMaxDurationSec: 60,
+  reelMaxDurationSec: 180, // 3 minutes
   reelDailyLimit: 2,
   emailLoginEnabled: Boolean(process.env.HOSTINGER_MAIL_API_TOKEN && process.env.HOSTINGER_MAILBOX_RESOURCE_ID),
   hostingerMailApiToken: process.env.HOSTINGER_MAIL_API_TOKEN || '',
