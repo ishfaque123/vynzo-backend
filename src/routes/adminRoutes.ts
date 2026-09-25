@@ -14,6 +14,7 @@ import {
   deleteAdminReel,
   listAdminAuthFailures,
   listAdminVerificationRequests,
+  deleteAdminReport,
   reviewAdminVerificationRequest,
   clearAllAdminMessages,
 } from '../controllers/adminController';
@@ -29,6 +30,7 @@ router.patch('/users/:userId/verification', updateAdminUserVerification);
 router.get('/posts', listAdminPosts);
 router.delete('/posts/:postId', deleteAdminPost);
 router.get('/reports', listAdminReports);
+router.delete('/reports/:type/:reportId', deleteAdminReport);
 router.get('/comments', listAdminComments);
 router.delete('/comments/:commentId', deleteAdminComment);
 router.delete('/reels/:reelId', deleteAdminReel);
