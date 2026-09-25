@@ -397,15 +397,17 @@ export async function deleteAdminReport(req: Request, res: Response, next: NextF
   try {
     const type = req.params.type;
     const reportId = req.params.reportId;
-    const models = {
-      post: prisma.report,
-      user: prisma.userReport,
-      comment: prisma.commentReport,
-      'reel-comment': prisma.reelCommentReport,
-    } as const;
-    const model = models[type as keyof typeof models];
-    if (!model) throw new ApiError(400, 'INVALID_REPORT_TYPE', 'Invalid report type.');
-    await model.delete({ where: { id: reportId } });
+    if (type === 'post') {
+      await prisma.report.delete({ where: { id: reportId } });
+    } else if (type === 'user') {
+      await prisma.userReport.delete({ where: { id: reportId } });
+    } else if (type === 'comment') {
+      await prisma.commentReport.delete({ where: { id: reportId } });
+    } else if (type === 'reel-comment') {
+      await prisma.reelCommentReport.delete({ where: { id: reportId } });
+    } else {
+      throw new ApiError(400, 'INVALID_REPORT_TYPE', 'Invalid report type.');
+    }
     return sendSuccess(res, { deleted: true, reportType: type, reportId });
   } catch (err) {
     next(err);
