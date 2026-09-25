@@ -111,7 +111,11 @@ export async function getMessages(userId: string, conversationId: string, cursor
     orderBy: { createdAt: 'desc' },
     take: limit,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    include: { sender: { select: userSelect } },
+    include: {
+      sender: { select: userSelect },
+      replyTo: { include: { sender: { select: userSelect } } },
+      reactions: { select: { userId: true, emoji: true } },
+    },
   });
 
   const shaped = messages.reverse().map((m) =>
