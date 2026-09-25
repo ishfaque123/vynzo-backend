@@ -120,6 +120,7 @@ export function initSocketServer(httpServer: HttpServer) {
       mediaUrl?: string;
       mediaType?: 'image' | 'voice';
       voiceDuration?: number;
+      replyToId?: string;
     }, ack?: (res: { success: boolean; data?: unknown; error?: string; delivered?: boolean }) => void) => {
       try {
         const trimmed = (content || '').trim();
@@ -169,6 +170,14 @@ export function initSocketServer(httpServer: HttpServer) {
           }
         }
 
+        if (replyToId) {
+          const parent = await prisma.message.findFirst({ where: { id: replyToId, conversationId, hiddenFor: { none: { userId } } } });
+          if (!parent) {
+            if (ack) ack({ success: false, error: 'INVALID_REPLY_TARGET' });
+            return;
+          }
+        }
+
         const message = await prisma.message.create({
           data: {
             conversationId,
@@ -177,8 +186,13 @@ export function initSocketServer(httpServer: HttpServer) {
             mediaUrl: mediaUrl || null,
             mediaType: mediaUrl ? mediaType || 'image' : null,
             voiceDuration: mediaType === 'voice' ? voiceDuration || null : null,
+            replyToId: replyToId || null,
           },
-          include: { sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } } },
+          include: {
+            sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } },
+            replyTo: { include: { sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } } } },
+            reactions: { select: { userId: true, emoji: true } },
+          },
         });
 
         await prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
@@ -198,6 +212,53 @@ export function initSocketServer(httpServer: HttpServer) {
       } catch {
         if (ack) ack({ success: false, error: 'SEND_FAILED' });
       }
+    });
+
+    socket.on('message:edit', async ({ messageId, content }: { messageId: string; content: string }, ack?: (res: { success: boolean; data?: unknown; error?: string }) => void) => {
+      try {
+        const message = await prisma.message.findUnique({ where: { id: messageId } });
+        if (!message || message.senderId !== userId || message.deletedAt) { if (ack) ack({ success: false, error: 'EDIT_FORBIDDEN' }); return; }
+        if (!(await isParticipant(message.conversationId, userId))) { if (ack) ack({ success: false, error: 'NOT_A_PARTICIPANT' }); return; }
+        const value = (content || '').trim();
+        if (!value) { if (ack) ack({ success: false, error: 'EMPTY_MESSAGE' }); return; }
+        const updated = await prisma.message.update({
+          where: { id: messageId },
+          data: { content: value, editedAt: new Date() },
+          include: {
+            sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } },
+            replyTo: { include: { sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } } } },
+            reactions: { select: { userId: true, emoji: true } },
+          },
+        });
+        io.to('conversation:' + message.conversationId).emit('message:edited', updated);
+        if (ack) ack({ success: true, data: updated });
+      } catch { if (ack) ack({ success: false, error: 'EDIT_FAILED' }); }
+    });
+
+    socket.on('message:reaction', async ({ messageId, emoji }: { messageId: string; emoji: string }, ack?: (res: { success: boolean; data?: unknown; error?: string }) => void) => {
+      try {
+        const message = await prisma.message.findUnique({ where: { id: messageId } });
+        if (!message || !(await isParticipant(message.conversationId, userId))) { if (ack) ack({ success: false, error: 'NOT_ALLOWED' }); return; }
+        const allowed = ['❤️','😂','😮','😢','😡','👍','👎'];
+        if (!allowed.includes(emoji)) { if (ack) ack({ success: false, error: 'INVALID_REACTION' }); return; }
+        const existing = await prisma.messageReaction.findUnique({ where: { messageId_userId: { messageId, userId } } });
+        if (existing && existing.emoji === emoji) await prisma.messageReaction.delete({ where: { id: existing.id } });
+        else await prisma.messageReaction.upsert({ where: { messageId_userId: { messageId, userId } }, update: { emoji }, create: { messageId, userId, emoji } });
+        const reactions = await prisma.messageReaction.findMany({ where: { messageId }, select: { userId: true, emoji: true } });
+        io.to('conversation:' + message.conversationId).emit('message:reaction', { messageId, reactions });
+        if (ack) ack({ success: true, data: reactions });
+      } catch { if (ack) ack({ success: false, error: 'REACTION_FAILED' }); }
+    });
+
+    socket.on('message:pin', async ({ messageId }: { messageId: string }, ack?: (res: { success: boolean; data?: unknown; error?: string }) => void) => {
+      try {
+        const message = await prisma.message.findUnique({ where: { id: messageId } });
+        if (!message || !(await isParticipant(message.conversationId, userId))) { if (ack) ack({ success: false, error: 'NOT_ALLOWED' }); return; }
+        const pinnedAt = message.pinnedAt ? null : new Date();
+        const updated = await prisma.message.update({ where: { id: messageId }, data: { pinnedAt, pinnedById: pinnedAt ? userId : null } });
+        io.to('conversation:' + message.conversationId).emit('message:pinned', { messageId, pinnedAt: updated.pinnedAt, pinnedById: updated.pinnedById });
+        if (ack) ack({ success: true, data: updated });
+      } catch { if (ack) ack({ success: false, error: 'PIN_FAILED' }); }
     });
 
     socket.on('message:delete', async ({ messageId, mode }: { messageId: string; mode: 'me' | 'everyone' }, ack?: (res: { success: boolean; error?: string }) => void) => {
