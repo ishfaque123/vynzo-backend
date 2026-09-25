@@ -140,7 +140,7 @@ const PUSH_TEXT: Record<string, (name: string, others: number, reaction?: string
   reel_like: (n, o) => `${withOthers(n, o)} liked your reel`,
   reel_comment: (n, o) => `${withOthers(n, o)} commented on your reel`,
   reel_reply: (n, o) => `${withOthers(n, o)} replied to your comment on a reel`,
-  comment_mention: (n, o) => `${withOthers(n, o)} mentioned you in a comment`,
+  comment_mention: (n, o) => `${withOthers(n, o)} mentioned you`,
   new_device_login: () => 'New login detected on your account',
   account_restricted: () => 'Your account has been restricted',
   account_banned: () => 'Your account has been banned',
@@ -186,7 +186,10 @@ async function sendPushForNotification(params: NotificationParams) {
   }
 
   const makeText = PUSH_TEXT[params.type];
-  const body = makeText ? makeText(name, others, params.reaction) : 'New notification';
+  let body = makeText ? makeText(name, others, params.reaction) : 'New notification';
+  if (params.type === 'comment_mention') {
+    body = `${withOthers(name, others)} ${params.commentId ? 'mentioned you in a comment' : 'tagged you in a post'}`;
+  }
   let url = '/notifications';
   if (params.type === 'follow' && username) url = `/u/${username}`;
   else if (params.reelId) url = '/reels';
