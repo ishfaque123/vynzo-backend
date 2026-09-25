@@ -337,7 +337,7 @@ export async function listAdminReports(req: Request, res: Response, next: NextFu
           reason: true,
           details: true,
           createdAt: true,
-          post: { select: { id: true, content: true, user: { select: { username: true, displayName: true } } } },
+          post: { select: { id: true, content: true, user: { select: { id: true, username: true, displayName: true } } } },
           reporter: { select: { id: true, username: true, displayName: true } },
         },
       }),
@@ -363,7 +363,7 @@ export async function listAdminReports(req: Request, res: Response, next: NextFu
           reason: true,
           details: true,
           createdAt: true,
-          comment: { select: { id: true, content: true, postId: true } },
+          comment: { select: { id: true, content: true, postId: true, user: { select: { id: true, username: true, displayName: true } }, post: { select: { id: true, content: true } } } },
           reporter: { select: { id: true, username: true, displayName: true } },
         },
       }),
@@ -376,7 +376,7 @@ export async function listAdminReports(req: Request, res: Response, next: NextFu
           reason: true,
           details: true,
           createdAt: true,
-          comment: { select: { id: true, content: true, reelId: true } },
+          comment: { select: { id: true, content: true, reelId: true, user: { select: { id: true, username: true, displayName: true } }, reel: { select: { id: true } } } },
           reporter: { select: { id: true, username: true, displayName: true } },
         },
       }),
@@ -388,6 +388,25 @@ export async function listAdminReports(req: Request, res: Response, next: NextFu
       commentReports,
       reelCommentReports,
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteAdminReport(req: Request, res: Response, next: NextFunction) {
+  try {
+    const type = req.params.type;
+    const reportId = req.params.reportId;
+    const models = {
+      post: prisma.report,
+      user: prisma.userReport,
+      comment: prisma.commentReport,
+      'reel-comment': prisma.reelCommentReport,
+    } as const;
+    const model = models[type as keyof typeof models];
+    if (!model) throw new ApiError(400, 'INVALID_REPORT_TYPE', 'Invalid report type.');
+    await model.delete({ where: { id: reportId } });
+    return sendSuccess(res, { deleted: true, reportType: type, reportId });
   } catch (err) {
     next(err);
   }
