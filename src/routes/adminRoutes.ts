@@ -15,6 +15,7 @@ import {
   listAdminAuthFailures,
   listAdminVerificationRequests,
   reviewAdminVerificationRequest,
+  clearAllAdminMessages,
 } from '../controllers/adminController';
 
 const router = Router();
@@ -34,5 +35,6 @@ router.delete('/reels/:reelId', deleteAdminReel);
 router.get('/auth-failures', listAdminAuthFailures);
 router.get('/verification-requests', listAdminVerificationRequests);
 router.patch('/verification-requests/:requestId', reviewAdminVerificationRequest);
+router.delete('/messages/clear-all', clearAllAdminMessages);
 
 export default router;
