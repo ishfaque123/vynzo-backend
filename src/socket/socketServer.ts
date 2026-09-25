@@ -114,7 +114,7 @@ export function initSocketServer(httpServer: HttpServer) {
       });
     }
 
-    socket.on('message:send', async ({ conversationId, content, mediaUrl, mediaType, voiceDuration }: {
+    socket.on('message:send', async ({ conversationId, content, mediaUrl, mediaType, voiceDuration, replyToId }: {
       conversationId: string;
       content: string;
       mediaUrl?: string;
