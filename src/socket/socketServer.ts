@@ -12,8 +12,7 @@ interface AuthedSocket extends Socket {
   accountSessionId?: string;
 }
 
-// Phone push for a new chat message. Never includes the message text
-// (chats are end-to-end encrypted): only who sent it and what kind it is.
+// Phone push for a new chat message. Never includes the message text.
 async function pushNewMessage(
   message: { conversationId: string; mediaType: string | null; sender?: { displayName?: string | null; username?: string | null } | null },
   recipient: { userId: string; lastReadAt: Date | null },
