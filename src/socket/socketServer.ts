@@ -63,7 +63,7 @@ export function initSocketServer(httpServer: HttpServer) {
 
   io.use(async (socket: AuthedSocket, next) => {
     try {
-      const token = parseCookie(socket.handshake.headers.cookie, 'vynzo_token');
+      const token = parseCookie(socket.handshake.headers.cookie, 'vynzo_auth_token') || parseCookie(socket.handshake.headers.cookie, 'vynzo_token');
       if (!token) return next(new Error('NOT_AUTHENTICATED'));
 
       const payload = verifyToken(token);
