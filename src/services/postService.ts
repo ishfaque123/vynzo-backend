@@ -48,10 +48,25 @@ const includeShape = {
 };
 
 export async function createPost(userId: string, content: string, imageUrl?: string, visibility: 'public' | 'private' = 'public', taggedUserIds: string[] = []) {
+  const limitedTaggedUserIds = [...new Set(taggedUserIds)].slice(0, 2);
   const post = await prisma.post.create({
-    data: { userId, content, imageUrl, visibility, tags: { create: taggedUserIds.slice(0, 2).map((id) => ({ userId: id })) } },
+    data: { userId, content, imageUrl, visibility, tags: { create: limitedTaggedUserIds.map((id) => ({ userId: id })) } },
     include: includeShape,
   });
+
+  // Notify users who were tagged in the post. The existing comment_mention
+  // notification type is reused for backward-compatible DB schema; a missing
+  // commentId means this notification is a post tag.
+  for (const taggedId of limitedTaggedUserIds) {
+    if (taggedId === userId) continue;
+    await createNotification({
+      userId: taggedId,
+      actorId: userId,
+      type: 'comment_mention',
+      postId: post.id,
+    });
+  }
+
   return toPostDTO(post, userId);
 }
 
