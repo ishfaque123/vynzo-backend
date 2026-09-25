@@ -375,14 +375,37 @@ model Message {
   viewOnce       Boolean   @default(false) @map("view_once")
   viewedAt       DateTime? @map("viewed_at")
   deletedAt      DateTime? @map("deleted_at")
+  editedAt       DateTime? @map("edited_at")
+  replyToId      String?   @map("reply_to_id")
+  pinnedAt       DateTime? @map("pinned_at")
+  pinnedById     String?   @map("pinned_by_id")
   createdAt      DateTime  @default(now()) @map("created_at")
 
   conversation Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User          @relation(fields: [senderId], references: [id], onDelete: Cascade)
   hiddenFor    HiddenMessage[]
+  replyTo      Message? @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[] @relation("MessageReplies")
+  reactions    MessageReaction[]
 
   @@index([conversationId, createdAt])
+  @@index([replyToId])
   @@map("messages")
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String   @map("message_id")
+  userId    String   @map("user_id")
+  emoji     String   @db.VarChar(16)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@map("message_reactions")
 }
 
 model CloseFriend {
