@@ -648,3 +648,28 @@ export async function reviewAdminVerificationRequest(req: Request, res: Response
     next(err);
   }
 }
+
+
+export async function clearAllAdminMessages(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const hiddenMessages = await tx.hiddenMessage.deleteMany({});
+      const messageReactions = await tx.messageReaction.deleteMany({});
+      const messages = await tx.message.deleteMany({});
+      const conversationParticipants = await tx.conversationParticipant.deleteMany({});
+      const conversations = await tx.conversation.deleteMany({});
+
+      return {
+        hiddenMessages: hiddenMessages.count,
+        messageReactions: messageReactions.count,
+        messages: messages.count,
+        conversationParticipants: conversationParticipants.count,
+        conversations: conversations.count,
+      };
+    });
+
+    return sendSuccess(res, { cleared: true, counts: result });
+  } catch (err) {
+    next(err);
+  }
+}
