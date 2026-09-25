@@ -123,6 +123,7 @@ model User {
   usagePings             UsagePing[]
   conversationParticipants ConversationParticipant[]
   messagesSent           Message[]
+  messageReactions       MessageReaction[]
   hiddenMessages         HiddenMessage[]
   statuses               Status[]
   reelComments           ReelComment[]
