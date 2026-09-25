@@ -136,13 +136,14 @@ export function initSocketServer(httpServer: HttpServer) {
       }
     });
 
-    socket.on('message:send', async ({ conversationId, content, mediaUrl, mediaType, voiceDuration, replyToId }: {
+    socket.on('message:send', async ({ conversationId, content, mediaUrl, mediaType, voiceDuration, replyToId, isForwarded }: {
       conversationId: string;
       content: string;
       mediaUrl?: string;
       mediaType?: 'image' | 'voice';
       voiceDuration?: number;
       replyToId?: string;
+      isForwarded?: boolean;
     }, ack?: (res: { success: boolean; data?: unknown; error?: string; delivered?: boolean }) => void) => {
       try {
         const trimmed = (content || '').trim();
@@ -209,6 +210,7 @@ export function initSocketServer(httpServer: HttpServer) {
             mediaType: mediaUrl ? mediaType || 'image' : null,
             voiceDuration: mediaType === 'voice' ? voiceDuration || null : null,
             replyToId: replyToId || null,
+            isForwarded: isForwarded === true,
           },
           include: {
             sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } },
