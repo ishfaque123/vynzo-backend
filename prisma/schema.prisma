@@ -380,6 +380,7 @@ model Message {
   replyToId      String?   @map("reply_to_id")
   pinnedAt       DateTime? @map("pinned_at")
   pinnedById     String?   @map("pinned_by_id")
+  isForwarded   Boolean   @default(false) @map("is_forwarded")
   createdAt      DateTime  @default(now()) @map("created_at")
 
   conversation Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
