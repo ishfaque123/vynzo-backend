@@ -114,6 +114,28 @@ export function initSocketServer(httpServer: HttpServer) {
       });
     }
 
+    socket.on('e2ee:public-key', async ({ publicKey }: { publicKey: string }) => {
+      try {
+        if (!publicKey || publicKey.length > 2000) return;
+        await prisma.user.update({ where: { id: userId }, data: { publicKey } });
+
+        const rows = await prisma.conversationParticipant.findMany({
+          where: {
+            userId: { not: userId },
+            conversation: { participants: { some: { userId } } },
+          },
+          select: { userId: true },
+          distinct: ['userId'],
+        });
+
+        rows.forEach((row) => {
+          io.to(`user:${row.userId}`).emit('e2ee:public-key', { userId, publicKey });
+        });
+      } catch {
+        // Public-key sync is best-effort; the normal profile update remains the source of truth.
+      }
+    });
+
     socket.on('message:send', async ({ conversationId, content, mediaUrl, mediaType, voiceDuration, replyToId }: {
       conversationId: string;
       content: string;
