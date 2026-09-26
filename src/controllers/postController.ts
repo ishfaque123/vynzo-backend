@@ -7,9 +7,10 @@ import {
 import { setReaction } from '../services/likeService';
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
+import { ApiError } from '../middleware/errorHandler';
 
 const createPostSchema = z.object({
-  content: z.string().min(1).max(2000),
+  content: z.string().max(2000).optional().default(''),
   visibility: z.enum(['public', 'private']).optional(),
   taggedUserIds: z.string().optional(),
 });
@@ -19,8 +20,9 @@ export async function createPostHandler(req: Request, res: Response, next: NextF
     const { content, visibility, taggedUserIds } = createPostSchema.parse(req.body);
     let imageUrl: string | undefined;
     if (req.file) imageUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'posts');
+    if (!content.trim() && !imageUrl) throw new ApiError(400, 'POST_CONTENT_REQUIRED', 'Post must contain text or an image.');
     const tagIds = taggedUserIds ? JSON.parse(taggedUserIds) : [];
-    const post = await createPost(req.user!.id, content, imageUrl, visibility || 'public', tagIds);
+    const post = await createPost(req.user!.id, content.trim(), imageUrl, visibility || 'public', tagIds);
     sendSuccess(res, { post }, 201);
   } catch (err) { next(err); }
 }
