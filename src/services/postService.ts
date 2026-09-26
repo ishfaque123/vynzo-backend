@@ -17,6 +17,7 @@ async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
     id: post.id,
     content: post.content,
     imageUrl: post.imageUrl,
+    backgroundStyle: post.backgroundStyle,
     visibility: post.visibility,
     commentAudience: post.commentAudience,
     createdAt: post.createdAt,
@@ -47,10 +48,10 @@ const includeShape = {
   },
 };
 
-export async function createPost(userId: string, content: string, imageUrl?: string, visibility: 'public' | 'private' = 'public', taggedUserIds: string[] = [], commentAudience: 'everyone' | 'followers' | 'only_me' = 'everyone') {
+export async function createPost(userId: string, content: string, imageUrl?: string, visibility: 'public' | 'private' = 'public', taggedUserIds: string[] = [], commentAudience: 'everyone' | 'followers' | 'only_me' = 'everyone', backgroundStyle?: 'sunset' | 'ocean' | 'violet' | 'mint' | 'peach' | 'night' | 'rose' | 'sky') {
   const limitedTaggedUserIds = [...new Set(taggedUserIds)].slice(0, 2);
   const post = await prisma.post.create({
-    data: { userId, content, imageUrl, visibility, commentAudience, tags: { create: limitedTaggedUserIds.map((id) => ({ userId: id })) } },
+    data: { userId, content, imageUrl, visibility, commentAudience, backgroundStyle: imageUrl ? undefined : backgroundStyle, tags: { create: limitedTaggedUserIds.map((id) => ({ userId: id })) } },
     include: includeShape,
   });
 
