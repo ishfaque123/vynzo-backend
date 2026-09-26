@@ -3,7 +3,10 @@ import { prisma } from '../config/prisma';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export async function getDashboardStats(userId: string, days = 30) {
-  const since = new Date(Date.now() - days * DAY_MS);
+  const now = new Date();
+  const since = new Date(now.getTime() - days * DAY_MS);
+  const previousSince = new Date(since.getTime() - days * DAY_MS);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const [
     postCount, reelCount, statusCount,
@@ -12,6 +15,10 @@ export async function getDashboardStats(userId: string, days = 30) {
     newFollowers,
     userReels,
     postViewRows,
+    previousPostViews,
+    previousReelViews,
+    topPostViewGroups,
+    topReelViewGroups,
   ] = await Promise.all([
     prisma.post.count({ where: { userId, createdAt: { gte: since }, originalPostId: null } }),
     prisma.reel.count({ where: { userId, createdAt: { gte: since } } }),
@@ -24,6 +31,22 @@ export async function getDashboardStats(userId: string, days = 30) {
     prisma.follow.count({ where: { followingId: userId, createdAt: { gte: since } } }),
     prisma.reel.findMany({ where: { userId }, select: { id: true } }),
     prisma.postView.findMany({ where: { post: { userId }, createdAt: { gte: since } }, select: { createdAt: true } }),
+    prisma.postView.count({ where: { post: { userId }, createdAt: { gte: previousSince, lt: since } } }),
+    prisma.reelView.count({ where: { reel: { userId }, createdAt: { gte: previousSince, lt: since } } }),
+    prisma.postView.groupBy({
+      by: ['postId'],
+      where: { post: { userId, createdAt: { gte: monthStart } }, createdAt: { gte: monthStart } },
+      _count: { _all: true },
+      orderBy: { _count: { postId: 'desc' } },
+      take: 1,
+    }),
+    prisma.reelView.groupBy({
+      by: ['reelId'],
+      where: { reel: { userId, createdAt: { gte: monthStart } }, createdAt: { gte: monthStart } },
+      _count: { _all: true },
+      orderBy: { _count: { reelId: 'desc' } },
+      take: 1,
+    }),
   ]);
 
   const reelIds = userReels.map((r) => r.id);
@@ -32,11 +55,51 @@ export async function getDashboardStats(userId: string, days = 30) {
     : [];
 
   const views = postViewRows.length + reelViewRows.length;
+  const previousViews = previousPostViews + previousReelViews;
+  const viewsTrendPct = previousViews === 0 ? null : Math.round(((views - previousViews) / previousViews) * 100);
   const engagement = postLikes + postComments + postShares + reelLikes + reelComments;
   const content = postCount + reelCount + statusCount;
   const dailyViews = buildDailyBuckets([...postViewRows, ...reelViewRows].map((r) => r.createdAt), days);
 
-  return { views, engagement, newFollowers, content, dailyViews };
+  const topPost = topPostViewGroups[0]
+    ? await prisma.post.findUnique({
+        where: { id: topPostViewGroups[0].postId },
+        select: { id: true, content: true, imageUrl: true, createdAt: true },
+      })
+    : null;
+  const topReel = topReelViewGroups[0]
+    ? await prisma.reel.findUnique({
+        where: { id: topReelViewGroups[0].reelId },
+        select: { id: true, caption: true, thumbnailUrl: true, createdAt: true },
+      })
+    : null;
+
+  const topPerforming = [
+    topPost
+      ? {
+          type: 'post' as const,
+          id: topPost.id,
+          title: topPost.content,
+          mediaUrl: topPost.imageUrl,
+          createdAt: topPost.createdAt,
+          views: topPostViewGroups[0]._count._all,
+        }
+      : null,
+    topReel
+      ? {
+          type: 'reel' as const,
+          id: topReel.id,
+          title: topReel.caption || 'Reel',
+          mediaUrl: topReel.thumbnailUrl,
+          createdAt: topReel.createdAt,
+          views: topReelViewGroups[0]._count._all,
+        }
+      : null,
+  ]
+    .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .sort((a, b) => b.views - a.views)[0] || null;
+
+  return { views, engagement, newFollowers, content, dailyViews, viewsTrendPct, topPerforming };
 }
 
 function buildDailyBuckets(dates: Date[], days: number) {
