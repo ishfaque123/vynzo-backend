@@ -4,6 +4,7 @@ import { AccountStatus, VerificationRequestStatus } from '@prisma/client';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 import { createNotification } from '../services/notificationService';
+import { getSiteSettings, updateSeoSettings } from '../services/settingsService';
 
 const PAGE_SIZE_MAX = 50;
 
@@ -701,6 +702,36 @@ export async function clearAllAdminMessages(_req: Request, res: Response, next: 
     });
 
     return sendSuccess(res, { cleared: true, counts: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+
+export async function getAdminSeoSettings(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const settings = await getSiteSettings();
+    return sendSuccess(res, { settings });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateAdminSeoSettings(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { seoTitle, seoDescription, seoKeywords } = req.body as { seoTitle?: string; seoDescription?: string; seoKeywords?: string };
+    if (seoTitle !== undefined && (typeof seoTitle !== 'string' || seoTitle.length > 200)) {
+      throw new ApiError(400, 'INVALID_SEO_TITLE', 'Title must be a string up to 200 characters.');
+    }
+    if (seoDescription !== undefined && (typeof seoDescription !== 'string' || seoDescription.length > 500)) {
+      throw new ApiError(400, 'INVALID_SEO_DESCRIPTION', 'Description must be a string up to 500 characters.');
+    }
+    if (seoKeywords !== undefined && (typeof seoKeywords !== 'string' || seoKeywords.length > 500)) {
+      throw new ApiError(400, 'INVALID_SEO_KEYWORDS', 'Keywords must be a string up to 500 characters.');
+    }
+
+    const settings = await updateSeoSettings({ seoTitle, seoDescription, seoKeywords });
+    return sendSuccess(res, { settings });
   } catch (err) {
     next(err);
   }

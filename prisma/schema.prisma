@@ -783,3 +783,13 @@ model PushToken {
   @@index([userId])
   @@map("push_tokens")
 }
+
+model SiteSettings {
+  id             Int      @id @default(1)
+  seoTitle       String?  @map("seo_title")
+  seoDescription String?  @map("seo_description")
+  seoKeywords    String?  @map("seo_keywords")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("site_settings")
+}

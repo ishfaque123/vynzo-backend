@@ -17,6 +17,8 @@ import {
   deleteAdminReport,
   reviewAdminVerificationRequest,
   clearAllAdminMessages,
+  getAdminSeoSettings,
+  updateAdminSeoSettings,
 } from '../controllers/adminController';
 
 const router = Router();
@@ -38,5 +40,7 @@ router.get('/auth-failures', listAdminAuthFailures);
 router.get('/verification-requests', listAdminVerificationRequests);
 router.patch('/verification-requests/:requestId', reviewAdminVerificationRequest);
 router.delete('/messages/clear-all', clearAllAdminMessages);
+router.get('/seo-settings', getAdminSeoSettings);
+router.put('/seo-settings', updateAdminSeoSettings);
 
 export default router;
