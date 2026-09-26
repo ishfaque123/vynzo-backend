@@ -8,6 +8,7 @@ import { prisma } from '../config/prisma';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
 import { claimReferral, getMyReferralInfo } from '../services/referralService';
+import { getDashboardStats } from '../services/dashboardService';
 
 export async function getMyProfile(req: Request, res: Response, next: NextFunction) {
   try {
@@ -78,6 +79,7 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
     const referralInfo = await getMyReferralInfo(req.user!.id);
     const referrals = referralInfo.count;
     const requiredReferrals = 25;
+    const stats = await getDashboardStats(req.user!.id);
 
     sendSuccess(res, {
       earnings: user.walletBalance,
@@ -88,6 +90,7 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
         progress: Math.min(100, Math.round((referrals / requiredReferrals) * 100)),
         referralLink: referralInfo.referralLink,
       },
+      stats,
     });
   } catch (err) { next(err); }
 }

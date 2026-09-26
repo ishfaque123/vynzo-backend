@@ -5,6 +5,7 @@ import {
   updatePost, reportPost, hidePost,
 } from '../services/postService';
 import { setReaction } from '../services/likeService';
+import { recordPostView } from '../services/postAnalyticsService';
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
 import { ApiError } from '../middleware/errorHandler';
@@ -114,5 +115,11 @@ export async function hidePostHandler(req: Request, res: Response, next: NextFun
   try {
     const result = await hidePost(req.user!.id, req.params.id);
     sendSuccess(res, result);
+  } catch (err) { next(err); }
+}
+
+export async function recordPostViewHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    sendSuccess(res, await recordPostView(req.user!.id, req.params.id));
   } catch (err) { next(err); }
 }
