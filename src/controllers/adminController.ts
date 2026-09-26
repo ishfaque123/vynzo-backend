@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma';
 import { AccountStatus, VerificationRequestStatus } from '@prisma/client';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
+import { createNotification } from '../services/notificationService';
 
 const PAGE_SIZE_MAX = 50;
 
@@ -662,6 +663,11 @@ export async function reviewAdminVerificationRequest(req: Request, res: Response
       });
 
       return user;
+    });
+
+    await createNotification({
+      userId: request.userId,
+      type: action === 'approve' ? 'verification_approved' : 'verification_rejected',
     });
 
     return sendSuccess(res, { user: result, action });
