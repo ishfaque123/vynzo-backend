@@ -224,6 +224,11 @@ export async function updateAdminUserVerification(req: Request, res: Response, n
       return updatedUser;
     });
 
+    if (verified) {
+      createNotification({ userId: user.id, type: 'verification_approved' })
+        .catch((err) => console.error('[verification notification] failed', err));
+    }
+
     return sendSuccess(res, { user });
   } catch (err) {
     next(err);
