@@ -4,6 +4,7 @@ import { env } from './config/env';
 import { prisma } from './config/prisma';
 import { initSocketServer } from './socket/socketServer';
 import { cleanupExpiredStatuses } from './services/statusService';
+import { cleanupExpiredMessages } from './services/messageCleanupService';
 
 async function start() {
   try {
@@ -28,6 +29,18 @@ async function start() {
     }
     runStatusCleanup();
     setInterval(runStatusCleanup, STATUS_CLEANUP_INTERVAL_MS);
+
+    const MESSAGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
+    async function runMessageCleanup() {
+      try {
+        const result = await cleanupExpiredMessages();
+        if (result.deleted) console.log(`Cleaned up ${result.deleted} Messenger message(s) older than 30 days.`);
+      } catch (err) {
+        console.error('Messenger message cleanup failed:', err);
+      }
+    }
+    runMessageCleanup();
+    setInterval(runMessageCleanup, MESSAGE_CLEANUP_INTERVAL_MS);
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);
