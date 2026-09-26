@@ -47,7 +47,7 @@ async function createNotificationRecord(params: {
       where: {
         userId: params.userId,
         actorId: params.actorId,
-        type: params.type,
+        type: params.type as any,
         postId: params.postId ?? null,
         commentId: params.commentId ?? null,
         reelId: params.reelId ?? null,
@@ -61,7 +61,7 @@ async function createNotificationRecord(params: {
     data: {
       userId: params.userId,
       actorId: params.actorId ?? null,
-      type: params.type,
+      type: params.type as any,
       postId: params.postId,
       commentId: params.commentId,
       reelId: params.reelId,
@@ -175,7 +175,7 @@ async function sendPushForNotification(params: NotificationParams) {
     const recent = await prisma.notification.findMany({
       where: {
         userId: params.userId,
-        type: params.type,
+        type: params.type as any,
         read: false,
         postId: params.postId ?? null,
         commentId: params.commentId ?? null,
