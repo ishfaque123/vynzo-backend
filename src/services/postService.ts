@@ -47,10 +47,10 @@ const includeShape = {
   },
 };
 
-export async function createPost(userId: string, content: string, imageUrl?: string, visibility: 'public' | 'private' = 'public', taggedUserIds: string[] = []) {
+export async function createPost(userId: string, content: string, imageUrl?: string, visibility: 'public' | 'private' = 'public', taggedUserIds: string[] = [], commentAudience: 'everyone' | 'followers' | 'only_me' = 'everyone') {
   const limitedTaggedUserIds = [...new Set(taggedUserIds)].slice(0, 2);
   const post = await prisma.post.create({
-    data: { userId, content, imageUrl, visibility, tags: { create: limitedTaggedUserIds.map((id) => ({ userId: id })) } },
+    data: { userId, content, imageUrl, visibility, commentAudience, tags: { create: limitedTaggedUserIds.map((id) => ({ userId: id })) } },
     include: includeShape,
   });
 
