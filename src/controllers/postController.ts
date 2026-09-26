@@ -15,17 +15,18 @@ const createPostSchema = z.object({
   taggedUserIds: z.string().optional(),
   commentAudience: z.enum(['everyone', 'followers', 'only_me']).optional(),
   backgroundStyle: z.enum(['sunset', 'ocean', 'violet', 'mint', 'peach', 'night', 'rose', 'sky']).optional(),
+  location: z.string().max(200).optional(),
 });
 
 export async function createPostHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const { content, visibility, taggedUserIds, commentAudience, backgroundStyle } = createPostSchema.parse(req.body);
+    const { content, visibility, taggedUserIds, commentAudience, backgroundStyle, location } = createPostSchema.parse(req.body);
     let imageUrl: string | undefined;
     if (req.file) imageUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'posts');
     if (!content.trim() && !imageUrl) throw new ApiError(400, 'POST_CONTENT_REQUIRED', 'Post must contain text or an image.');
     if (backgroundStyle && imageUrl) throw new ApiError(400, 'POST_BACKGROUND_WITH_IMAGE', 'Text post backgrounds cannot be used with a photo.');
     const tagIds = taggedUserIds ? JSON.parse(taggedUserIds) : [];
-    const post = await createPost(req.user!.id, content.trim(), imageUrl, visibility || 'public', tagIds, commentAudience || 'everyone', backgroundStyle);
+    const post = await createPost(req.user!.id, content.trim(), imageUrl, visibility || 'public', tagIds, commentAudience || 'everyone', backgroundStyle, location);
     sendSuccess(res, { post }, 201);
   } catch (err) { next(err); }
 }
