@@ -14,7 +14,9 @@ type NotificationType =
   | 'reel_like'
   | 'reel_comment'
   | 'reel_reply'
-  | 'comment_mention';
+  | 'comment_mention'
+  | 'verification_approved'
+  | 'verification_rejected';
 
 // Toggle-style actions (like/unlike, follow/unfollow) must not notify the
 // same person about the same thing again and again.
@@ -144,6 +146,8 @@ const PUSH_TEXT: Record<string, (name: string, others: number, reaction?: string
   new_device_login: () => 'New login detected on your account',
   account_restricted: () => 'Your account has been restricted',
   account_banned: () => 'Your account has been banned',
+  verification_approved: () => 'Your account has been verified',
+  verification_rejected: () => 'Your verification request was rejected',
 };
 
 // Several people doing the same thing to the same target are merged into
