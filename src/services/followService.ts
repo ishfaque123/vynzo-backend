@@ -5,6 +5,7 @@ import { createNotification } from './notificationService';
 import { isEitherBlocked } from './blockService';
 
 const FRIEND_LIMIT = 5000;
+const FOLLOW_LIST_LIMIT = 20;
 
 async function getFriendCount(userId: string, db: Prisma.TransactionClient | typeof prisma = prisma): Promise<number> {
   const following = await db.follow.findMany({ where: { followerId: userId }, select: { followingId: true } });
@@ -96,4 +97,67 @@ export async function getFriendStatus(currentUserId: string | undefined, otherUs
   if (iFollow) return 'following';
   if (theyFollow) return 'follow_back';
   return 'none';
+}
+
+function listPagination(page: number, total: number, limit: number) {
+  const pages = Math.ceil(total / limit);
+  return { page, limit, total, pages, hasNext: page < pages, hasPrevious: page > 1 };
+}
+
+export async function getFollowUsers(
+  userId: string,
+  direction: 'followers' | 'following',
+  page = 1,
+  limit = FOLLOW_LIST_LIMIT,
+  currentUserId?: string,
+) {
+  const safePage = Math.max(1, Number.isFinite(page) ? Math.floor(page) : 1);
+  const safeLimit = Math.min(50, Math.max(1, Number.isFinite(limit) ? Math.floor(limit) : FOLLOW_LIST_LIMIT));
+  const skip = (safePage - 1) * safeLimit;
+
+  const where = direction === 'followers' ? { followingId: userId } : { followerId: userId };
+  const [total, rows] = await Promise.all([
+    prisma.follow.count({ where }),
+    prisma.follow.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: safeLimit,
+      select: {
+        createdAt: true,
+        follower: { select: { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true } },
+        following: { select: { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true } },
+      },
+    }),
+  ]);
+
+  const users = rows.map((row) => direction === 'followers' ? row.follower : row.following);
+  const userIds = users.map((user) => user.id);
+
+  let followingIds = new Set<string>();
+  if (currentUserId && userIds.length) {
+    const blocked = await prisma.block.findMany({
+      where: {
+        OR: [
+          { blockerId: currentUserId, blockedId: { in: userIds } },
+          { blockerId: { in: userIds }, blockedId: currentUserId },
+        ],
+      },
+      select: { blockerId: true, blockedId: true },
+    });
+    const blockedIds = new Set(blocked.map((b) => b.blockerId === currentUserId ? b.blockedId : b.blockerId));
+    const follows = await prisma.follow.findMany({
+      where: { followerId: currentUserId, followingId: { in: userIds } },
+      select: { followingId: true },
+    });
+    followingIds = new Set(follows.filter((f) => !blockedIds.has(f.followingId)).map((f) => f.followingId));
+  }
+
+  return {
+    users: users.map((user) => ({
+      ...user,
+      isFollowing: followingIds.has(user.id),
+    })),
+    pagination: listPagination(safePage, total, safeLimit),
+  };
 }
