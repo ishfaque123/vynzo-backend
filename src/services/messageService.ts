@@ -2,7 +2,7 @@ import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { isEitherBlocked } from './blockService';
 
-const userSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, lastActiveAt: true, publicKey: true, showOnlineStatus: true } as const;
+const userSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, lastActiveAt: true, publicKey: true, showOnlineStatus: true, isVerified: true } as const;
 
 export async function getOrCreateConversation(userId: string, otherUserId: string) {
   if (userId === otherUserId) {
