@@ -16,9 +16,7 @@ export async function getDashboardStats(userId: string, days = 30) {
     userReels,
     postViewRows,
     previousPostViews,
-    previousReelViews,
     topPostViewGroups,
-    topReelViewGroups,
   ] = await Promise.all([
     prisma.post.count({ where: { userId, createdAt: { gte: since }, originalPostId: null } }),
     prisma.reel.count({ where: { userId, createdAt: { gte: since } } }),
@@ -32,27 +30,35 @@ export async function getDashboardStats(userId: string, days = 30) {
     prisma.reel.findMany({ where: { userId }, select: { id: true } }),
     prisma.postView.findMany({ where: { post: { userId }, createdAt: { gte: since } }, select: { createdAt: true } }),
     prisma.postView.count({ where: { post: { userId }, createdAt: { gte: previousSince, lt: since } } }),
-    prisma.reelView.count({ where: { reel: { userId }, createdAt: { gte: previousSince, lt: since } } }),
     prisma.postView.groupBy({
       by: ['postId'],
       where: { post: { userId, createdAt: { gte: monthStart } }, createdAt: { gte: monthStart } },
-      _count: { _all: true },
+      _count: { postId: true },
       orderBy: { _count: { postId: 'desc' } },
-      take: 1,
-    }),
-    prisma.reelView.groupBy({
-      by: ['reelId'],
-      where: { reel: { userId, createdAt: { gte: monthStart } }, createdAt: { gte: monthStart } },
-      _count: { _all: true },
-      orderBy: { _count: { reelId: 'desc' } },
       take: 1,
     }),
   ]);
 
   const reelIds = userReels.map((r) => r.id);
-  const reelViewRows = reelIds.length
-    ? await prisma.reelView.findMany({ where: { reelId: { in: reelIds }, createdAt: { gte: since } }, select: { createdAt: true } })
-    : [];
+
+  const [reelViewRows, previousReelViews, topReelViewGroups] = reelIds.length
+    ? await Promise.all([
+        prisma.reelView.findMany({
+          where: { reelId: { in: reelIds }, createdAt: { gte: since } },
+          select: { createdAt: true },
+        }),
+        prisma.reelView.count({
+          where: { reelId: { in: reelIds }, createdAt: { gte: previousSince, lt: since } },
+        }),
+        prisma.reelView.groupBy({
+          by: ['reelId'],
+          where: { reelId: { in: reelIds }, createdAt: { gte: monthStart } },
+          _count: { reelId: true },
+          orderBy: { _count: { reelId: 'desc' } },
+          take: 1,
+        }),
+      ])
+    : [[], 0, []];
 
   const views = postViewRows.length + reelViewRows.length;
   const previousViews = previousPostViews + previousReelViews;
@@ -82,7 +88,7 @@ export async function getDashboardStats(userId: string, days = 30) {
           title: topPost.content,
           mediaUrl: topPost.imageUrl,
           createdAt: topPost.createdAt,
-          views: topPostViewGroups[0]._count._all,
+          views: topPostViewGroups[0]._count.postId,
         }
       : null,
     topReel
@@ -92,7 +98,7 @@ export async function getDashboardStats(userId: string, days = 30) {
           title: topReel.caption || 'Reel',
           mediaUrl: topReel.thumbnailUrl,
           createdAt: topReel.createdAt,
-          views: topReelViewGroups[0]._count._all,
+          views: topReelViewGroups[0]._count.reelId,
         }
       : null,
   ]
