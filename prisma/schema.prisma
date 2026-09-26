@@ -64,6 +64,8 @@ enum NotificationType {
   reel_comment
   reel_reply
   comment_mention
+  verification_approved
+  verification_rejected
 }
 
 enum VerificationRequestStatus {
