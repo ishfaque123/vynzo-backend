@@ -196,7 +196,7 @@ async function sendPushForNotification(params: NotificationParams) {
   }
   let url = '/notifications';
   if (params.type === 'follow' && username) url = `/u/${username}`;
-  else if (params.reelId) url = '/reels';
+  else if (params.reelId) url = `/reels?id=${params.reelId}`;
   else if (params.postId) url = `/post/${params.postId}`;
   const tag = grouped ? `${params.type}:${params.postId ?? ''}:${params.commentId ?? ''}:${params.reelId ?? ''}` : undefined;
   await sendPushToUser(params.userId, { title: 'Frianzo', body, url, tag });
