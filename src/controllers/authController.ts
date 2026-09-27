@@ -248,5 +248,9 @@ export async function savePublicKeyHandler(req: Request, res: Response, next: Ne
 
 export async function logout(_req: Request, res: Response) {
   clearAuthCookies(res);
+  // Android WebView can persist cookies across app restarts. Tell the client
+  // to clear the Frianzo origin's cookies/storage as an additional logout
+  // guarantee, while the explicit Set-Cookie clears above remain in place.
+  res.setHeader('Clear-Site-Data', '"cookies", "storage"');
   sendSuccess(res, { loggedOut: true });
 }
