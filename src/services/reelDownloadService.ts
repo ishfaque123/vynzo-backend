@@ -41,10 +41,10 @@ export async function createWatermarkedReelDownload(videoUrl: string, username: 
 
     const watermark = escapeDrawtext(`Frianzo  @${username}`);
     const filter = [
-      "drawtext=font='Sans':fontcolor=white@0.72:fontsize=h*0.022:box=1:boxcolor=black@0.18:boxborderw=7",
+      "drawtext=font='Sans':fontcolor=white@0.68:fontsize=h*0.022:box=0",
       `text='${watermark}'`,
-      "x='if(lt(mod(t\\,24)\\,12),28,w-tw-28)'",
-      "y='if(lt(mod(t\\,24)\\,12),h-th-34,28)'"
+      "x='w-tw-24'",
+      "y='h-th-28'"
     ].join(':');
 
     await execFileAsync('ffmpeg', [
