@@ -11,6 +11,7 @@ import { reportReel, recordReelView } from '../services/reelAnalyticsService';
 import { uploadStreamToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
 import { env } from '../config/env';
+import { createWatermarkedReelDownload } from '../services/reelDownloadService';
 
 export async function getReelsConfigHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getReelsConfig()); } catch (err) { next(err); } }
 const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive() });
@@ -59,4 +60,19 @@ export async function editReelCommentHandler(req: Request, res: Response, next: 
 export async function reportReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { const reason = typeof req.body?.reason === 'string' ? req.body.reason : 'other'; const details = typeof req.body?.details === 'string' ? req.body.details : undefined; sendSuccess(res, await reportReelComment(req.user!.id, req.params.commentId, reason, details)); } catch (err) { next(err); } }
 export async function deleteReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await deleteReelComment(req.user!.id, req.params.commentId)); } catch (err) { next(err); } }
 export async function reportReelHandler(req: Request, res: Response, next: NextFunction) { try { const reason = typeof req.body?.reason === 'string' ? req.body.reason : 'other'; const details = typeof req.body?.details === 'string' ? req.body.details : undefined; sendSuccess(res, await reportReel(req.user!.id, req.params.id, reason, details)); } catch (err) { next(err); } }
+export async function downloadReelHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const reel = await getReelById(req.params.id, req.user!.id);
+    const username = reel.author.username || 'user';
+    const video = await createWatermarkedReelDownload(reel.videoUrl, username);
+    res.status(200);
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Length', String(video.length));
+    res.setHeader('Content-Disposition', `attachment; filename="frianzo-reel-${reel.id}.mp4"`);
+    res.send(video);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function recordReelViewHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await recordReelView(req.user!.id, req.params.id)); } catch (err) { next(err); } }
