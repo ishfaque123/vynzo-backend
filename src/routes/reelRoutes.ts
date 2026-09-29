@@ -20,6 +20,7 @@ import {
   deleteReelCommentHandler,
   reportReelHandler,
   recordReelViewHandler,
+  downloadReelHandler,
 } from '../controllers/reelController';
 
 const router = Router();
@@ -33,6 +34,7 @@ router.post('/', authMiddleware, reelUpload.single('video'), createReelHandler);
 router.post('/:id/like', authMiddleware, toggleReelLikeHandler);
 router.post('/:id/favorite', authMiddleware, toggleReelFavoriteHandler);
 router.post('/:id/view', authMiddleware, recordReelViewHandler);
+router.get('/:id/download', authMiddleware, downloadReelHandler);
 router.post('/:id/report', authMiddleware, reportReelHandler);
 router.delete('/:id', authMiddleware, deleteReelHandler);
 router.get('/:id/comments', authMiddleware, getReelCommentsHandler);
