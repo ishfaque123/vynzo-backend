@@ -28,7 +28,7 @@ async function downloadOriginal(url: string, outputPath: string) {
       if (value) file.write(Buffer.from(value));
     }
   } finally {
-    await new Promise<void>((resolve, reject) => file.end((err) => err ? reject(err) : resolve()));
+    await new Promise<void>((resolve, reject) => file.end((err: NodeJS.ErrnoException | null) => err ? reject(err) : resolve()));
   }
 }
 
