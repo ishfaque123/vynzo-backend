@@ -4,7 +4,6 @@ import os from 'os';
 import path from 'path';
 import { promisify } from 'util';
 import { execFile } from 'child_process';
-import ffmpegPath from 'ffmpeg-static';
 import { ApiError } from '../middleware/errorHandler';
 
 const execFileAsync = promisify(execFile);
@@ -33,8 +32,6 @@ async function downloadOriginal(url: string, outputPath: string) {
 }
 
 export async function createWatermarkedReelDownload(videoUrl: string, username: string) {
-  if (!ffmpegPath) throw new ApiError(500, 'FFMPEG_UNAVAILABLE', 'Video download is temporarily unavailable.');
-
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'frianzo-reel-'));
   const inputPath = path.join(tempDir, 'input.mp4');
   const outputPath = path.join(tempDir, 'frianzo-watermarked.mp4');
@@ -50,7 +47,7 @@ export async function createWatermarkedReelDownload(videoUrl: string, username: 
       "y='if(lt(mod(t\\,16)\\,4),28,if(lt(mod(t\\,16)\\,8),h-th-38,if(lt(mod(t\\,16)\\,12),h-th-38,28)))'"
     ].join(':');
 
-    await execFileAsync(ffmpegPath, [
+    await execFileAsync('ffmpeg', [
       '-hide_banner',
       '-loglevel', 'error',
       '-y',
