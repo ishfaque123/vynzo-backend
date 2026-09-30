@@ -12,23 +12,32 @@ import { uploadStreamToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
 import { env } from '../config/env';
 import { createWatermarkedReelDownload } from '../services/reelDownloadService';
+import { createTrimmedReel } from '../services/reelTrimService';
 
 export async function getReelsConfigHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getReelsConfig()); } catch (err) { next(err); } }
-const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive() });
+const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive(), trimStartSec: z.coerce.number().min(0).optional(), trimEndSec: z.coerce.number().positive().optional() });
 export async function createReelHandler(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.file) throw new ApiError(400, 'NO_VIDEO', 'Please select a video to upload.');
-    const { caption, durationSec } = createReelSchema.parse(req.body);
+    const { caption, durationSec, trimStartSec = 0, trimEndSec } = createReelSchema.parse(req.body);
     if (durationSec > env.reelMaxDurationSec) throw new ApiError(400, 'INVALID_DURATION', `Reel duration must be between 1 and ${env.reelMaxDurationSec} seconds.`);
+    if (trimEndSec != null && trimEndSec <= trimStartSec) throw new ApiError(400, 'INVALID_TRIM', 'Trim end must be after trim start.');
+    if (trimEndSec != null && trimEndSec - trimStartSec < 1) throw new ApiError(400, 'INVALID_TRIM', 'Trimmed reel must be at least 1 second long.');
     const tempPath = req.file.path;
     let videoUrl: string | undefined;
     try {
-      videoUrl = await uploadStreamToR2(
-        createReadStream(tempPath),
-        req.file.mimetype,
-        'reels',
-        path.extname(req.file.originalname).slice(1).toLowerCase() || 'mp4'
-      );
+      if (trimEndSec != null) {
+        const originalUrl = await uploadStreamToR2(createReadStream(tempPath), req.file.mimetype, 'reels', path.extname(req.file.originalname).slice(1).toLowerCase() || 'mp4');
+        try {
+          videoUrl = await createTrimmedReel(originalUrl, trimStartSec, trimEndSec);
+          await deleteFromR2(originalUrl).catch(() => {});
+        } catch (err) {
+          await deleteFromR2(originalUrl).catch(() => {});
+          throw err;
+        }
+      } else {
+        videoUrl = await uploadStreamToR2(createReadStream(tempPath), req.file.mimetype, 'reels', path.extname(req.file.originalname).slice(1).toLowerCase() || 'mp4');
+      }
       sendSuccess(res, { reel: await createReel(req.user!.id, { videoUrl, caption, durationSec }) }, 201);
     } catch (err) {
       if (videoUrl) await deleteFromR2(videoUrl).catch(() => {});
