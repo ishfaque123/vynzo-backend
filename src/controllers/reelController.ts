@@ -15,7 +15,7 @@ import { createWatermarkedReelDownload } from '../services/reelDownloadService';
 import { createTrimmedReel } from '../services/reelTrimService';
 
 export async function getReelsConfigHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getReelsConfig()); } catch (err) { next(err); } }
-const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive(), trimStartSec: z.coerce.number().min(0).optional(), trimEndSec: z.coerce.number().positive().optional() });
+const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive(), trimStartSec: z.coerce.number().min(0).optional(), trimEndSec: z.coerce.number().positive().optional(), filter: z.enum(['normal', 'warm', 'cool', 'bw', 'vintage', 'vivid']).optional() });
 export async function createReelHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const files = req.files as { video?: Express.Multer.File[]; cover?: Express.Multer.File[] } | undefined;
@@ -23,10 +23,12 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
     const coverFile = files?.cover?.[0];
     if (!videoFile) throw new ApiError(400, 'NO_VIDEO', 'Please select a video to upload.');
     if (coverFile && coverFile.size > 10 * 1024 * 1024) throw new ApiError(400, 'COVER_TOO_LARGE', 'Cover image must be smaller than 10MB.');
-    const { caption, durationSec, trimStartSec = 0, trimEndSec } = createReelSchema.parse(req.body);
+    const { caption, durationSec, trimStartSec = 0, trimEndSec, filter } = createReelSchema.parse(req.body);
     if (durationSec > env.reelMaxDurationSec) throw new ApiError(400, 'INVALID_DURATION', `Reel duration must be between 1 and ${env.reelMaxDurationSec} seconds.`);
     if (trimEndSec != null && trimEndSec <= trimStartSec) throw new ApiError(400, 'INVALID_TRIM', 'Trim end must be after trim start.');
     if (trimEndSec != null && trimEndSec - trimStartSec < 1) throw new ApiError(400, 'INVALID_TRIM', 'Trimmed reel must be at least 1 second long.');
+    const videoFilter = filter && filter !== 'normal' ? filter : undefined;
+    const needsProcessing = trimEndSec != null || videoFilter;
     const tempPath = videoFile.path;
     const coverTempPath = coverFile?.path;
     let videoUrl: string | undefined;
@@ -35,10 +37,10 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
       if (coverFile && coverTempPath) {
         thumbnailUrl = await uploadStreamToR2(createReadStream(coverTempPath), coverFile.mimetype, 'reel-covers', 'jpg');
       }
-      if (trimEndSec != null) {
+      if (needsProcessing) {
         const originalUrl = await uploadStreamToR2(createReadStream(tempPath), videoFile.mimetype, 'reels', path.extname(videoFile.originalname).slice(1).toLowerCase() || 'mp4');
         try {
-          videoUrl = await createTrimmedReel(originalUrl, trimStartSec, trimEndSec);
+          videoUrl = await createTrimmedReel(originalUrl, trimStartSec, trimEndSec ?? 0, videoFilter);
           await deleteFromR2(originalUrl).catch(() => {});
         } catch (err) {
           await deleteFromR2(originalUrl).catch(() => {});
