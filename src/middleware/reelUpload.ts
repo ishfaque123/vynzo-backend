@@ -18,6 +18,12 @@ export const reelUpload = multer({
   storage,
   limits: { fileSize: 300 * 1024 * 1024 }, // room for a 3-minute video at normal phone-camera bitrate
   fileFilter: (_req, file, cb) => {
+    if (file.fieldname === 'cover') {
+      if (!file.mimetype.startsWith('image/')) {
+        return cb(new Error('Only image files are allowed for reel covers.'));
+      }
+      return cb(null, true);
+    }
     if (!file.mimetype.startsWith('video/')) {
       return cb(new Error('Only video files are allowed for reels.'));
     }
