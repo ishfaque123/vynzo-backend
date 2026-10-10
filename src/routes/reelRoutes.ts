@@ -30,7 +30,7 @@ router.get('/me/status', authMiddleware, getMyReelStatusHandler);
 router.get('/me/favorites', authMiddleware, getMyFavoriteReelsHandler);
 router.get('/user/:username', authMiddleware, getReelsByUsernameHandler);
 router.get('/:id', authMiddleware, getReelByIdHandler);
-router.post('/', authMiddleware, reelUpload.single('video'), createReelHandler);
+router.post('/', authMiddleware, reelUpload.fields([{ name: 'video', maxCount: 1 }, { name: 'cover', maxCount: 1 }]), createReelHandler);
 router.post('/:id/like', authMiddleware, toggleReelLikeHandler);
 router.post('/:id/favorite', authMiddleware, toggleReelFavoriteHandler);
 router.post('/:id/view', authMiddleware, recordReelViewHandler);
