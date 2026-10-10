@@ -60,7 +60,21 @@ export async function listConversations(userId: string) {
     },
   });
 
-  return conversations.map((c) => {
+  const unreadCounts = await Promise.all(
+    conversations.map((c) => {
+      const me = c.participants.find((p) => p.userId === userId);
+      return prisma.message.count({
+        where: {
+          conversationId: c.id,
+          senderId: { not: userId },
+          hiddenFor: { none: { userId } },
+          ...(me?.lastReadAt ? { createdAt: { gt: me.lastReadAt } } : {}),
+        },
+      });
+    })
+  );
+
+  return conversations.map((c, i) => {
     const me = c.participants.find((p) => p.userId === userId);
     const other = c.participants.find((p) => p.userId !== userId);
     const rawLastMessage = c.messages[0] || null;
@@ -91,6 +105,7 @@ export async function listConversations(userId: string) {
       lastMessage,
       lastMessageStatus,
       unread,
+      unreadCount: unreadCounts[i],
       updatedAt: c.updatedAt,
     };
   });

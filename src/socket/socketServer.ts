@@ -36,6 +36,27 @@ async function pushNewMessage(
 
 const onlineUsers = new Map<string, Set<string>>();
 
+// Simple per-socket rate limiter for high-frequency events.
+const socketRateLimits = new Map<string, number[]>();
+function checkSocketRateLimit(socketId: string, event: string, max: number, windowMs: number): boolean {
+  const key = `${socketId}:${event}`;
+  const now = Date.now();
+  let times = socketRateLimits.get(key);
+  if (!times) {
+    times = [];
+    socketRateLimits.set(key, times);
+  }
+  while (times.length && now - times[0] > windowMs) times.shift();
+  if (times.length >= max) return false;
+  times.push(now);
+  return true;
+}
+function clearSocketRateLimits(socketId: string) {
+  for (const key of socketRateLimits.keys()) {
+    if (key.startsWith(`${socketId}:`)) socketRateLimits.delete(key);
+  }
+}
+
 export function isUserOnline(userId: string): boolean {
   return onlineUsers.has(userId);
 }
@@ -123,6 +144,10 @@ export function initSocketServer(httpServer: HttpServer) {
       isForwarded?: boolean;
     }, ack?: (res: { success: boolean; data?: unknown; error?: string; delivered?: boolean }) => void) => {
       try {
+        if (!checkSocketRateLimit(socket.id, 'message:send', 20, 10000)) {
+          if (ack) ack({ success: false, error: 'RATE_LIMITED' });
+          return;
+        }
         const trimmed = (content || '').trim();
         if (!trimmed && !mediaUrl) {
           if (ack) ack({ success: false, error: 'EMPTY_MESSAGE' });
@@ -131,6 +156,14 @@ export function initSocketServer(httpServer: HttpServer) {
         if (!conversationId) {
           if (ack) ack({ success: false, error: 'MISSING_CONVERSATION' });
           return;
+        }
+
+        if (mediaUrl) {
+          const allowedPrefix = `${env.r2PublicUrl}/chat-media/`;
+          if (!mediaUrl.startsWith(allowedPrefix)) {
+            if (ack) ack({ success: false, error: 'INVALID_MEDIA_URL' });
+            return;
+          }
         }
 
         const isParticipantRow = await prisma.conversationParticipant.findUnique({
@@ -238,6 +271,10 @@ export function initSocketServer(httpServer: HttpServer) {
 
     socket.on('message:reaction', async ({ messageId, emoji }: { messageId: string; emoji: string }, ack?: (res: { success: boolean; data?: unknown; error?: string }) => void) => {
       try {
+        if (!checkSocketRateLimit(socket.id, 'message:reaction', 20, 10000)) {
+          if (ack) ack({ success: false, error: 'RATE_LIMITED' });
+          return;
+        }
         const message = await prisma.message.findUnique({ where: { id: messageId } });
         if (!message || !(await isParticipant(message.conversationId, userId))) { if (ack) ack({ success: false, error: 'NOT_ALLOWED' }); return; }
         const allowed = ['❤️','😂','😮','😢','😡','👍','👎'];
@@ -282,6 +319,7 @@ export function initSocketServer(httpServer: HttpServer) {
 
     socket.on('typing:start', async ({ conversationId }: { conversationId: string }) => {
       if (!conversationId) return;
+      if (!checkSocketRateLimit(socket.id, 'typing:start', 10, 10000)) return;
       if (!(await isParticipant(conversationId, userId))) return;
       socket.to(`conversation:${conversationId}`).emit('typing:start', { conversationId, userId });
     });
@@ -302,6 +340,7 @@ export function initSocketServer(httpServer: HttpServer) {
     });
 
     socket.on('disconnect', async () => {
+      clearSocketRateLimits(socket.id);
       const set = onlineUsers.get(userId);
       if (!set) return;
       set.delete(socket.id);
