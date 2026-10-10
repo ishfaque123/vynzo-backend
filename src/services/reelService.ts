@@ -267,6 +267,7 @@ export async function deleteReel(userId: string, reelId: string) {
   if (reel.userId !== userId) throw new ApiError(403, 'FORBIDDEN', 'Not your reel.');
   await prisma.reel.delete({ where: { id: reelId } });
   if (reel.videoUrl) { try { await deleteFromR2(reel.videoUrl); } catch (err) { console.error('Failed to delete reel video from R2:', err); } }
+  if (reel.thumbnailUrl) { try { await deleteFromR2(reel.thumbnailUrl); } catch (err) { console.error('Failed to delete reel cover from R2:', err); } }
   return { deleted: true };
 }
 
