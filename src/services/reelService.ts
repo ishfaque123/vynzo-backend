@@ -151,14 +151,14 @@ export async function deleteReelComment(userId: string, commentId: string) {
 
 export async function getReelsConfig() { return { enabled: env.reelsEnabled, maxDurationSec: env.reelMaxDurationSec, dailyLimit: env.reelDailyLimit }; }
 
-export async function createReel(userId: string, data: { videoUrl: string; caption?: string; durationSec: number }) {
+export async function createReel(userId: string, data: { videoUrl: string; caption?: string; durationSec: number; thumbnailUrl?: string }) {
   if (!env.reelsEnabled) throw new ApiError(403, 'REELS_DISABLED', 'Reels are currently unavailable.');
   if (!Number.isInteger(data.durationSec) || data.durationSec <= 0 || data.durationSec > env.reelMaxDurationSec) throw new ApiError(400, 'INVALID_DURATION', `Reel duration must be between 1 and ${env.reelMaxDurationSec} seconds.`);
   return prisma.$transaction(async (tx) => {
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentCount = await tx.reel.count({ where: { userId, createdAt: { gt: oneDayAgo } } });
     if (recentCount >= env.reelDailyLimit) throw new ApiError(429, 'DAILY_LIMIT_REACHED', `You can only post ${env.reelDailyLimit} reel${env.reelDailyLimit === 1 ? '' : 's'} per day. Try again later.`);
-    return tx.reel.create({ data: { userId, videoUrl: data.videoUrl, caption: data.caption, durationSec: data.durationSec } });
+    return tx.reel.create({ data: { userId, videoUrl: data.videoUrl, caption: data.caption, durationSec: data.durationSec, thumbnailUrl: data.thumbnailUrl } });
   }, { isolationLevel: 'Serializable' });
 }
 
