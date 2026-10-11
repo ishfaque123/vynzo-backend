@@ -63,6 +63,7 @@ export function toPublicProfile(
     isVerified: user.isVerified ?? false,
     mutualFollowers: extra?.mutualFollowers ?? [],
     mutualCount: extra?.mutualCount ?? 0,
+    storyStreak: user.storyStreak ?? 0,
   };
 }
 
