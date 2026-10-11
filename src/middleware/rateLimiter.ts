@@ -2,7 +2,10 @@ import rateLimit from 'express-rate-limit';
 
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  // 1000 per 15 min per IP: mobile carriers share public IPs (CGNAT), so a
+  // low per-IP cap blocks innocent users. Brute-force protection stays on
+  // the dedicated authLimiter for sensitive endpoints.
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
 });
