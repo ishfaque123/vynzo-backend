@@ -152,6 +152,10 @@ model User {
   reelFavorites          ReelFavorite[]
   closeFriendsOf         CloseFriend[] @relation("CloseFriendOwner")
   closeFriendedBy        CloseFriend[] @relation("CloseFriendTarget")
+  stickerVotes           StickerVote[]
+  stickerAnswers         StickerAnswer[]
+  statusMutes            StatusMute[]  @relation("StatusMuteOwner")
+  statusMutedBy          StatusMute[]  @relation("StatusMuteTarget")
   reportsMade            Report[]          @relation("ReportsMade")
   hiddenPosts            HiddenPost[]
   blocksMade             Block[]           @relation("BlocksMade")
@@ -458,6 +462,7 @@ model Status {
 
   user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   views StatusView[]
+  stickers StatusSticker[]
 
   @@index([userId, createdAt])
   @@index([expiresAt])
@@ -504,6 +509,66 @@ model StatusView {
   @@unique([statusId, viewerId])
   @@index([statusId])
   @@map("status_views")
+}
+
+model StatusSticker {
+  id        String   @id @default(uuid())
+  statusId  String   @map("status_id")
+  type      String   @db.VarChar(20) // 'poll' | 'question' | 'countdown' | 'link'
+  posX      Float    @default(50) @map("pos_x")
+  posY      Float    @default(50) @map("pos_y")
+  data      String   @db.Text // JSON per type
+  createdAt DateTime @default(now()) @map("created_at")
+
+  status  Status          @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  votes   StickerVote[]
+  answers StickerAnswer[]
+
+  @@index([statusId])
+  @@map("status_stickers")
+}
+
+model StickerVote {
+  id          String   @id @default(uuid())
+  stickerId   String   @map("sticker_id")
+  userId      String   @map("user_id")
+  optionIndex Int      @map("option_index")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  sticker StatusSticker @relation(fields: [stickerId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([stickerId, userId])
+  @@index([stickerId])
+  @@map("sticker_votes")
+}
+
+model StickerAnswer {
+  id        String   @id @default(uuid())
+  stickerId String   @map("sticker_id")
+  userId    String   @map("user_id")
+  text      String   @db.VarChar(300)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  sticker StatusSticker @relation(fields: [stickerId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([stickerId])
+  @@map("sticker_answers")
+}
+
+model StatusMute {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  mutedUserId String   @map("muted_user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user      User @relation("StatusMuteOwner", fields: [userId], references: [id], onDelete: Cascade)
+  mutedUser User @relation("StatusMuteTarget", fields: [mutedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mutedUserId])
+  @@index([userId])
+  @@map("status_mutes")
 }
 
 model HiddenMessage {

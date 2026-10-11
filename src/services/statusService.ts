@@ -2,12 +2,14 @@ import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { isEitherBlocked } from './blockService';
 import { deleteFromR2 } from '../config/r2';
+import { createStickers, getStickers, StickerInput } from './stickerService';
+import { getMutedUserIds } from './statusMuteService';
 
 const STATUS_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const DAILY_STATUS_LIMIT = 20;
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true };
 
-export async function createStatus(userId: string, data: { mediaUrl?: string; mediaType?: string; thumbnailUrl?: string; textContent?: string; bgColor?: string; visibility?: string }) {
+export async function createStatus(userId: string, data: { mediaUrl?: string; mediaType?: string; thumbnailUrl?: string; textContent?: string; bgColor?: string; visibility?: string; stickers?: StickerInput[] }) {
   if (!data.mediaUrl && !data.textContent) throw new ApiError(400, 'EMPTY_STATUS', 'Status must have media or text.');
 
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -18,14 +20,19 @@ export async function createStatus(userId: string, data: { mediaUrl?: string; me
 
   const visibility = data.visibility === 'close_friends' ? 'close_friends' : 'everyone';
   const expiresAt = new Date(Date.now() + STATUS_LIFETIME_MS);
-  return prisma.status.create({
+  const status = await prisma.status.create({
     data: { userId, mediaUrl: data.mediaUrl, mediaType: data.mediaType || (data.mediaUrl ? 'image' : 'text'), thumbnailUrl: data.thumbnailUrl, textContent: data.textContent, bgColor: data.bgColor, visibility, expiresAt },
   });
+  if (data.stickers?.length) {
+    await createStickers(status.id, data.stickers);
+  }
+  return status;
 }
 
 export async function getStatusFeed(userId: string) {
   const following = await prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } });
   const authorIds = [...following.map((f) => f.followingId), userId];
+  const mutedIds = await getMutedUserIds(userId);
   const statuses = await prisma.status.findMany({
     where: { userId: { in: authorIds }, expiresAt: { gt: new Date() } },
     orderBy: { createdAt: 'asc' },
@@ -39,12 +46,15 @@ export async function getStatusFeed(userId: string) {
   const allowedCloseFriendAuthors = new Set(closeFriendChecks.map((c) => c.ownerId));
   for (const s of statuses) {
     if (s.visibility === 'close_friends' && s.userId !== userId && !allowedCloseFriendAuthors.has(s.userId)) continue;
-    if (!grouped[s.userId]) grouped[s.userId] = { user: s.user, items: [], hasUnseen: false };
+    if (mutedIds.has(s.userId) && s.userId !== userId) continue;
+    if (!grouped[s.userId]) grouped[s.userId] = { user: s.user, items: [], hasUnseen: false, muted: mutedIds.has(s.userId) };
     const myView = s.views.find((v) => v.viewerId === userId);
     const seen = !!myView;
     const liked = myView?.liked || false;
     const viewCount = s.userId === userId ? s.views.length : undefined;
-    grouped[s.userId].items.push({ id: s.id, mediaUrl: s.mediaUrl, mediaType: s.mediaType, thumbnailUrl: s.thumbnailUrl, textContent: s.textContent, bgColor: s.bgColor, visibility: s.visibility, createdAt: s.createdAt, seen, liked, viewCount });
+    const isOwner = s.userId === userId;
+    const stickers = await getStickers(s.id, userId, isOwner);
+    grouped[s.userId].items.push({ id: s.id, mediaUrl: s.mediaUrl, mediaType: s.mediaType, thumbnailUrl: s.thumbnailUrl, textContent: s.textContent, bgColor: s.bgColor, visibility: s.visibility, createdAt: s.createdAt, seen, liked, viewCount, stickers });
     if (!seen && s.userId !== userId) grouped[s.userId].hasUnseen = true;
   }
   const list = Object.entries(grouped).map(([uid, g]: any) => ({ userId: uid, ...g }));
