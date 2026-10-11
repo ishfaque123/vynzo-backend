@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
+import { ApiError } from '../middleware/errorHandler';
 import { createStatus, getStatusFeed, viewStatus, getStatusViewers, deleteStatus, toggleStatusLike } from '../services/statusService';
-import { uploadToR2 } from '../config/r2';
-import { extractVideoFrameToR2 } from '../services/videoThumbnailService';
+import { uploadToR2, deleteFromR2 } from '../config/r2';
+import { extractVideoFrameToR2, getVideoDurationSec } from '../services/videoThumbnailService';
 import { writeFile, rm } from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -20,13 +21,21 @@ export async function createStatusHandler(req: Request, res: Response, next: Nex
       mediaUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'statuses');
       mediaType = req.file.mimetype.startsWith('video') ? 'video' : 'image';
       if (mediaType === 'video') {
+        // Server-side duration check (client also checks, but never trust it alone).
         // Auto-generate thumbnail from a video frame (Instagram/FB pattern) —
         // clients always get a poster, never a bare <video> placeholder.
         const tmpPath = path.join(os.tmpdir(), `frianzo-status-${Date.now()}.mp4`);
         try {
           await writeFile(tmpPath, req.file.buffer);
+          const durationSec = await getVideoDurationSec(tmpPath);
+          if (durationSec !== null && durationSec > 60) {
+            // Clean up the already-uploaded media before rejecting.
+            if (mediaUrl) await deleteFromR2(mediaUrl).catch(() => {});
+            throw new ApiError(400, 'VIDEO_TOO_LONG', 'Status videos must be 60 seconds or shorter.');
+          }
           thumbnailUrl = await extractVideoFrameToR2(tmpPath, 0.5, 'status-thumbnails');
         } catch (err) {
+          if (err instanceof ApiError) throw err;
           console.error('[status] thumbnail extraction failed', err);
         } finally {
           await rm(tmpPath, { force: true }).catch(() => {});

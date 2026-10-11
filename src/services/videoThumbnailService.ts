@@ -9,6 +9,24 @@ import { uploadStreamToR2 } from '../config/r2';
 const execFileAsync = promisify(execFile);
 
 /**
+ * Returns the duration of a local video file in seconds via ffprobe.
+ * Returns null when the duration cannot be determined.
+ */
+export async function getVideoDurationSec(videoPath: string): Promise<number | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      'ffprobe',
+      ['-hide_banner', '-loglevel', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', videoPath],
+      { maxBuffer: 1024 * 1024 }
+    );
+    const sec = parseFloat(String(stdout).trim());
+    return Number.isFinite(sec) ? sec : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Extracts a single JPEG frame from a local video file and uploads it to R2.
  * Used to auto-generate thumbnails for videos (stories, reels) so clients
  * never render a bare <video> element without a poster — the Instagram/FB pattern.
