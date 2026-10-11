@@ -134,6 +134,8 @@ model User {
   notificationsTriggered Notification[]    @relation("NotificationsTriggered")
   accountSessions        AccountSession[]
   highlights             Highlight[]
+  earnings               Earning[]
+  payoutMethods          PayoutMethod[]
   usagePings             UsagePing[]
   conversationParticipants ConversationParticipant[]
   messagesSent           Message[]
@@ -747,6 +749,37 @@ model Referral {
 
   @@index([referrerId, createdAt])
   @@map("referrals")
+}
+
+model Earning {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  amount      Float
+  type        String   @default("referral")
+  referenceId String?  @map("reference_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("earnings")
+}
+
+model PayoutMethod {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  country       String   @db.VarChar(2)
+  methodType    String   @map("method_type") @db.VarChar(20)
+  accountName   String   @map("account_name") @db.VarChar(100)
+  accountNumber String   @map("account_number") @db.VarChar(50)
+  extra         String?  @db.VarChar(500)
+  isDefault     Boolean  @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("payout_methods")
 }
 
 model VerificationRequest {

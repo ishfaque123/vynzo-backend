@@ -91,6 +91,8 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
         requiredReferrals,
         progress: Math.min(100, Math.round((referrals / requiredReferrals) * 100)),
         referralLink: referralInfo.referralLink,
+        earningPerReferral: 0.1,
+        freeReferrals: requiredReferrals,
       },
       stats,
     });
