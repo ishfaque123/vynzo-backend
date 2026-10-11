@@ -338,6 +338,7 @@ export async function getReelsByUsername(username: string, currentUserId: string
   return reels.map((r) => ({
     id: r.id,
     videoUrl: r.videoUrl,
+    thumbnailUrl: r.thumbnailUrl,
     caption: r.caption,
     durationSec: r.durationSec,
     createdAt: r.createdAt,
