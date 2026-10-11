@@ -5,6 +5,7 @@ import { deleteFromR2 } from '../config/r2';
 import { getFriendStatus } from './followService';
 import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
+import { awardAchievement } from './achievementService';
 
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true };
 
@@ -159,7 +160,10 @@ export async function createReel(userId: string, data: { videoUrl: string; capti
     const recentCount = await tx.reel.count({ where: { userId, createdAt: { gt: oneDayAgo } } });
     if (recentCount >= env.reelDailyLimit) throw new ApiError(429, 'DAILY_LIMIT_REACHED', `You can only post ${env.reelDailyLimit} reel${env.reelDailyLimit === 1 ? '' : 's'} per day. Try again later.`);
     return tx.reel.create({ data: { userId, videoUrl: data.videoUrl, caption: data.caption, durationSec: data.durationSec, thumbnailUrl: data.thumbnailUrl } });
-  }, { isolationLevel: 'Serializable' });
+  }, { isolationLevel: 'Serializable' }).then((reel) => {
+    awardAchievement(userId, 'first_reel').catch(() => {});
+    return reel;
+  });
 }
 
 export async function getReelFeed(currentUserId: string, limit = 10, offset = 0) {
