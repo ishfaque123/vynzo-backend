@@ -4,6 +4,7 @@ import { isEitherBlocked } from './blockService';
 import { deleteFromR2 } from '../config/r2';
 import { createStickers, getStickers, StickerInput } from './stickerService';
 import { getMutedUserIds } from './statusMuteService';
+import { updateStoryStreak, awardAchievement } from './achievementService';
 
 const STATUS_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const DAILY_STATUS_LIMIT = 20;
@@ -26,6 +27,9 @@ export async function createStatus(userId: string, data: { mediaUrl?: string; me
   if (data.stickers?.length) {
     await createStickers(status.id, data.stickers);
   }
+  // Fire-and-forget: streak + first-story achievement.
+  updateStoryStreak(userId).catch(() => {});
+  awardAchievement(userId, 'first_story').catch(() => {});
   return status;
 }
 
