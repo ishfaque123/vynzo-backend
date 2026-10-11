@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { createNotification } from './notificationService';
 import { isEitherBlocked } from './blockService';
+import { checkFollowerMilestones } from './achievementService';
 
 const FRIEND_LIMIT = 5000;
 const FOLLOW_LIST_LIMIT = 20;
@@ -57,6 +58,9 @@ export async function toggleFollow(followerId: string, followingId: string) {
       }, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
+
+      // Fire-and-forget: follower milestone achievements.
+      if (result?.following) checkFollowerMilestones(followingId).catch(() => {});
 
       break;
     } catch (err: any) {
