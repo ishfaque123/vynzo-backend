@@ -7,7 +7,7 @@ const STATUS_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const DAILY_STATUS_LIMIT = 20;
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true };
 
-export async function createStatus(userId: string, data: { mediaUrl?: string; mediaType?: string; textContent?: string; bgColor?: string; visibility?: string }) {
+export async function createStatus(userId: string, data: { mediaUrl?: string; mediaType?: string; thumbnailUrl?: string; textContent?: string; bgColor?: string; visibility?: string }) {
   if (!data.mediaUrl && !data.textContent) throw new ApiError(400, 'EMPTY_STATUS', 'Status must have media or text.');
 
   const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -19,7 +19,7 @@ export async function createStatus(userId: string, data: { mediaUrl?: string; me
   const visibility = data.visibility === 'close_friends' ? 'close_friends' : 'everyone';
   const expiresAt = new Date(Date.now() + STATUS_LIFETIME_MS);
   return prisma.status.create({
-    data: { userId, mediaUrl: data.mediaUrl, mediaType: data.mediaType || (data.mediaUrl ? 'image' : 'text'), textContent: data.textContent, bgColor: data.bgColor, visibility, expiresAt },
+    data: { userId, mediaUrl: data.mediaUrl, mediaType: data.mediaType || (data.mediaUrl ? 'image' : 'text'), thumbnailUrl: data.thumbnailUrl, textContent: data.textContent, bgColor: data.bgColor, visibility, expiresAt },
   });
 }
 
@@ -44,7 +44,7 @@ export async function getStatusFeed(userId: string) {
     const seen = !!myView;
     const liked = myView?.liked || false;
     const viewCount = s.userId === userId ? s.views.length : undefined;
-    grouped[s.userId].items.push({ id: s.id, mediaUrl: s.mediaUrl, mediaType: s.mediaType, textContent: s.textContent, bgColor: s.bgColor, visibility: s.visibility, createdAt: s.createdAt, seen, liked, viewCount });
+    grouped[s.userId].items.push({ id: s.id, mediaUrl: s.mediaUrl, mediaType: s.mediaType, thumbnailUrl: s.thumbnailUrl, textContent: s.textContent, bgColor: s.bgColor, visibility: s.visibility, createdAt: s.createdAt, seen, liked, viewCount });
     if (!seen && s.userId !== userId) grouped[s.userId].hasUnseen = true;
   }
   const list = Object.entries(grouped).map(([uid, g]: any) => ({ userId: uid, ...g }));
@@ -101,6 +101,13 @@ export async function deleteStatus(userId: string, statusId: string) {
       console.error('Failed to delete manually deleted status media from R2:', err);
     }
   }
+  if (status.thumbnailUrl) {
+    try {
+      await deleteFromR2(status.thumbnailUrl);
+    } catch (err) {
+      console.error('Failed to delete manually deleted status thumbnail from R2:', err);
+    }
+  }
 
   await prisma.status.delete({ where: { id: statusId } });
   return { deleted: true };
@@ -112,7 +119,7 @@ export async function deleteStatus(userId: string, statusId: string) {
 export async function cleanupExpiredStatuses() {
   const expired = await prisma.status.findMany({
     where: { expiresAt: { lt: new Date() } },
-    select: { id: true, mediaUrl: true },
+    select: { id: true, mediaUrl: true, thumbnailUrl: true },
   });
 
   for (const s of expired) {
@@ -121,6 +128,13 @@ export async function cleanupExpiredStatuses() {
         await deleteFromR2(s.mediaUrl);
       } catch (err) {
         console.error('Failed to delete expired status media from R2:', err);
+      }
+    }
+    if (s.thumbnailUrl) {
+      try {
+        await deleteFromR2(s.thumbnailUrl);
+      } catch (err) {
+        console.error('Failed to delete expired status thumbnail from R2:', err);
       }
     }
   }

@@ -449,6 +449,7 @@ model Status {
   userId      String   @map("user_id")
   mediaUrl    String?  @map("media_url")
   mediaType   String?  @map("media_type")
+  thumbnailUrl String? @map("thumbnail_url")
   textContent String?  @db.VarChar(500) @map("text_content")
   bgColor     String?  @map("bg_color")
   visibility  String   @default("everyone") @map("visibility")

@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { env } from '../config/env';
 import { createWatermarkedReelDownload } from '../services/reelDownloadService';
 import { createTrimmedReel } from '../services/reelTrimService';
+import { extractVideoFrameToR2 } from '../services/videoThumbnailService';
 
 export async function getReelsConfigHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getReelsConfig()); } catch (err) { next(err); } }
 const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive(), trimStartSec: z.coerce.number().min(0).optional(), trimEndSec: z.coerce.number().positive().optional(), filter: z.enum(['normal', 'warm', 'cool', 'bw', 'vintage', 'vivid']).optional() });
@@ -36,6 +37,15 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
     try {
       if (coverFile && coverTempPath) {
         thumbnailUrl = await uploadStreamToR2(createReadStream(coverTempPath), coverFile.mimetype, 'reel-covers', 'jpg');
+      } else {
+        // No cover selected: auto-generate thumbnail from a video frame
+        // (Instagram/FB pattern). Seek to trimStart so the frame matches
+        // the trimmed output.
+        try {
+          thumbnailUrl = await extractVideoFrameToR2(tempPath, trimStartSec + 0.5, 'reel-covers');
+        } catch (err) {
+          console.error('[reel] auto thumbnail extraction failed', err);
+        }
       }
       if (needsProcessing) {
         const originalUrl = await uploadStreamToR2(createReadStream(tempPath), videoFile.mimetype, 'reels', path.extname(videoFile.originalname).slice(1).toLowerCase() || 'mp4');
