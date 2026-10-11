@@ -247,3 +247,25 @@ export async function getMyVerificationRequest(req: Request, res: Response, next
   }
 }
 
+
+export async function getMyAchievements(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { getUserAchievements } = await import('../services/achievementService');
+    const achievements = await getUserAchievements(req.user!.id);
+    sendSuccess(res, { achievements });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getUserAchievementsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { getUserAchievements } = await import('../services/achievementService');
+    const user = await prisma.user.findUnique({ where: { username: req.params.username }, select: { id: true } });
+    if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+    const achievements = await getUserAchievements(user.id);
+    sendSuccess(res, { achievements });
+  } catch (err) {
+    next(err);
+  }
+}
