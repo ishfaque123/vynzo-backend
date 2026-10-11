@@ -13,6 +13,8 @@ export async function getDashboardStats(userId: string, days = 30) {
     postLikes, postComments, postShares,
     reelLikes, reelComments,
     newFollowers,
+    prevNewFollowers,
+    prevPostCount, prevReelCount, prevStatusCount,
     userReels,
     postViewRows,
     previousPostViews,
@@ -29,6 +31,10 @@ export async function getDashboardStats(userId: string, days = 30) {
     prisma.reelLike.count({ where: { reel: { userId }, createdAt: { gte: since } } }),
     prisma.reelComment.count({ where: { reel: { userId }, createdAt: { gte: since } } }),
     prisma.follow.count({ where: { followingId: userId, createdAt: { gte: since } } }),
+    prisma.follow.count({ where: { followingId: userId, createdAt: { gte: previousSince, lt: since } } }),
+    prisma.post.count({ where: { userId, createdAt: { gte: previousSince, lt: since }, originalPostId: null } }),
+    prisma.reel.count({ where: { userId, createdAt: { gte: previousSince, lt: since } } }),
+    prisma.status.count({ where: { userId, createdAt: { gte: previousSince, lt: since } } }),
     prisma.reel.findMany({ where: { userId }, select: { id: true } }),
     prisma.postView.findMany({ where: { post: { userId }, createdAt: { gte: since } }, select: { createdAt: true } }),
     prisma.postView.count({ where: { post: { userId }, createdAt: { gte: previousSince, lt: since } } }),
@@ -79,6 +85,9 @@ export async function getDashboardStats(userId: string, days = 30) {
     shares: postShares,
   };
   const content = postCount + reelCount + statusCount;
+  const prevContent = prevPostCount + prevReelCount + prevStatusCount;
+  const followersTrendPct = prevNewFollowers === 0 ? null : Math.round(((newFollowers - prevNewFollowers) / prevNewFollowers) * 100);
+  const contentTrendPct = prevContent === 0 ? null : Math.round(((content - prevContent) / prevContent) * 100);
   const dailyViews = buildDailyBuckets([...postViewRows, ...reelViewRows].map((r) => r.createdAt), days);
 
   const topPost = topPostViewGroups[0]
@@ -99,7 +108,7 @@ export async function getDashboardStats(userId: string, days = 30) {
       ? {
           type: 'post' as const,
           id: topPost.id,
-          title: topPost.content,
+          title: topPost.content?.trim() || (topPost.imageUrl ? 'Photo post' : 'Post'),
           mediaUrl: topPost.imageUrl,
           createdAt: topPost.createdAt,
           views: topPostViewGroups[0]._count.postId,
@@ -119,7 +128,7 @@ export async function getDashboardStats(userId: string, days = 30) {
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
     .sort((a, b) => b.views - a.views)[0] || null;
 
-  return { views, engagement, engagementBreakdown, engagementTrendPct, newFollowers, content, dailyViews, viewsTrendPct, topPerforming, days };
+  return { views, engagement, engagementBreakdown, engagementTrendPct, newFollowers, followersTrendPct, content, contentTrendPct, dailyViews, viewsTrendPct, topPerforming, days };
 }
 
 function buildDailyBuckets(dates: Date[], days: number) {
