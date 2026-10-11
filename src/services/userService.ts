@@ -34,6 +34,7 @@ export function toPrivateProfile(user: any) {
     isVerified: user.isVerified ?? false,
     publicKey: user.publicKey ?? null,
     storyStreak: user.storyStreak ?? 0,
+    loginStreak: user.loginStreak ?? 0,
     role: user.role ?? 'user',
   };
 }
@@ -64,6 +65,7 @@ export function toPublicProfile(
     mutualFollowers: extra?.mutualFollowers ?? [],
     mutualCount: extra?.mutualCount ?? 0,
     storyStreak: user.storyStreak ?? 0,
+    loginStreak: user.loginStreak ?? 0,
   };
 }
 
