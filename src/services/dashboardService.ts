@@ -17,6 +17,8 @@ export async function getDashboardStats(userId: string, days = 30) {
     postViewRows,
     previousPostViews,
     topPostViewGroups,
+    prevPostLikes, prevPostComments, prevPostShares,
+    prevReelLikes, prevReelComments,
   ] = await Promise.all([
     prisma.post.count({ where: { userId, createdAt: { gte: since }, originalPostId: null } }),
     prisma.reel.count({ where: { userId, createdAt: { gte: since } } }),
@@ -37,6 +39,11 @@ export async function getDashboardStats(userId: string, days = 30) {
       orderBy: { _count: { postId: 'desc' } },
       take: 1,
     }),
+    prisma.like.count({ where: { post: { userId }, createdAt: { gte: previousSince, lt: since } } }),
+    prisma.comment.count({ where: { post: { userId }, createdAt: { gte: previousSince, lt: since } } }),
+    prisma.post.count({ where: { originalPost: { userId }, createdAt: { gte: previousSince, lt: since } } }),
+    prisma.reelLike.count({ where: { reel: { userId }, createdAt: { gte: previousSince, lt: since } } }),
+    prisma.reelComment.count({ where: { reel: { userId }, createdAt: { gte: previousSince, lt: since } } }),
   ]);
 
   const reelIds = userReels.map((r) => r.id);
@@ -64,6 +71,8 @@ export async function getDashboardStats(userId: string, days = 30) {
   const previousViews = previousPostViews + previousReelViews;
   const viewsTrendPct = previousViews === 0 ? null : Math.round(((views - previousViews) / previousViews) * 100);
   const engagement = postLikes + postComments + postShares + reelLikes + reelComments;
+  const prevEngagement = prevPostLikes + prevPostComments + prevPostShares + prevReelLikes + prevReelComments;
+  const engagementTrendPct = prevEngagement === 0 ? null : Math.round(((engagement - prevEngagement) / prevEngagement) * 100);
   const engagementBreakdown = {
     likes: postLikes + reelLikes,
     comments: postComments + reelComments,
@@ -110,7 +119,7 @@ export async function getDashboardStats(userId: string, days = 30) {
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
     .sort((a, b) => b.views - a.views)[0] || null;
 
-  return { views, engagement, engagementBreakdown, newFollowers, content, dailyViews, viewsTrendPct, topPerforming, days };
+  return { views, engagement, engagementBreakdown, engagementTrendPct, newFollowers, content, dailyViews, viewsTrendPct, topPerforming, days };
 }
 
 function buildDailyBuckets(dates: Date[], days: number) {
