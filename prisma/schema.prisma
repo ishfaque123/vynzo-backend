@@ -100,6 +100,8 @@ model User {
   province               String?
   storyStreak            Int               @default(0) @map("story_streak")
   lastStoryDate          DateTime?         @map("last_story_date")
+  loginStreak            Int               @default(0) @map("login_streak")
+  lastLoginDate          DateTime?         @map("last_login_date")
   achievements           UserAchievement[]
   city                   String?
   country               String?
