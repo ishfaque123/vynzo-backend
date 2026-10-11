@@ -22,6 +22,8 @@ async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
     visibility: post.visibility,
     commentAudience: post.commentAudience,
     createdAt: post.createdAt,
+    pinnedAt: post.pinnedAt ?? null,
+    isPinned: !!post.pinnedAt,
     likeCount: post._count?.likes ?? 0,
     commentCount: post._count?.comments ?? 0,
     shareCount: post._count?.reposts ?? 0,
@@ -153,8 +155,24 @@ export async function getPostsByUsername(username: string, currentUserId?: strin
     const friendStatus = await getFriendStatus(currentUserId, user.id);
     if (friendStatus !== 'following' && friendStatus !== 'friends') return [];
   }
-  const posts = await prisma.post.findMany({ where: isOwner ? { userId: user.id } : { userId: user.id, visibility: 'public' }, orderBy: { createdAt: 'desc' }, include: includeShape });
+  const posts = await prisma.post.findMany({ where: isOwner ? { userId: user.id } : { userId: user.id, visibility: 'public' }, orderBy: [{ pinnedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }], include: includeShape });
   return Promise.all(posts.map((p) => toPostDTO(p, currentUserId)));
+}
+
+export async function togglePinPost(userId: string, postId: string) {
+  const post = await prisma.post.findUnique({ where: { id: postId } });
+  if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+  if (post.userId !== userId) throw new ApiError(403, 'FORBIDDEN', 'Not your post.');
+  if (!post.pinnedAt) {
+    const pinnedCount = await prisma.post.count({ where: { userId, pinnedAt: { not: null } } });
+    if (pinnedCount >= 3) throw new ApiError(400, 'PIN_LIMIT', 'You can pin up to 3 posts.');
+  }
+  const updated = await prisma.post.update({
+    where: { id: postId },
+    data: { pinnedAt: post.pinnedAt ? null : new Date() },
+    include: includeShape,
+  });
+  return toPostDTO(updated, userId);
 }
 
 export async function getPostById(postId: string, currentUserId?: string) {

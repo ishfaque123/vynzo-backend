@@ -5,7 +5,7 @@ import { upload } from '../middleware/upload';
 import {
   createPostHandler, getFeedHandler, deletePostHandler, setReactionHandler,
   sharePostHandler, getPostHandler, getUserPostsHandler, updatePostHandler,
-  reportPostHandler, hidePostHandler, recordPostViewHandler,
+  reportPostHandler, hidePostHandler, recordPostViewHandler, togglePinPostHandler,
 } from '../controllers/postController';
 
 const router = Router();
@@ -21,5 +21,6 @@ router.post('/:id/share', authMiddleware, sharePostHandler);
 router.post('/:id/report', authMiddleware, reportPostHandler);
 router.post('/:id/hide', authMiddleware, hidePostHandler);
 router.post('/:id/view', authMiddleware, recordPostViewHandler);
+router.post('/:id/pin', authMiddleware, togglePinPostHandler);
 
 export default router;

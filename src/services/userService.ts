@@ -40,7 +40,7 @@ export function toPrivateProfile(user: any) {
 export function toPublicProfile(
   user: any,
   friendStatus?: string,
-  extra?: { isOnline?: boolean; lastActiveAt?: Date | null; blockedByMe?: boolean; blockedByOther?: boolean }
+  extra?: { isOnline?: boolean; lastActiveAt?: Date | null; blockedByMe?: boolean; blockedByOther?: boolean; mutualFollowers?: { username: string | null; displayName: string | null }[]; mutualCount?: number }
 ) {
   return {
     id: user.id,
@@ -60,6 +60,30 @@ export function toPublicProfile(
     blockedByMe: extra?.blockedByMe ?? false,
     blockedByOther: extra?.blockedByOther ?? false,
     isVerified: user.isVerified ?? false,
+    mutualFollowers: extra?.mutualFollowers ?? [],
+    mutualCount: extra?.mutualCount ?? 0,
+  };
+}
+
+export async function getMutualFollowers(profileUserId: string, currentUserId: string) {
+  if (!currentUserId || currentUserId === profileUserId) return { mutuals: [], count: 0 };
+  // People who follow the profile user AND are followed by the current user
+  const where = {
+    followingId: profileUserId,
+    follower: {
+      followers: { some: { followerId: currentUserId } },
+    },
+  };
+  const rows = await prisma.follow.findMany({
+    where,
+    take: 3,
+    include: { follower: { select: { username: true, displayName: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  const count = await prisma.follow.count({ where });
+  return {
+    mutuals: rows.map((r) => ({ username: r.follower.username, displayName: r.follower.displayName })),
+    count,
   };
 }
 
@@ -71,11 +95,16 @@ export async function getPublicProfileByUsername(username: string, currentUserId
   const blockStatus = currentUserId
     ? await getBlockStatus(currentUserId, user.id)
     : { blockedByMe: false, blockedByOther: false };
+  const mutual = currentUserId
+    ? await getMutualFollowers(user.id, currentUserId)
+    : { mutuals: [], count: 0 };
 
   return toPublicProfile(user, friendStatus, {
     isOnline: isUserOnline(user.id),
     lastActiveAt: user.lastActiveAt,
     ...blockStatus,
+    mutualFollowers: mutual.mutuals,
+    mutualCount: mutual.count,
   });
 }
 

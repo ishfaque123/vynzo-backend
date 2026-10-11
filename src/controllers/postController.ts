@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import {
   createPost, getFeed, deletePost, sharePost, getPostById, getPostsByUsername,
-  updatePost, reportPost, hidePost,
+  updatePost, reportPost, hidePost, togglePinPost,
 } from '../services/postService';
 import { setReaction } from '../services/likeService';
 import { recordPostView } from '../services/postAnalyticsService';
@@ -73,6 +73,13 @@ export async function deletePostHandler(req: Request, res: Response, next: NextF
   try {
     await deletePost(req.user!.id, req.params.id);
     sendSuccess(res, { deleted: true });
+  } catch (err) { next(err); }
+}
+
+export async function togglePinPostHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const post = await togglePinPost(req.user!.id, req.params.id);
+    sendSuccess(res, { post });
   } catch (err) { next(err); }
 }
 

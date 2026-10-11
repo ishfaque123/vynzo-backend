@@ -133,6 +133,7 @@ model User {
   notificationsReceived  Notification[]    @relation("NotificationsReceived")
   notificationsTriggered Notification[]    @relation("NotificationsTriggered")
   accountSessions        AccountSession[]
+  highlights             Highlight[]
   usagePings             UsagePing[]
   conversationParticipants ConversationParticipant[]
   messagesSent           Message[]
@@ -216,6 +217,7 @@ model Post {
   backgroundStyle String? @map("background_style")
   location        String? @map("location")
   originalPostId  String?         @map("original_post_id")
+  pinnedAt        DateTime?       @map("pinned_at")
   createdAt       DateTime        @default(now()) @map("created_at")
   updatedAt       DateTime        @updatedAt @map("updated_at")
 
@@ -457,6 +459,33 @@ model Status {
   @@index([userId, createdAt])
   @@index([expiresAt])
   @@map("statuses")
+}
+
+model Highlight {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  title     String   @db.VarChar(30)
+  coverUrl  String?  @map("cover_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items HighlightItem[]
+
+  @@index([userId])
+  @@map("highlights")
+}
+
+model HighlightItem {
+  id          String   @id @default(uuid())
+  highlightId String   @map("highlight_id")
+  mediaUrl    String   @map("media_url")
+  mediaType   String?  @map("media_type")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  highlight Highlight @relation(fields: [highlightId], references: [id], onDelete: Cascade)
+
+  @@index([highlightId])
+  @@map("highlight_items")
 }
 
 model StatusView {
