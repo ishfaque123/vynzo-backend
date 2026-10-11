@@ -9,5 +9,10 @@ export async function cleanupExpiredMessages() {
     where: { createdAt: { lt: cutoff } },
   });
 
-  return { deleted: result.count };
+  // Disappearing messages whose timer elapsed.
+  const expired = await prisma.message.deleteMany({
+    where: { expiresAt: { lte: new Date() } },
+  });
+
+  return { deleted: result.count + expired.count };
 }

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
-import { getOrCreateConversation, listConversations, getMessages, deleteConversation } from '../services/messageService';
+import { getOrCreateConversation, listConversations, getMessages, deleteConversation, setDisappearingDuration } from '../services/messageService';
 import { isUserOnline } from '../socket/socketServer';
 
 export async function listConversationsHandler(req: Request, res: Response, next: NextFunction) {
@@ -45,6 +45,22 @@ export async function deleteConversationHandler(req: Request, res: Response, nex
   try {
     const { id } = req.params;
     const result = await deleteConversation(req.user!.id, id);
+    sendSuccess(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+const ALLOWED_DURATIONS = [3600, 86400, 604800, 7776000]; // 1h, 24h, 7d, 90d
+
+export async function setDisappearingHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    const { duration } = req.body as { duration?: number | null };
+    if (duration !== null && duration !== undefined && !ALLOWED_DURATIONS.includes(duration)) {
+      throw new ApiError(400, 'INVALID_DURATION', 'Invalid disappearing duration.');
+    }
+    const result = await setDisappearingDuration(req.user!.id, id, duration ?? null);
     sendSuccess(res, result);
   } catch (err) {
     next(err);

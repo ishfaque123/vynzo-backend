@@ -101,6 +101,7 @@ export async function listConversations(userId: string) {
     return {
       id: c.id,
       isGroup: c.isGroup,
+      disappearingDuration: c.disappearingDuration ?? null,
       otherUser: otherUserShaped,
       lastMessage,
       lastMessageStatus,
@@ -121,8 +122,13 @@ export async function getMessages(userId: string, conversationId: string, cursor
     where: { conversationId, userId: { not: userId } },
   });
 
+  const now = new Date();
   const messages = await prisma.message.findMany({
-    where: { conversationId, hiddenFor: { none: { userId } } },
+    where: {
+      conversationId,
+      hiddenFor: { none: { userId } },
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    },
     orderBy: { createdAt: 'desc' },
     take: limit,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -191,4 +197,19 @@ export async function deleteMessageForEveryone(userId: string, messageId: string
   await prisma.message.update({ where: { id: messageId }, data: { deletedAt: new Date() } });
 
   return { conversationId: message.conversationId };
+}
+
+/** Set disappearing-message timer for a conversation (null = off). */
+export async function setDisappearingDuration(userId: string, conversationId: string, duration: number | null) {
+  const participant = await prisma.conversationParticipant.findUnique({
+    where: { conversationId_userId: { conversationId, userId } },
+  });
+  if (!participant) throw new ApiError(403, 'NOT_A_PARTICIPANT', 'You are not part of this conversation.');
+
+  const updated = await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { disappearingDuration: duration },
+    select: { id: true, disappearingDuration: true },
+  });
+  return updated;
 }

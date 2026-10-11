@@ -211,6 +211,15 @@ export function initSocketServer(httpServer: HttpServer) {
           }
         }
 
+        // Disappearing messages: if the conversation has a timer, set expiry.
+        const conv = await prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: { disappearingDuration: true },
+        });
+        const expiresAt = conv?.disappearingDuration
+          ? new Date(Date.now() + conv.disappearingDuration * 1000)
+          : null;
+
         const message = await prisma.message.create({
           data: {
             conversationId,
@@ -221,6 +230,7 @@ export function initSocketServer(httpServer: HttpServer) {
             voiceDuration: mediaType === 'voice' ? voiceDuration || null : null,
             replyToId: replyToId || null,
             isForwarded: isForwarded === true,
+            expiresAt,
           },
           include: {
             sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } },
