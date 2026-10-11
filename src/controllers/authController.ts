@@ -229,6 +229,11 @@ export async function switchSavedAccount(req: Request, res: Response, next: Next
 
     clearAuthCookies(res);
     res.cookie(AUTH_COOKIE_NAME, result.token, COOKIE_OPTIONS);
+    // Re-set the device cookie: clearAuthCookies() wipes it, and without it
+    // the next /accounts call returns [] ("No saved accounts yet").
+    if (req.cookies?.vynzo_device) {
+      res.cookie('vynzo_device', req.cookies.vynzo_device, DEVICE_COOKIE_OPTIONS);
+    }
     sendSuccess(res, { user: toPrivateProfile(result.user) });
   } catch (err) {
     next(err);
