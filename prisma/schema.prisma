@@ -98,6 +98,9 @@ model User {
   website                String?
   phone                  String?
   province               String?
+  storyStreak            Int               @default(0) @map("story_streak")
+  lastStoryDate          DateTime?         @map("last_story_date")
+  achievements           UserAchievement[]
   city                   String?
   country               String?
   profileCompleted       Boolean           @default(false) @map("profile_completed")
@@ -922,4 +925,31 @@ model SiteSettings {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("site_settings")
+}
+
+model Achievement {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  description String
+  icon        String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String      @id @default(uuid())
+  userId        String      @map("user_id")
+  achievementId String      @map("achievement_id")
+  earnedAt      DateTime    @default(now()) @map("earned_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+  @@map("user_achievements")
 }
