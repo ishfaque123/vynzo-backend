@@ -19,6 +19,19 @@ export const PAYOUT_METHODS: Record<string, { code: string; label: string; field
   ],
 };
 
+const COUNTRY_NAMES: Record<string, string> = {
+  PK: 'Pakistan', IN: 'India', US: 'United States',
+};
+
+export function normalizeCountryCode(raw?: string | null): string | null {
+  if (!raw) return null;
+  const v = raw.trim().toLowerCase();
+  if (v === 'pk' || v === 'pakistan') return 'PK';
+  if (v === 'in' || v === 'india') return 'IN';
+  if (v === 'us' || v === 'usa' || v === 'united states' || v === 'united states of america' || v === 'america') return 'US';
+  return null;
+}
+
 function toDTO(m: any) {
   const countryMethods = PAYOUT_METHODS[m.country] || [];
   const methodLabel = countryMethods.find((x) => x.code === m.methodType)?.label || m.methodType;
@@ -36,21 +49,29 @@ function toDTO(m: any) {
 }
 
 export async function getPayoutMethods(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { country: true } });
+  const countryCode = normalizeCountryCode(user?.country);
   const methods = await prisma.payoutMethod.findMany({
     where: { userId },
     orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
   });
-  return { methods: methods.map(toDTO), allowed: PAYOUT_METHODS };
+  return {
+    methods: methods.map(toDTO),
+    country: countryCode,
+    countryName: countryCode ? COUNTRY_NAMES[countryCode] : null,
+    allowed: countryCode ? { [countryCode]: PAYOUT_METHODS[countryCode] } : {},
+  };
 }
 
 export async function addPayoutMethod(userId: string, data: {
-  country: string; methodType: string; accountName: string; accountNumber: string; extra?: string;
+  methodType: string; accountName: string; accountNumber: string; extra?: string;
 }) {
-  const country = data.country?.toUpperCase();
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { country: true } });
+  const country = normalizeCountryCode(user?.country);
+  if (!country) throw new ApiError(400, 'COUNTRY_REQUIRED', 'Please set your country in your profile first.');
   const allowed = PAYOUT_METHODS[country];
-  if (!allowed) throw new ApiError(400, 'INVALID_COUNTRY', 'Unsupported country.');
   if (!allowed.some((m) => m.code === data.methodType)) {
-    throw new ApiError(400, 'INVALID_METHOD', 'Unsupported payout method for this country.');
+    throw new ApiError(400, 'INVALID_METHOD', 'Unsupported payout method for your country.');
   }
   if (!data.accountName?.trim()) throw new ApiError(400, 'NAME_REQUIRED', 'Account holder name is required.');
   if (!data.accountNumber?.trim()) throw new ApiError(400, 'ACCOUNT_REQUIRED', 'Account number is required.');

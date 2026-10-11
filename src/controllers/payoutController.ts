@@ -13,7 +13,6 @@ export async function getPayoutMethodsHandler(req: Request, res: Response, next:
 }
 
 const addSchema = z.object({
-  country: z.string().length(2),
   methodType: z.string().min(1).max(20),
   accountName: z.string().min(1).max(100),
   accountNumber: z.string().min(1).max(50),
