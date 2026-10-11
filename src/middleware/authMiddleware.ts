@@ -37,8 +37,41 @@ export async function authMiddleware(req: Request, _res: Response, next: NextFun
     }
 
     req.user = { id: user.id, role: user.role };
+
+    // Update daily login streak (fire-and-forget, don't block the request)
+    updateLoginStreak(user.id, user.lastLoginDate, user.loginStreak).catch(() => {});
+
     next();
   } catch {
     next(new ApiError(401, 'NOT_AUTHENTICATED', 'Login required.'));
   }
+}
+
+/**
+ * Update the user's daily login streak.
+ * - First login ever, or last login was before yesterday: streak = 1
+ * - Last login was yesterday: streak + 1
+ * - Already logged in today: no change
+ */
+async function updateLoginStreak(userId: string, lastLoginDate: Date | null, currentStreak: number) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  if (lastLoginDate) {
+    const last = new Date(lastLoginDate.getFullYear(), lastLoginDate.getMonth(), lastLoginDate.getDate());
+    const diffDays = Math.round((today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return; // already counted today
+    if (diffDays === 1) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { loginStreak: currentStreak + 1, lastLoginDate: now },
+      });
+      return;
+    }
+  }
+  // First ever login, or streak broken (missed a day)
+  await prisma.user.update({
+    where: { id: userId },
+    data: { loginStreak: 1, lastLoginDate: now },
+  });
 }
