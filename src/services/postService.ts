@@ -2,6 +2,7 @@ import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
 import { createNotification } from './notificationService';
+import { awardAchievement } from './achievementService';
 
 function toAuthorDTO(user: any) {
   return { id: user.id, username: user.username, displayName: user.displayName, profilePictureUrl: user.profilePictureUrl, isVerified: user.isVerified ?? false };
@@ -71,6 +72,7 @@ export async function createPost(userId: string, content: string, imageUrl?: str
     });
   }
 
+  awardAchievement(userId, 'first_post').catch(() => {});
   return toPostDTO(post, userId);
 }
 
