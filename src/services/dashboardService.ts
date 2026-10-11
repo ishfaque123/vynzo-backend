@@ -64,6 +64,11 @@ export async function getDashboardStats(userId: string, days = 30) {
   const previousViews = previousPostViews + previousReelViews;
   const viewsTrendPct = previousViews === 0 ? null : Math.round(((views - previousViews) / previousViews) * 100);
   const engagement = postLikes + postComments + postShares + reelLikes + reelComments;
+  const engagementBreakdown = {
+    likes: postLikes + reelLikes,
+    comments: postComments + reelComments,
+    shares: postShares,
+  };
   const content = postCount + reelCount + statusCount;
   const dailyViews = buildDailyBuckets([...postViewRows, ...reelViewRows].map((r) => r.createdAt), days);
 
@@ -105,7 +110,7 @@ export async function getDashboardStats(userId: string, days = 30) {
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
     .sort((a, b) => b.views - a.views)[0] || null;
 
-  return { views, engagement, newFollowers, content, dailyViews, viewsTrendPct, topPerforming };
+  return { views, engagement, engagementBreakdown, newFollowers, content, dailyViews, viewsTrendPct, topPerforming, days };
 }
 
 function buildDailyBuckets(dates: Date[], days: number) {

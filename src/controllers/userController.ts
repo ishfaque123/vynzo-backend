@@ -79,7 +79,9 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
     const referralInfo = await getMyReferralInfo(req.user!.id);
     const referrals = referralInfo.count;
     const requiredReferrals = 25;
-    const stats = await getDashboardStats(req.user!.id);
+    const daysParam = parseInt(req.query.days as string, 10);
+    const days = [7, 30, 90].includes(daysParam) ? daysParam : 30;
+    const stats = await getDashboardStats(req.user!.id, days);
 
     sendSuccess(res, {
       earnings: user.walletBalance,
