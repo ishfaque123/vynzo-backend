@@ -30,8 +30,7 @@ export async function getMyReferralInfo(userId: string) {
   const count = await prisma.referral.count({ where: { referrerId: userId } });
   const username = user.username ?? '';
   const referralLink = username
-    ? 'https://play.google.com/store/apps/details?id=com.frianzo.app&referrer=' +
-      encodeURIComponent('username=' + username)
+    ? 'https://frianzo.online/?username=' + encodeURIComponent(username)
     : null;
 
   return { count, referralLink };
