@@ -50,6 +50,8 @@ export interface ReelProcessingOptions {
   textPosition?: 'top' | 'middle' | 'bottom';
   speed?: string;
   letterbox?: boolean;
+  flip?: boolean;
+  rotate?: number;
 }
 
 export async function createTrimmedReel(
@@ -90,6 +92,17 @@ export async function createTrimmedReel(
     if (opts.letterbox) {
       vfChain.push('pad=iw:ih+ih*0.24:0:ih*0.12:black');
     }
+
+    // Flip (horizontal mirror)
+    if (opts.flip) {
+      vfChain.push('hflip');
+    }
+
+    // Rotate (90/180/270 clockwise)
+    const rot = opts.rotate || 0;
+    if (rot === 90) vfChain.push('transpose=1');
+    else if (rot === 180) vfChain.push('transpose=1,transpose=1');
+    else if (rot === 270) vfChain.push('transpose=2');
 
     // Speed (video)
     const speed = parseFloat(opts.speed || '1');
