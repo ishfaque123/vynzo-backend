@@ -1,4 +1,4 @@
-import { createWriteStream } from 'fs';
+import { createWriteStream, existsSync } from 'fs';
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -31,21 +31,80 @@ const FILTER_FFMPEG: Record<string, string> = {
   cool: 'eq=brightness=0.02:saturation=1.15:contrast=1.05,colorbalance=rs=-0.1:gs=0.02:bs=0.12',
   bw: 'hue=s=0,eq=contrast=1.1',
   vintage: 'eq=brightness=0.02:saturation=0.75:contrast=0.95,colorbalance=rs=0.12:gs=0.06:bs=-0.08',
-  vivid: 'eq=saturation=1.5:contrast=1.12:brightness=0.01',
+  vivid: 'eq=saturation=1.5:contrast=1.12:brightness=1.01',
+  beauty: 'hqdn3d=2:2:6:6,eq=brightness=0.03:saturation=1.15:contrast=1.02',
 };
 
-export async function createTrimmedReel(videoUrl: string, startSec: number, endSec: number, filter?: string) {
+const FONT_PATHS = [
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+  '/usr/share/fonts/TTF/DejaVuSans-Bold.ttf',
+];
+
+function escapeDrawtext(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/\n/g, ' ');
+}
+
+export interface ReelProcessingOptions {
+  filter?: string;
+  textOverlay?: string;
+  textPosition?: 'top' | 'middle' | 'bottom';
+  speed?: string;
+}
+
+export async function createTrimmedReel(
+  videoUrl: string,
+  startSec: number,
+  endSec: number,
+  filter?: string,
+  options?: ReelProcessingOptions,
+) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'frianzo-reel-trim-'));
   const inputPath = path.join(tempDir, 'input.mp4');
   const outputPath = path.join(tempDir, 'trimmed.mp4');
   try {
     await downloadOriginal(videoUrl, inputPath);
-    const vf = filter && FILTER_FFMPEG[filter] ? FILTER_FFMPEG[filter] : null;
+
+    // Support both old signature (filter as 4th arg) and new options object
+    const opts: ReelProcessingOptions = options || {};
+    const filterId = opts.filter || filter;
+    const vf = filterId && FILTER_FFMPEG[filterId] ? FILTER_FFMPEG[filterId] : null;
+
+    const vfChain: string[] = [];
+    if (vf) vfChain.push(vf);
+
+    // Text overlay
+    const overlayText = (opts.textOverlay || '').trim().slice(0, 100);
+    if (overlayText) {
+      const fontFile = FONT_PATHS.find((p) => existsSync(p));
+      if (fontFile) {
+        const pos = opts.textPosition || 'top';
+        const yExpr = pos === 'bottom' ? 'h-th-60' : pos === 'middle' ? '(h-th)/2' : '60';
+        vfChain.push(
+          `drawtext=fontfile=${fontFile}:text='${escapeDrawtext(overlayText)}':fontsize=48:fontcolor=white:borderw=2:bordercolor=black@0.6:x=(w-text_w)/2:y=${yExpr}`,
+        );
+      }
+    }
+
+    // Speed (video)
+    const speed = parseFloat(opts.speed || '1');
+    const validSpeed = [0.5, 1, 1.5, 2].includes(speed) ? speed : 1;
+    if (validSpeed !== 1) {
+      vfChain.push(`setpts=${(1 / validSpeed).toFixed(4)}*PTS`);
+    }
+
     const args = ['-hide_banner', '-loglevel', 'error', '-y'];
     if (startSec > 0) args.push('-ss', String(startSec));
     args.push('-i', inputPath);
     if (endSec > startSec) args.push('-t', String(endSec - startSec));
-    if (vf) args.push('-vf', vf);
+    if (vfChain.length > 0) args.push('-vf', vfChain.join(','));
+
+    // Speed (audio) - atempo supports 0.5-100
+    const audioFilters: string[] = [];
+    if (validSpeed !== 1) {
+      audioFilters.push(`atempo=${validSpeed}`);
+    }
+    if (audioFilters.length > 0) args.push('-filter:a', audioFilters.join(','));
+
     args.push(
       '-map', '0:v:0',
       '-map', '0:a?',

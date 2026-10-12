@@ -16,7 +16,7 @@ import { createTrimmedReel } from '../services/reelTrimService';
 import { extractVideoFrameToR2 } from '../services/videoThumbnailService';
 
 export async function getReelsConfigHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getReelsConfig()); } catch (err) { next(err); } }
-const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive(), trimStartSec: z.coerce.number().min(0).optional(), trimEndSec: z.coerce.number().positive().optional(), filter: z.enum(['normal', 'warm', 'cool', 'bw', 'vintage', 'vivid']).optional() });
+const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive(), trimStartSec: z.coerce.number().min(0).optional(), trimEndSec: z.coerce.number().positive().optional(), filter: z.enum(['normal', 'warm', 'cool', 'bw', 'vintage', 'vivid', 'beauty']).optional(), textOverlay: z.string().max(100).optional(), textPosition: z.enum(['top', 'middle', 'bottom']).optional(), speed: z.enum(['0.5', '1', '1.5', '2']).optional() });
 export async function createReelHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const files = req.files as { video?: Express.Multer.File[]; cover?: Express.Multer.File[] } | undefined;
@@ -24,12 +24,14 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
     const coverFile = files?.cover?.[0];
     if (!videoFile) throw new ApiError(400, 'NO_VIDEO', 'Please select a video to upload.');
     if (coverFile && coverFile.size > 10 * 1024 * 1024) throw new ApiError(400, 'COVER_TOO_LARGE', 'Cover image must be smaller than 10MB.');
-    const { caption, durationSec, trimStartSec = 0, trimEndSec, filter } = createReelSchema.parse(req.body);
+    const { caption, durationSec, trimStartSec = 0, trimEndSec, filter, textOverlay, textPosition, speed } = createReelSchema.parse(req.body);
     if (durationSec > env.reelMaxDurationSec) throw new ApiError(400, 'INVALID_DURATION', `Reel duration must be between 1 and ${env.reelMaxDurationSec} seconds.`);
     if (trimEndSec != null && trimEndSec <= trimStartSec) throw new ApiError(400, 'INVALID_TRIM', 'Trim end must be after trim start.');
     if (trimEndSec != null && trimEndSec - trimStartSec < 1) throw new ApiError(400, 'INVALID_TRIM', 'Trimmed reel must be at least 1 second long.');
     const videoFilter = filter && filter !== 'normal' ? filter : undefined;
-    const needsProcessing = trimEndSec != null || videoFilter;
+    const overlayText = typeof textOverlay === 'string' ? textOverlay.trim().slice(0, 100) : '';
+    const playbackSpeed = speed && speed !== '1' ? speed : undefined;
+    const needsProcessing = trimEndSec != null || videoFilter || overlayText || playbackSpeed;
     const tempPath = videoFile.path;
     const coverTempPath = coverFile?.path;
     let videoUrl: string | undefined;
@@ -50,7 +52,7 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
       if (needsProcessing) {
         const originalUrl = await uploadStreamToR2(createReadStream(tempPath), videoFile.mimetype, 'reels', path.extname(videoFile.originalname).slice(1).toLowerCase() || 'mp4');
         try {
-          videoUrl = await createTrimmedReel(originalUrl, trimStartSec, trimEndSec ?? 0, videoFilter);
+          videoUrl = await createTrimmedReel(originalUrl, trimStartSec, trimEndSec ?? 0, videoFilter, { filter: videoFilter, textOverlay: overlayText || undefined, textPosition: textPosition || 'top', speed: playbackSpeed });
           await deleteFromR2(originalUrl).catch(() => {});
         } catch (err) {
           await deleteFromR2(originalUrl).catch(() => {});
