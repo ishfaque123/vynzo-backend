@@ -684,7 +684,6 @@ model Reel {
   favorites ReelFavorite[]
   comments  ReelComment[]
   reports   ReelReport[]
-  views     ReelView[]
 
   @@index([userId])
   @@index([createdAt])
@@ -747,9 +746,6 @@ model ReelView {
   watchSec  Int      @default(0) @map("watch_sec")
   completed Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at")
-
-  reel   Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
-  viewer User @relation(fields: [viewerId], references: [id], onDelete: Cascade)
 
   @@index([reelId])
   @@index([viewerId, createdAt])
