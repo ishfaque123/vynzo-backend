@@ -52,6 +52,7 @@ export interface ReelProcessingOptions {
   letterbox?: boolean;
   flip?: boolean;
   rotate?: number;
+  crop?: string;
 }
 
 export async function createTrimmedReel(
@@ -91,6 +92,13 @@ export async function createTrimmedReel(
     // Letterbox (cinematic black bars)
     if (opts.letterbox) {
       vfChain.push('pad=iw:ih+ih*0.24:0:ih*0.12:black');
+    }
+
+    // Crop (aspect ratio)
+    if (opts.crop === 'square') {
+      vfChain.push("crop='min(iw,ih)':'min(iw,ih)'");
+    } else if (opts.crop === 'portrait') {
+      vfChain.push("crop=iw:'iw*5/4'");
     }
 
     // Flip (horizontal mirror)
