@@ -31,7 +31,10 @@ export async function postProfileSetup(req: Request, res: Response, next: NextFu
       throw new ApiError(403, 'PROFILE_ALREADY_COMPLETED', 'Profile setup already completed. Use Edit Profile to make changes.');
     }
     const data = profileSetupSchema.parse(req.body);
-    const user = await completeProfile(req.user!.id, data);
+    // Auto-detect country from IP (Cloudflare header) — no longer asked in signup form
+    const ipCountry = req.headers['cf-ipcountry'];
+    const autoCountry = typeof ipCountry === 'string' && /^[A-Z]{2}$/.test(ipCountry) ? ipCountry : null;
+    const user = await completeProfile(req.user!.id, { ...data, country: autoCountry || data.country || null });
     sendSuccess(res, { user: toPrivateProfile(user) });
   } catch (err) { next(err); }
 }
