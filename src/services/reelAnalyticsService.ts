@@ -34,11 +34,24 @@ export async function reportReel(userId: string, reelId: string, reason: string,
   return { reported: true };
 }
 
-export async function recordReelView(userId: string, reelId: string) {
-  const reel = await prisma.reel.findUnique({ where: { id: reelId }, select: { id: true } });
+export async function recordReelView(userId: string, reelId: string, watchSec = 0) {
+  const reel = await prisma.reel.findUnique({ where: { id: reelId }, select: { id: true, durationSec: true } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   await ensureViewTable();
-  await prisma.$executeRawUnsafe(`INSERT IGNORE INTO reel_views (id, reel_id, viewer_id) VALUES (UUID(), ?, ?)`, reelId, userId);
+  // Ensure new columns exist
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views ADD COLUMN watch_sec INT NOT NULL DEFAULT 0`); } catch {}
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views ADD COLUMN completed TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views ADD COLUMN created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)`); } catch {}
+
+  const completed = reel.durationSec ? watchSec >= Math.floor(reel.durationSec * 0.9) : watchSec >= 3;
+  // Upsert: keep the max watch time
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO reel_views (id, reel_id, viewer_id, watch_sec, completed) VALUES (UUID(), ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE watch_sec = GREATEST(watch_sec, VALUES(watch_sec)), completed = GREATEST(completed, VALUES(completed))`,
+    reelId, userId, Math.floor(watchSec), completed ? 1 : 0
+  );
   const rows = await prisma.$queryRawUnsafe<Array<{ viewCount: bigint }>>(`SELECT COUNT(*) AS viewCount FROM reel_views WHERE reel_id = ?`, reelId);
   return { viewed: true, viewCount: Number(rows[0]?.viewCount ?? 0) };
 }
+
+

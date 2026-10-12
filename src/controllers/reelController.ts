@@ -112,4 +112,4 @@ export async function downloadReelHandler(req: Request, res: Response, next: Nex
   }
 }
 
-export async function recordReelViewHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await recordReelView(req.user!.id, req.params.id)); } catch (err) { next(err); } }
+export async function recordReelViewHandler(req: Request, res: Response, next: NextFunction) { try { const watchSec = Math.max(0, Math.min(3600, Number(req.body?.watchSec) || 0)); sendSuccess(res, await recordReelView(req.user!.id, req.params.id, watchSec)); } catch (err) { next(err); } }

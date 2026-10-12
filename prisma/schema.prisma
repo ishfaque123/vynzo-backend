@@ -684,6 +684,7 @@ model Reel {
   favorites ReelFavorite[]
   comments  ReelComment[]
   reports   ReelReport[]
+  views     ReelView[]
 
   @@index([userId])
   @@index([createdAt])
@@ -737,6 +738,23 @@ model ReelLike {
   @@unique([reelId, userId])
   @@index([reelId])
   @@map("reel_likes")
+}
+
+model ReelView {
+  id        String   @id @default(uuid())
+  reelId    String   @map("reel_id")
+  viewerId  String   @map("viewer_id")
+  watchSec  Int      @default(0) @map("watch_sec")
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  reel   Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  viewer User @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([reelId, viewerId])
+  @@index([reelId])
+  @@index([viewerId, createdAt])
+  @@map("reel_views")
 }
 
 model ReelFavorite {
