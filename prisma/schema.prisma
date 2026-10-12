@@ -751,7 +751,6 @@ model ReelView {
   reel   Reel @relation(fields: [reelId], references: [id], onDelete: Cascade)
   viewer User @relation(fields: [viewerId], references: [id], onDelete: Cascade)
 
-  @@unique([reelId, viewerId])
   @@index([reelId])
   @@index([viewerId, createdAt])
   @@map("reel_views")
