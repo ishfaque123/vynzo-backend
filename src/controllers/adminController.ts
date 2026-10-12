@@ -736,3 +736,30 @@ export async function updateAdminSeoSettings(req: Request, res: Response, next: 
     next(err);
   }
 }
+
+export async function deleteAdminUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.params.userId;
+
+    if (userId === req.user!.id) {
+      throw new ApiError(400, 'CANNOT_DELETE_SELF', 'You cannot delete your own admin account.');
+    }
+
+    const target = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, role: true },
+    });
+    if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+    if (target.role === 'admin' || target.role === 'superadmin') {
+      throw new ApiError(403, 'CANNOT_DELETE_ADMIN', 'You cannot delete another admin account.');
+    }
+
+    // Delete user — posts, reels, likes, comments cascade via Prisma onDelete
+    await prisma.user.delete({ where: { id: userId } });
+
+    sendSuccess(res, { deleted: true, username: target.username });
+  } catch (err) {
+    next(err);
+  }
+}
