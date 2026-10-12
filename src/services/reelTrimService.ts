@@ -41,7 +41,8 @@ const FONT_PATHS = [
 ];
 
 function escapeDrawtext(text: string): string {
-  return text.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/\n/g, ' ');
+  return text.replace(/\/g, '\\').replace(/:/g, '\:').replace(/'/g, "\'").replace(/
+/g, ' ');
 }
 
 export interface ReelProcessingOptions {
@@ -49,6 +50,7 @@ export interface ReelProcessingOptions {
   textOverlay?: string;
   textPosition?: 'top' | 'middle' | 'bottom';
   speed?: string;
+  letterbox?: boolean;
 }
 
 export async function createTrimmedReel(
@@ -83,6 +85,11 @@ export async function createTrimmedReel(
           `drawtext=fontfile=${fontFile}:text='${escapeDrawtext(overlayText)}':fontsize=48:fontcolor=white:borderw=2:bordercolor=black@0.6:x=(w-text_w)/2:y=${yExpr}`,
         );
       }
+    }
+
+    // Letterbox (cinematic black bars)
+    if (opts.letterbox) {
+      vfChain.push('pad=iw:ih+ih*0.24:0:ih*0.12:black');
     }
 
     // Speed (video)
