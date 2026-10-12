@@ -1,18 +1,25 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
+import { ApiError } from '../middleware/errorHandler';
 import { addComment, getComments, toggleCommentsSetting, deleteComment, editComment, setCommentReaction, reportComment } from '../services/commentService';
+import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
 
 const commentSchema = z.object({
-  content: z.string().min(1).max(500),
+  content: z.string().max(500).optional().default(''),
   parentCommentId: z.string().optional(),
-  taggedUserIds: z.array(z.string()).optional().default([]),
+  taggedUserIds: z.string().optional().default('[]'),
 });
 
 export async function addCommentHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { content, parentCommentId, taggedUserIds } = commentSchema.parse(req.body);
-    const comment = await addComment(req.user!.id, req.params.postId, content, parentCommentId, taggedUserIds);
+    let mediaUrl: string | undefined;
+    if (req.file) mediaUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'comment-media');
+    if (!content.trim() && !mediaUrl) throw new ApiError(400, 'COMMENT_CONTENT_REQUIRED', 'Comment must contain text or an image.');
+    let tagIds: string[] = [];
+    try { tagIds = JSON.parse(taggedUserIds); } catch { tagIds = []; }
+    const comment = await addComment(req.user!.id, req.params.postId, content.trim(), parentCommentId, tagIds, mediaUrl);
     sendSuccess(res, { comment }, 201);
   } catch (err) { next(err); }
 }

@@ -21,6 +21,7 @@ async function toCommentDTO(comment: any, currentUserId?: string): Promise<any> 
   return {
     id: comment.id,
     content: comment.content,
+    mediaUrl: comment.mediaUrl ?? null,
     createdAt: comment.createdAt,
     author: toAuthorDTO(comment.user),
     friendStatus,
@@ -46,7 +47,8 @@ export async function addComment(
   postId: string,
   content: string,
   parentCommentId?: string,
-  taggedUserIds: string[] = []
+  taggedUserIds: string[] = [],
+  mediaUrl?: string
 ) {
   const post = await prisma.post.findUnique({ where: { id: postId }, include: { user: true } });
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
@@ -66,6 +68,7 @@ export async function addComment(
       postId,
       content,
       parentCommentId,
+      mediaUrl,
       tags: { create: taggedUserIds.slice(0, 2).map((id) => ({ userId: id })) },
     },
     include: includeShape,
@@ -153,7 +156,7 @@ export async function getComments(postId: string, currentUserId?: string, cursor
   const rootIds = pageRoots.map((r) => r.id);
 
   // Fetch this page's replies level by level instead of the whole post's
-  // comment tree — threads rarely go more than a few levels deep, so this
+  // comment tree â threads rarely go more than a few levels deep, so this
   // is a handful of small queries instead of one giant one.
   const allReplies: any[] = [];
   if (rootIds.length) {

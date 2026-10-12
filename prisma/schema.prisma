@@ -280,6 +280,7 @@ model Comment {
   postId          String   @map("post_id")
   parentCommentId String?  @map("parent_comment_id")
   content         String   @db.VarChar(500)
+  mediaUrl        String?  @map("media_url")
   createdAt       DateTime @default(now()) @map("created_at")
 
   user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
