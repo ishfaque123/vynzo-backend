@@ -86,7 +86,7 @@ export async function sharePost(userId: string, originalPostId: string, content:
   return toPostDTO(post, userId);
 }
 
-const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, affinityPerPastLike: 8, affinityCap: 80, recencyBase: 200 };
+const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, cityMatch: 70, followingBonus: 50, affinityPerPastLike: 8, affinityPerComment: 12, affinityCap: 100, recencyBase: 200 };
 
 export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const [hiddenPostIds, blockedRows] = currentUserId
@@ -124,12 +124,20 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const candidatePosts = rawCandidatePosts.filter((p) => !p.user.isPrivate || p.userId === currentUserId || followingIds.has(p.userId));
 
   let currentUserCountry: string | null = null;
+  let currentUserCity: string | null = null;
   const affinityMap = new Map<string, number>();
   if (currentUserId) {
-    const me = await prisma.user.findUnique({ where: { id: currentUserId }, select: { country: true } });
+    const me = await prisma.user.findUnique({ where: { id: currentUserId }, select: { country: true, city: true } });
     currentUserCountry = me?.country ?? null;
-    const pastLikes = await prisma.like.findMany({ where: { userId: currentUserId }, select: { post: { select: { userId: true } } }, take: 500, orderBy: { createdAt: 'desc' } });
-    for (const l of pastLikes) affinityMap.set(l.post.userId, (affinityMap.get(l.post.userId) || 0) + 1);
+    currentUserCity = me?.city ?? null;
+    // Affinity from likes (weight 1x)
+    const pastLikes = await prisma.like.findMany({ where: { userId: currentUserId }, select: { post: { select: { userId: true } } }, take: 200, orderBy: { createdAt: 'desc' } }).catch(() => []);
+    for (const l of pastLikes) affinityMap.set(l.post.userId, (affinityMap.get(l.post.userId) || 0) + WEIGHTS.affinityPerPastLike);
+    // Affinity from comments (weight 1.5x - commenting shows stronger interest)
+    const pastComments = await prisma.comment.findMany({ where: { userId: currentUserId }, select: { post: { select: { userId: true } } }, take: 200, orderBy: { createdAt: 'desc' } }).catch(() => []);
+    for (const cm of pastComments) {
+      if (cm.post?.userId) affinityMap.set(cm.post.userId, (affinityMap.get(cm.post.userId) || 0) + WEIGHTS.affinityPerComment);
+    }
   }
 
   const now = Date.now();
@@ -137,9 +145,18 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     const hoursOld = (now - new Date(post.createdAt).getTime()) / 3600000;
     const recencyScore = WEIGHTS.recencyBase / (hoursOld + 2);
     const engagementScore = post._count.likes * WEIGHTS.like + post._count.comments * WEIGHTS.comment + post._count.reposts * WEIGHTS.share;
-    const countryBoost = currentUserCountry && post.user.country && currentUserCountry === post.user.country ? WEIGHTS.countryMatch : 0;
-    const affinityBoost = Math.min((affinityMap.get(post.userId) || 0) * WEIGHTS.affinityPerPastLike, WEIGHTS.affinityCap);
-    return { post, score: recencyScore + engagementScore + countryBoost + affinityBoost };
+    // Location: city match stronger than country
+    let locationBoost = 0;
+    if (currentUserCity && (post.user as any).city && currentUserCity === (post.user as any).city) {
+      locationBoost = WEIGHTS.cityMatch;
+    } else if (currentUserCountry && post.user.country && currentUserCountry === post.user.country) {
+      locationBoost = WEIGHTS.countryMatch;
+    }
+    // Following bonus
+    const followingBonus = followingIds.has(post.userId) ? WEIGHTS.followingBonus : 0;
+    // Affinity (capped)
+    const affinityBoost = Math.min(affinityMap.get(post.userId) || 0, WEIGHTS.affinityCap);
+    return { post, score: recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost };
   });
 
   scored.sort((a, b) => b.score - a.score);
