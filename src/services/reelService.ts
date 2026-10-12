@@ -262,6 +262,8 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
     include: {
       user: { select: { id: true, city: true, country: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true } },
       _count: { select: { likes: true, comments: true } },
+      likes: { where: { userId: currentUserId }, select: { id: true } },
+      favorites: { where: { userId: currentUserId }, select: { id: true } },
     },
   });
 
@@ -349,7 +351,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
     const theyFollow = followerSet.has(r.userId);
     const friendStatus = isMine ? 'self' : iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follower' : 'none';
     const author = r.user ? { id: r.user.id, username: (r.user as any).username || '', displayName: (r.user as any).displayName || '', profilePictureUrl: (r.user as any).profilePictureUrl || null, isVerified: !!(r.user as any).isVerified } : null;
-    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, friendStatus };
+    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus };
   });
   return { reels: reelsWithStatus, hasMore: safeOffset + paged.length < total };
 }
