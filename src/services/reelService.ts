@@ -345,13 +345,24 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
   const followingSet2 = new Set(followStatusRows.filter((f) => f.followerId === currentUserId).map((f) => f.followingId));
   const followerSet = new Set(followStatusRows.filter((f) => f.followingId === currentUserId).map((f) => f.followerId));
 
+  // Attach each reel's permanent share code (generated once on first share,
+  // reused forever) so clients never need a per-open share-link API call.
+  const pagedReelIds = paged.map((s) => s.reel.id);
+  const shareRows = pagedReelIds.length
+    ? await prisma.shareLink.findMany({
+        where: { targetType: 'reel', targetId: { in: pagedReelIds } },
+        select: { targetId: true, code: true },
+      }).catch(() => [] as Array<{ targetId: string; code: string }>)
+    : [];
+  const shareCodeMap = new Map(shareRows.map((s) => [s.targetId, s.code]));
+
   const reelsWithStatus = paged.map(({ reel: r }) => {
     const isMine = r.userId === currentUserId;
     const iFollow = followingSet2.has(r.userId);
     const theyFollow = followerSet.has(r.userId);
     const friendStatus = isMine ? 'self' : iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follower' : 'none';
     const author = r.user ? { id: r.user.id, username: (r.user as any).username || '', displayName: (r.user as any).displayName || '', profilePictureUrl: (r.user as any).profilePictureUrl || null, isVerified: !!(r.user as any).isVerified } : null;
-    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus };
+    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
   });
   return { reels: reelsWithStatus, hasMore: safeOffset + paged.length < total };
 }
