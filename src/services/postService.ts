@@ -8,7 +8,23 @@ function toAuthorDTO(user: any) {
   return { id: user.id, username: user.username, displayName: user.displayName, profilePictureUrl: user.profilePictureUrl, isVerified: user.isVerified ?? false };
 }
 
-async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
+// Batch-load permanent share codes (generated once on first share, reused forever)
+// for a list of target ids. Returns a map targetId -> code.
+async function getShareCodeMap(
+  targetType: 'post' | 'reel' | 'profile',
+  targetIds: string[]
+): Promise<Map<string, string>> {
+  if (!targetIds.length) return new Map();
+  const rows = await prisma.shareLink
+    .findMany({
+      where: { targetType, targetId: { in: [...new Set(targetIds)] } },
+      select: { targetId: true, code: true },
+    })
+    .catch(() => [] as Array<{ targetId: string; code: string }>);
+  return new Map(rows.map((r) => [r.targetId, r.code]));
+}
+
+async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?: Map<string, string>): Promise<any> {
   const myLike = currentUserId ? post.likes?.find((l: any) => l.userId === currentUserId) : null;
   const friendStatus = await getFriendStatus(currentUserId, post.userId);
   const reactionCounts: Record<string, number> = {};
@@ -33,7 +49,8 @@ async function toPostDTO(post: any, currentUserId?: string): Promise<any> {
     author: toAuthorDTO(post.user),
     friendStatus,
     taggedUsers: post.tags?.map((t: any) => toAuthorDTO(t.user)) ?? [],
-    originalPost: post.originalPost ? await toPostDTO(post.originalPost, currentUserId) : null,
+    originalPost: post.originalPost ? await toPostDTO(post.originalPost, currentUserId, shareCodeMap) : null,
+    shareCode: shareCodeMap?.get(post.id) ?? null,
   };
 }
 
@@ -162,7 +179,8 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   scored.sort((a, b) => b.score - a.score);
   const pageSlice = scored.slice(safeOffset, safeOffset + safeLimit).map((s) => s.post);
   const hasMore = scored.length > safeOffset + safeLimit;
-  const posts = await Promise.all(pageSlice.map((p) => toPostDTO(p, currentUserId)));
+  const shareCodeMap = await getShareCodeMap('post', pageSlice.map((p) => p.id));
+  const posts = await Promise.all(pageSlice.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
   return { posts, hasMore };
 }
 
@@ -175,7 +193,8 @@ export async function getPostsByUsername(username: string, currentUserId?: strin
     if (friendStatus !== 'following' && friendStatus !== 'friends') return [];
   }
   const posts = await prisma.post.findMany({ where: isOwner ? { userId: user.id } : { userId: user.id, visibility: 'public' }, orderBy: [{ pinnedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }], include: includeShape });
-  return Promise.all(posts.map((p) => toPostDTO(p, currentUserId)));
+  const shareCodeMap = await getShareCodeMap('post', posts.map((p) => p.id));
+  return Promise.all(posts.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
 }
 
 export async function togglePinPost(userId: string, postId: string) {
