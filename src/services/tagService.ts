@@ -63,7 +63,7 @@ export async function getTagContent(
   const postCandidates = await prisma.post.findMany({
     where: {
       visibility: 'public',
-      content: { contains: needle, mode: 'insensitive' },
+      content: { contains: needle },
       ...(hiddenIds.length ? { id: { notIn: hiddenIds } } : {}),
       ...(blockedIds.size ? { userId: { notIn: [...blockedIds] } } : {}),
     },
@@ -80,7 +80,7 @@ export async function getTagContent(
   // --- Reels ---
   const reelCandidates = await prisma.reel.findMany({
     where: {
-      caption: { contains: needle, mode: 'insensitive' },
+      caption: { contains: needle },
       ...(blockedIds.size ? { userId: { notIn: [...blockedIds] } } : {}),
     },
     include: {
