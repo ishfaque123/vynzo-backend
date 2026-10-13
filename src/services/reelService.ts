@@ -166,7 +166,7 @@ export async function createReel(userId: string, data: { videoUrl: string; capti
   });
 }
 
-export async function getReelFeed(currentUserId: string, limit = 10, offset = 0) {
+export async function getReelFeed(currentUserId: string, limit = 10, offset = 0, feed: 'foryou' | 'following' = 'foryou') {
   const blockedRows = await prisma.block.findMany({ where: { OR: [{ blockerId: currentUserId }, { blockedId: currentUserId }] } });
   const blockedIds = new Set<string>();
   for (const b of blockedRows) blockedIds.add(b.blockerId === currentUserId ? b.blockedId : b.blockerId);
@@ -205,6 +205,13 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
   const creatorStats = new Map<string, { watchTime: number; views: number; likes: number; completed: number }>();
   const likedReelIds = new Set(likeHistory.map((l) => l.reelId));
   const followingSet = new Set(followRows.map((f) => f.followingId));
+
+  // Following tab: only reels from followed creators, chronological order
+  const isFollowingFeed = feed === 'following';
+  if (isFollowingFeed) {
+    if (!followingSet.size) return { reels: [], hasMore: false };
+    (where as any).userId = { in: [...followingSet], ...(blockedIds.size ? { notIn: [...blockedIds] } : {}) };
+  }
 
   // Get reel authors for view history to build affinity
   const viewedReelIds = [...new Set(viewHistory.map((v) => v.reel_id))];
@@ -320,11 +327,14 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
     return { reel: r, score };
   });
 
-  // Sort by score (desc), then by recency for ties
-  scored.sort((a, b) => {
-    if (Math.abs(a.score - b.score) > 0.01) return b.score - a.score;
-    return new Date(b.reel.createdAt).getTime() - new Date(a.reel.createdAt).getTime();
-  });
+  // Sort by score (desc), then by recency for ties (For You only;
+  // Following tab stays chronological as fetched from the DB)
+  if (!isFollowingFeed) {
+    scored.sort((a, b) => {
+      if (Math.abs(a.score - b.score) > 0.01) return b.score - a.score;
+      return new Date(b.reel.createdAt).getTime() - new Date(a.reel.createdAt).getTime();
+    });
+  }
 
   // Apply pagination on ranked results
   const paged = scored.slice(safeOffset, safeOffset + safeLimit);
