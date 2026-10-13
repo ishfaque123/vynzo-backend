@@ -29,6 +29,7 @@ import adminRoutes from './routes/adminRoutes';
 import authFailureRoutes from './routes/authFailureRoutes';
 import geoRoutes from './routes/geoRoutes';
 import settingsRoutes from './routes/settingsRoutes';
+import tagRoutes from './routes/tagRoutes';
 
 export const app = express();
 
@@ -54,6 +55,7 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/share', shareRoutes);
+app.use('/api/tags', tagRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/blocks', blockRoutes);
 app.use('/api/devices', deviceRoutes);
