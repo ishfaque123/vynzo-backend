@@ -50,7 +50,7 @@ export async function sendPushToUser(
   // Badge count for app icon (WhatsApp-style): unread notifications
   let badge = 0;
   try {
-    badge = await prisma.notification.count({ where: { userId, isRead: false } });
+    badge = await prisma.notification.count({ where: { userId, read: false } });
   } catch {
     badge = 0;
   }
