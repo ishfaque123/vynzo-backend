@@ -22,10 +22,10 @@ const createPostSchema = z.object({
 export async function createPostHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { content, visibility, taggedUserIds, commentAudience, backgroundStyle, location } = createPostSchema.parse(req.body);
+    if (backgroundStyle && req.file) throw new ApiError(400, 'POST_BACKGROUND_WITH_IMAGE', 'Text post backgrounds cannot be used with a photo.');
     let imageUrl: string | undefined;
     if (req.file) imageUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'posts');
     if (!content.trim() && !imageUrl) throw new ApiError(400, 'POST_CONTENT_REQUIRED', 'Post must contain text or an image.');
-    if (backgroundStyle && imageUrl) throw new ApiError(400, 'POST_BACKGROUND_WITH_IMAGE', 'Text post backgrounds cannot be used with a photo.');
     let tagIds: string[] = [];
     if (taggedUserIds) {
       try {
