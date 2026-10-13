@@ -7,11 +7,15 @@ import {
   getUnreadCountHandler,
   deleteNotificationsHandler,
   deleteAllNotificationsHandler,
+  getPreferencesHandler,
+  setPreferenceHandler,
 } from '../controllers/notificationController';
 
 const router = Router();
 router.get('/', authMiddleware, getNotificationsHandler);
 router.get('/unread-count', authMiddleware, getUnreadCountHandler);
+router.get('/preferences', authMiddleware, getPreferencesHandler);
+router.put('/preferences', authMiddleware, setPreferenceHandler);
 router.post('/read-all', authMiddleware, markAllReadHandler);
 router.post('/push-token', authMiddleware, registerPushTokenHandler);
 router.delete('/push-token', authMiddleware, removePushTokenHandler);

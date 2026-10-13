@@ -136,6 +136,7 @@ model User {
   tags                   PostTag[]
   commentTags            CommentTag[]
   notificationsReceived  Notification[]    @relation("NotificationsReceived")
+  notificationPreferences NotificationPreference[] @relation("NotificationPreferences")
   notificationsTriggered Notification[]    @relation("NotificationsTriggered")
   accountSessions        AccountSession[]
   highlights             Highlight[]
@@ -353,6 +354,20 @@ model Notification {
 
   @@index([userId, createdAt])
   @@map("notifications")
+}
+
+model NotificationPreference {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  category  String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation("NotificationPreferences", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, category])
+  @@map("notification_preferences")
 }
 
 model ShareLink {

@@ -1,6 +1,14 @@
 import { prisma } from '../config/prisma';
 import { sendPushToUser } from './pushService';
 
+// Ensure the preferences table exists (safe: IF NOT EXISTS, no data loss).
+let prefsTableReady = false;
+async function ensurePrefsTable() {
+  if (prefsTableReady) return;
+  await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS notification_preferences (id VARCHAR(191) NOT NULL PRIMARY KEY, user_id VARCHAR(191) NOT NULL, category VARCHAR(191) NOT NULL, enabled BOOLEAN NOT NULL DEFAULT true, created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3), updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3), UNIQUE KEY notification_preferences_user_id_category_key (user_id, category)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
+  prefsTableReady = true;
+}
+
 type NotificationType =
   | 'follow'
   | 'post_like'
@@ -157,7 +165,50 @@ const GROUPED_TYPES = new Set<string>([
   'reel_like', 'reel_comment', 'reel_reply', 'comment_mention',
 ]);
 
+// Map notification types to user-facing preference categories.
+function prefCategoryFor(type: string): string | null {
+  if (type.endsWith('_like')) return 'likes';
+  if (type === 'post_comment' || type === 'comment_reply' || type === 'reel_comment' || type === 'reel_reply') return 'comments';
+  if (type === 'follow') return 'follows';
+  if (type === 'comment_mention') return 'mentions';
+  if (type === 'post_share') return 'shares';
+  return null; // system/security types always send
+}
+
+export async function isPushEnabled(userId: string, type: string): Promise<boolean> {
+  const category = prefCategoryFor(type);
+  if (!category) return true;
+  await ensurePrefsTable();
+  const pref = await (prisma as any).notificationPreference.findUnique({
+    where: { userId_category: { userId, category } },
+  });
+  return pref ? !!pref.enabled : true; // default ON
+}
+
+export async function getPreferences(userId: string) {
+  await ensurePrefsTable();
+  const prefs = await (prisma as any).notificationPreference.findMany({ where: { userId } });
+  const map: Record<string, boolean> = {};
+  for (const p of prefs) map[p.category] = !!p.enabled;
+  // Return all categories with defaults
+  const categories = ['likes', 'comments', 'follows', 'mentions', 'shares'];
+  return categories.map((c) => ({ category: c, enabled: map[c] !== undefined ? map[c] : true }));
+}
+
+export async function setPreference(userId: string, category: string, enabled: boolean) {
+  await ensurePrefsTable();
+  const valid = ['likes', 'comments', 'follows', 'mentions', 'shares'];
+  if (!valid.includes(category)) throw new Error('INVALID_CATEGORY');
+  return (prisma as any).notificationPreference.upsert({
+    where: { userId_category: { userId, category } },
+    update: { enabled },
+    create: { userId, category, enabled },
+  });
+}
+
 async function sendPushForNotification(params: NotificationParams) {
+  // Respect user's notification preferences
+  if (!(await isPushEnabled(params.userId, params.type))) return;
   let name = 'Someone';
   let username: string | null = null;
   if (params.actorId) {
