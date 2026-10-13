@@ -86,7 +86,9 @@ export async function getTagContent(
     include: {
       user: true,
       _count: { select: { likes: true, comments: true } },
-      likes: currentUserId ? { where: { userId: currentUserId }, select: { userId: true } } : false,
+      ...(currentUserId
+        ? { likes: { where: { userId: currentUserId }, select: { userId: true } } }
+        : {}),
     },
     orderBy: { createdAt: 'desc' },
     take: 200,
