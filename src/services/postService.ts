@@ -5,7 +5,7 @@ import { createNotification } from './notificationService';
 import { awardAchievement } from './achievementService';
 
 function toAuthorDTO(user: any) {
-  return { id: user.id, username: user.username, displayName: user.displayName, profilePictureUrl: user.profilePictureUrl, isVerified: user.isVerified ?? false };
+  return { id: user.id, username: user.username, displayName: typeof user.displayName === 'string' ? user.displayName.trim() : user.displayName, profilePictureUrl: user.profilePictureUrl, isVerified: user.isVerified ?? false };
 }
 
 // Batch-load permanent share codes (generated once on first share, reused forever)
