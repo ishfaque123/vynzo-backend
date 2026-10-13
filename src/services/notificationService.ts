@@ -1,6 +1,24 @@
 import { prisma } from '../config/prisma';
 import { sendPushToUser } from './pushService';
 
+// Ensure the detail column exists on notifications (safe: only ADDs, never alters/drops).
+let detailColReady = false;
+async function ensureDetailColumn() {
+  if (detailColReady) return;
+  try {
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notifications' AND COLUMN_NAME = 'detail'`
+    );
+    if (Number(rows[0]?.c ?? 0) === 0) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE notifications ADD COLUMN detail TEXT NULL`);
+      console.log('[notifications] added detail column');
+    }
+  } catch (err) {
+    console.error('[notifications] detail column ensure failed', err);
+  }
+  detailColReady = true;
+}
+
 // Ensure the preferences table exists (safe: IF NOT EXISTS, no data loss).
 let prefsTableReady = false;
 async function ensurePrefsTable() {
@@ -49,6 +67,7 @@ async function createNotificationRecord(params: {
   commentId?: string;
   reelId?: string;
   reaction?: string; // only used for the push text, not stored
+  detail?: string; // stored, shown in-app (e.g. moderation reason)
 }) {
   if (params.actorId && params.actorId === params.userId) return null;
   if (params.actorId && DEDUPE_TYPES.has(params.type)) {
@@ -66,16 +85,17 @@ async function createNotificationRecord(params: {
     });
     if (recent) return null;
   }
-  return prisma.notification.create({
-    data: {
-      userId: params.userId,
-      actorId: params.actorId ?? null,
-      type: params.type as any,
-      postId: params.postId,
-      commentId: params.commentId,
-      reelId: params.reelId,
-    },
-  });
+  await ensureDetailColumn();
+  const data: any = {
+    userId: params.userId,
+    actorId: params.actorId ?? null,
+    type: params.type as any,
+    postId: params.postId,
+    commentId: params.commentId,
+    reelId: params.reelId,
+  };
+  if (params.detail) data.detail = params.detail;
+  return prisma.notification.create({ data });
 }
 
 export async function getNotifications(userId: string) {
@@ -85,10 +105,12 @@ export async function getNotifications(userId: string) {
     take: 50,
     include: { actor: true },
   });
+  await ensureDetailColumn();
   return notifications.map((n) => ({
     id: n.id,
     type: n.type,
     read: n.read,
+    detail: (n as any).detail ?? null,
     createdAt: n.createdAt,
     postId: n.postId,
     commentId: n.commentId,

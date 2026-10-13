@@ -151,7 +151,8 @@ export async function moderateComment(commentId: string): Promise<void> {
     await createNotification({
       userId: comment.userId,
       type: 'comment_removed',
-      reaction: reason, // display-only slot -> "Your comment was removed for <reason>"
+      detail: reason, // stored + shown in-app and in push
+      reaction: reason, // push text slot
     });
   } catch (err) {
     console.error('[moderation] moderateComment failed', err);

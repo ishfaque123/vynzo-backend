@@ -348,6 +348,7 @@ model Notification {
   commentId String?          @map("comment_id")
   reelId    String?          @map("reel_id")
   read      Boolean          @default(false)
+  detail    String?          @db.Text @map("detail")
   createdAt DateTime         @default(now()) @map("created_at")
 
   user  User  @relation("NotificationsReceived", fields: [userId], references: [id], onDelete: Cascade)
