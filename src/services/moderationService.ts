@@ -56,41 +56,6 @@ function localCheck(content: string): string | null {
   return null;
 }
 
-function buildGuardPrompt(content: string): string {
-  return `<|begin_of_text|><|start_header_id|>user<|end_header_id|>
-
-Task: Check if there is unsafe content in 'User' messages in conversations according our safety policy with the below categories.
-
-<BEGIN UNSAFE CONTENT CATEGORIES>
-S1: Violent Crimes.
-S2: Non-Violent Crimes.
-S3: Sex Crimes.
-S4: Child Exploitation.
-S5: Defamation.
-S6: Specialized Advice.
-S7: Privacy.
-S8: Intellectual Property.
-S9: Indiscriminate Weapons.
-S10: Non-Violent Wrongdoing.
-S11: Sexual Content.
-S12: Elections.
-S13: Code Interpreter Abuse.
-S14: Hate.
-<END UNSAFE CONTENT CATEGORIES>
-
-<BEGIN CONVERSATION>
-
-User: ${content.slice(0, 1000)}
-
-<END CONVERSATION>
-
-Provide your safety assessment for ONLY THE LAST User message in the above conversation:
- - First line must read 'safe' or 'unsafe'.
- - If unsafe, a second line must include a comma-separated list of violated categories.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-
-`;
-}
-
 async function aiCheck(content: string): Promise<{ toxic: boolean; reason?: string }> {
   if (!CF_ACCOUNT_ID || !CF_AI_TOKEN) {
     console.warn('[moderation] Cloudflare AI not configured, skipping AI check');
@@ -107,7 +72,8 @@ async function aiCheck(content: string): Promise<{ toxic: boolean; reason?: stri
           Authorization: `Bearer ${CF_AI_TOKEN}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt: buildGuardPrompt(content) }),
+        // Llama Guard expects chat messages; it applies its own safety policy
+        body: JSON.stringify({ messages: [{ role: 'user', content: content.slice(0, 1000) }] }),
         signal: controller.signal,
       }
     );
