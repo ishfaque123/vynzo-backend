@@ -4,6 +4,7 @@ import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
 import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
+import { moderateComment } from './moderationService';
 
 function toAuthorDTO(user: any) {
   return {
@@ -91,6 +92,12 @@ export async function addComment(
     if (await isEitherBlocked(userId, taggedId)) continue;
     await createNotification({ userId: taggedId, actorId: userId, type: 'comment_mention', postId, commentId: comment.id });
   }
+
+  // Background auto-moderation: runs AFTER the response is sent, never blocks
+  // posting. If the comment is toxic/spam it gets deleted + author notified.
+  setImmediate(() => {
+    moderateComment(comment.id).catch((err) => console.error('[moderation] background check failed', err));
+  });
 
   return toCommentDTO(comment, userId);
 }

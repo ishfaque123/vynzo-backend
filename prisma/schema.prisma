@@ -66,6 +66,7 @@ enum NotificationType {
   comment_mention
   verification_approved
   verification_rejected
+  comment_removed
 }
 
 enum VerificationRequestStatus {

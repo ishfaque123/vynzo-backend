@@ -24,7 +24,8 @@ type NotificationType =
   | 'reel_reply'
   | 'comment_mention'
   | 'verification_approved'
-  | 'verification_rejected';
+  | 'verification_rejected'
+  | 'comment_removed';
 
 // Toggle-style actions (like/unlike, follow/unfollow) must not notify the
 // same person about the same thing again and again.
@@ -156,6 +157,8 @@ const PUSH_TEXT: Record<string, (name: string, others: number, reaction?: string
   account_banned: () => 'Your account has been banned',
   verification_approved: () => 'Your account has been verified',
   verification_rejected: () => 'Your verification request was rejected',
+  // reason is passed via the `reaction` slot (display-only, not stored)
+  comment_removed: (n, o, r) => `Your comment was removed${r ? ` for ${r}` : ''}`,
 };
 
 // Several people doing the same thing to the same target are merged into
