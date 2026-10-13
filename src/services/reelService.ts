@@ -361,7 +361,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0)
     const iFollow = followingSet2.has(r.userId);
     const theyFollow = followerSet.has(r.userId);
     const friendStatus = isMine ? 'self' : iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follower' : 'none';
-    const author = r.user ? { id: r.user.id, username: (r.user as any).username || '', displayName: (r.user as any).displayName || '', profilePictureUrl: (r.user as any).profilePictureUrl || null, isVerified: !!(r.user as any).isVerified } : null;
+    const author = r.user ? { id: r.user.id, username: (r.user as any).username || '', displayName: ((r.user as any).displayName || '').trim(), profilePictureUrl: (r.user as any).profilePictureUrl || null, isVerified: !!(r.user as any).isVerified } : null;
     return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
   });
   return { reels: reelsWithStatus, hasMore: safeOffset + paged.length < total };
@@ -478,7 +478,7 @@ export async function getReelById(reelId: string, currentUserId: string) {
     liked: reel.likes.length > 0,
     favorited: reel.favorites.length > 0,
     isMine,
-    author: { id: reel.user.id, username: reel.user.username, displayName: reel.user.displayName, profilePictureUrl: reel.user.profilePictureUrl, isVerified: reel.user.isVerified },
+    author: { id: reel.user.id, username: reel.user.username, displayName: (reel.user.displayName || '').trim(), profilePictureUrl: reel.user.profilePictureUrl, isVerified: reel.user.isVerified },
     friendStatus,
   };
 }
