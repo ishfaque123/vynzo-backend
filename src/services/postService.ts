@@ -24,7 +24,7 @@ async function getShareCodeMap(
   return new Map(rows.map((r) => [r.targetId, r.code]));
 }
 
-async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?: Map<string, string>): Promise<any> {
+export async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?: Map<string, string>): Promise<any> {
   const myLike = currentUserId ? post.likes?.find((l: any) => l.userId === currentUserId) : null;
   const friendStatus = await getFriendStatus(currentUserId, post.userId);
   const reactionCounts: Record<string, number> = {};
@@ -54,7 +54,7 @@ async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?: Map<s
   };
 }
 
-const includeShape = {
+export const includeShape = {
   user: true,
   _count: { select: { likes: true, comments: { where: { parentCommentId: null } }, reposts: true } },
   likes: true,
