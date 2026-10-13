@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { optionalAuth } from '../middleware/optionalAuth';
 import { upload } from '../middleware/upload';
+import { postCreateLimiter } from '../middleware/rateLimiter';
 import {
   createPostHandler, getFeedHandler, deletePostHandler, setReactionHandler,
   sharePostHandler, getPostHandler, getUserPostsHandler, updatePostHandler,
@@ -11,7 +12,7 @@ import {
 const router = Router();
 
 router.get('/', optionalAuth, getFeedHandler);
-router.post('/', authMiddleware, upload.single('image'), createPostHandler);
+router.post('/', authMiddleware, postCreateLimiter, upload.single('image'), createPostHandler);
 router.get('/user/:username', optionalAuth, getUserPostsHandler);
 router.get('/:id', optionalAuth, getPostHandler);
 router.patch('/:id', authMiddleware, updatePostHandler);
