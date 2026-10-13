@@ -26,7 +26,14 @@ export async function createPostHandler(req: Request, res: Response, next: NextF
     if (req.file) imageUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'posts');
     if (!content.trim() && !imageUrl) throw new ApiError(400, 'POST_CONTENT_REQUIRED', 'Post must contain text or an image.');
     if (backgroundStyle && imageUrl) throw new ApiError(400, 'POST_BACKGROUND_WITH_IMAGE', 'Text post backgrounds cannot be used with a photo.');
-    const tagIds = taggedUserIds ? JSON.parse(taggedUserIds) : [];
+    let tagIds: string[] = [];
+    if (taggedUserIds) {
+      try {
+        tagIds = z.array(z.string().min(1).max(64)).parse(JSON.parse(taggedUserIds));
+      } catch {
+        throw new ApiError(400, 'INVALID_TAG_IDS', 'Tagged users must be a JSON array of user IDs.');
+      }
+    }
     const post = await createPost(req.user!.id, content.trim(), imageUrl, visibility || 'public', tagIds, commentAudience || 'everyone', backgroundStyle, location);
     sendSuccess(res, { post }, 201);
   } catch (err) { next(err); }
