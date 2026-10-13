@@ -47,6 +47,14 @@ export async function sendPushToUser(
   console.log(`[push] user ${userId} has ${tokens.length} device token(s)`);
   if (!tokens.length) return;
 
+  // Badge count for app icon (WhatsApp-style): unread notifications
+  let badge = 0;
+  try {
+    badge = await prisma.notification.count({ where: { userId, isRead: false } });
+  } catch {
+    badge = 0;
+  }
+
   const accessToken = await a.getAccessToken();
   if (!accessToken) {
     console.warn('[push] skipped: could not get Google access token');
@@ -62,8 +70,9 @@ export async function sendPushToUser(
           message: {
             token,
             notification: { title: payload.title, body: payload.body },
-            data: { url: payload.url ?? '/notifications' },
+            data: { url: payload.url ?? '/notifications', badge: String(badge) },
             android: { priority: 'HIGH', notification: { channel_id: 'frianzo_default', ...(payload.tag ? { tag: payload.tag } : {}) } },
+            apns: { payload: { aps: { badge } } },
           },
         }),
       });
