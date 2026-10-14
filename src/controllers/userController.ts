@@ -301,6 +301,24 @@ export async function getMyAchievements(req: Request, res: Response, next: NextF
   }
 }
 
+export const AVAILABLE_INTERESTS = ['comedy', 'music', 'dance', 'sports', 'food', 'travel', 'fashion', 'tech', 'education', 'gaming', 'pets', 'art'] as const;
+
+export async function getInterests(req: Request, res: Response, next: NextFunction) {
+  try {
+    sendSuccess(res, { interests: AVAILABLE_INTERESTS });
+  } catch (err) { next(err); }
+}
+
+export async function updateMyInterests(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { interests } = req.body;
+    if (!Array.isArray(interests)) throw new ApiError(400, 'INVALID_INTERESTS', 'Interests must be an array.');
+    const valid = interests.filter((i: any) => typeof i === 'string' && (AVAILABLE_INTERESTS as readonly string[]).includes(i));
+    await prisma.user.update({ where: { id: req.user!.id }, data: { interests: valid } });
+    sendSuccess(res, { interests: valid });
+  } catch (err) { next(err); }
+}
+
 export async function getMyStrikes(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.id;

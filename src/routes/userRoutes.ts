@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { getMyProfile, getPublicProfile, postProfileSetup, patchMyProfile, searchUsersHandler, getMyDashboard, getMyReferral, claimMyReferral, deleteMyAccount, reportUserHandler, updateAvatarHandler, updateCoverHandler, createVerificationRequest, getMyVerificationRequest, getMyAchievements, getUserAchievementsHandler,
-  getMyStrikes} from '../controllers/userController';
+  getMyStrikes,
+  getInterests,
+  updateMyInterests} from '../controllers/userController';
 import { upload } from '../middleware/upload';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { optionalAuth } from '../middleware/optionalAuth';
@@ -17,6 +19,8 @@ router.get('/me/verification-request', authMiddleware, getMyVerificationRequest)
 router.post('/me/verification-request', authMiddleware, createVerificationRequest);
 router.get('/me/achievements', authMiddleware, getMyAchievements);
 router.get('/me/strikes', authMiddleware, getMyStrikes);
+router.get('/interests', getInterests);
+router.put('/me/interests', authMiddleware, updateMyInterests);
 router.get('/:username/achievements', optionalAuth, getUserAchievementsHandler);
 router.get('/search', optionalAuth, searchUsersHandler);
 router.post('/:userId/report', authMiddleware, reportUserHandler);

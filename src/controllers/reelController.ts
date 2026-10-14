@@ -16,7 +16,7 @@ import { createTrimmedReel } from '../services/reelTrimService';
 import { extractVideoFrameToR2 } from '../services/videoThumbnailService';
 
 export async function getReelsConfigHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getReelsConfig()); } catch (err) { next(err); } }
-const createReelSchema = z.object({ caption: z.string().max(500).optional(), durationSec: z.coerce.number().int().positive(), trimStartSec: z.coerce.number().min(0).optional(), trimEndSec: z.coerce.number().positive().optional(), filter: z.enum(['normal', 'warm', 'cool', 'bw', 'vintage', 'vivid', 'beauty']).optional(), textOverlay: z.string().max(100).optional(), textPosition: z.enum(['top', 'middle', 'bottom']).optional(), speed: z.enum(['0.5', '1', '1.5', '2']).optional(), letterbox: z.string().optional(), flip: z.string().optional(), rotate: z.string().optional(), crop: z.enum(['square', 'portrait']).optional() });
+const createReelSchema = z.object({ caption: z.string().max(500).optional(), category: z.string().max(50).optional(), durationSec: z.coerce.number().int().positive(), trimStartSec: z.coerce.number().min(0).optional(), trimEndSec: z.coerce.number().positive().optional(), filter: z.enum(['normal', 'warm', 'cool', 'bw', 'vintage', 'vivid', 'beauty']).optional(), textOverlay: z.string().max(100).optional(), textPosition: z.enum(['top', 'middle', 'bottom']).optional(), speed: z.enum(['0.5', '1', '1.5', '2']).optional(), letterbox: z.string().optional(), flip: z.string().optional(), rotate: z.string().optional(), crop: z.enum(['square', 'portrait']).optional() });
 export async function createReelHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const files = req.files as { video?: Express.Multer.File[]; cover?: Express.Multer.File[] } | undefined;
@@ -64,7 +64,7 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
       } else {
         videoUrl = await uploadStreamToR2(createReadStream(tempPath), videoFile.mimetype, 'reels', path.extname(videoFile.originalname).slice(1).toLowerCase() || 'mp4');
       }
-      sendSuccess(res, { reel: await createReel(req.user!.id, { videoUrl, caption, durationSec, thumbnailUrl }) }, 201);
+      sendSuccess(res, { reel: await createReel(req.user!.id, { videoUrl, caption, durationSec, thumbnailUrl, category: parsed.data.category}) }, 201);
     } catch (err) {
       if (videoUrl) await deleteFromR2(videoUrl).catch(() => {});
       if (thumbnailUrl) await deleteFromR2(thumbnailUrl).catch(() => {});

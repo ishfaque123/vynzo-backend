@@ -197,6 +197,9 @@ export async function ensureModerationSchema() {
         CONSTRAINT chat_abuse_strikes_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
       )
     `);
+    // 3. interests columns for reels personalization
+    await prisma.$executeRawUnsafe(`ALTER TABLE reels ADD COLUMN IF NOT EXISTS category VARCHAR(50) NULL`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE users ADD COLUMN IF NOT EXISTS interests JSON NULL`);
     console.log('[moderation] schema ensured');
   } catch (err) {
     console.error('[moderation] schema ensure failed', err);

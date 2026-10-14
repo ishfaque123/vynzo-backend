@@ -153,14 +153,14 @@ export async function deleteReelComment(userId: string, commentId: string) {
 
 export async function getReelsConfig() { return { enabled: env.reelsEnabled, maxDurationSec: env.reelMaxDurationSec, dailyLimit: env.reelDailyLimit }; }
 
-export async function createReel(userId: string, data: { videoUrl: string; caption?: string; durationSec: number; thumbnailUrl?: string }) {
+export async function createReel(userId: string, data: { videoUrl: string; caption?: string; durationSec: number; thumbnailUrl?: string; category?: string }) {
   if (!env.reelsEnabled) throw new ApiError(403, 'REELS_DISABLED', 'Reels are currently unavailable.');
   if (!Number.isInteger(data.durationSec) || data.durationSec <= 0 || data.durationSec > env.reelMaxDurationSec) throw new ApiError(400, 'INVALID_DURATION', `Reel duration must be between 1 and ${env.reelMaxDurationSec} seconds.`);
   return prisma.$transaction(async (tx) => {
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentCount = await tx.reel.count({ where: { userId, createdAt: { gt: oneDayAgo } } });
     if (recentCount >= env.reelDailyLimit) throw new ApiError(429, 'DAILY_LIMIT_REACHED', `You can only post ${env.reelDailyLimit} reel${env.reelDailyLimit === 1 ? '' : 's'} per day. Try again later.`);
-    const reel = await tx.reel.create({ data: { userId, videoUrl: data.videoUrl, caption: data.caption, durationSec: data.durationSec, thumbnailUrl: data.thumbnailUrl } });
+    const reel = await tx.reel.create({ data: { userId, videoUrl: data.videoUrl, caption: data.caption, durationSec: data.durationSec, thumbnailUrl: data.thumbnailUrl, category: data.category || null } });
     return reel;
   }, { isolationLevel: 'Serializable' }).then((reel) => {
     awardAchievement(userId, 'first_reel').catch(() => {});
@@ -182,7 +182,9 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
 
   // --- Phase 2: Smart ranking data ---
   // Get user's interaction history for personalization
-  const [viewHistory, likeHistory, followRows, currentUser] = await Promise.all([
+  const [viewHistory, likeHistory, followRows, currentUser, userInterests,
+    // User interests for personalization
+    prisma.user.findUnique({ where: { id: currentUserId }, select: { interests: true } }).then(u => new Set<string>((u?.interests as string[]) || []))] = await Promise.all([
     // Recent views with watch time (last 200)
     prisma.$queryRawUnsafe<Array<{ reel_id: string; user_id: string; watch_sec: number; completed: number }>>(
       `SELECT reel_id, viewer_id AS user_id, watch_sec, completed FROM reel_views WHERE viewer_id = ? ORDER BY created_at DESC LIMIT 200`,
@@ -329,6 +331,8 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
 
     // 7b. Verified creator boost (Blue Tick perk: better reach)
     if (r.user?.isVerified) score += 12;
+    // Interest match boost (personalization)
+    if (r.category && userInterests.has(r.category)) score += 25;
 
     // 7. Penalize already-seen reels (avoid repeats)
     if (viewedReelIds.includes(r.id)) score -= 15;
@@ -381,7 +385,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     const theyFollow = followerSet.has(r.userId);
     const friendStatus = isMine ? 'self' : iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follower' : 'none';
     const author = r.user ? { id: r.user.id, username: (r.user as any).username || '', displayName: ((r.user as any).displayName || '').trim(), profilePictureUrl: (r.user as any).profilePictureUrl || null, isVerified: !!(r.user as any).isVerified } : null;
-    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
+    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, category: (r as any).category || null, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
   });
   return { reels: reelsWithStatus, hasMore: safeOffset + paged.length < total };
 }

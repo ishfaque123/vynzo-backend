@@ -96,6 +96,7 @@ model User {
   displayName            String?           @map("display_name")
   dateOfBirth            DateTime?         @map("date_of_birth")
   bio                    String?            @db.VarChar(300)
+  interests              Json?
   profilePictureUrl      String?           @map("profile_picture_url")
   coverPhotoUrl          String?           @map("cover_photo_url")
   gender                 Gender?
@@ -699,6 +700,7 @@ model Reel {
   thumbnailUrl String?  @map("thumbnail_url")
   caption      String?  @db.VarChar(500)
   durationSec  Int?     @map("duration_sec")
+  category     String?  @db.VarChar(50)
   createdAt    DateTime @default(now()) @map("created_at")
 
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
