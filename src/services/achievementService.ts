@@ -12,6 +12,7 @@ export const ACHIEVEMENTS = [
   { key: 'followers_10000', name: 'Celebrity', description: 'Reached 10,000 followers', icon: 'star' },
   { key: 'likes_1000', name: 'Loved', description: 'Received 1,000 likes', icon: 'heart' },
   { key: 'verified', name: 'Verified', description: 'Earned the blue tick', icon: 'verified' },
+  { key: 'weekly_champion', name: 'Weekly Champion', description: 'Completed all weekly goals', icon: 'trophy' },
 ] as const;
 
 export type AchievementKey = (typeof ACHIEVEMENTS)[number]['key'];

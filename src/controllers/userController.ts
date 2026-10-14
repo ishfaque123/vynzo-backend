@@ -96,13 +96,25 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
       prisma.status.count({ where: { userId: req.user!.id, createdAt: { gte: weekStart } } }).catch(() => 0),
     ]);
 
+    const goals = {
+      posts: { current: weekPosts, target: 7 },
+      reels: { current: weekReels, target: 7 },
+      stories: { current: weekStories, target: 14 },
+    };
+    const allGoalsMet = weekPosts >= 7 && weekReels >= 7 && weekStories >= 14;
+    let newAchievement = null;
+    if (allGoalsMet) {
+      try {
+        const { awardAchievement } = await import('../services/achievementService');
+        newAchievement = await awardAchievement(req.user!.id, 'weekly_champion');
+      } catch {}
+    }
+
     sendSuccess(res, {
       earnings: user.walletBalance,
-      goals: {
-        posts: { current: weekPosts, target: 7 },
-        reels: { current: weekReels, target: 7 },
-        stories: { current: weekStories, target: 14 },
-      },
+      goals,
+      allGoalsMet,
+      newAchievement: newAchievement ? { key: newAchievement.key, name: newAchievement.name } : null,
       monetization: {
         status: referrals >= requiredReferrals ? 'eligible' : 'locked',
         referrals,
