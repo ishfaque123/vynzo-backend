@@ -211,9 +211,28 @@ export async function ensureModerationSchema() {
     await ensureColumn('reels', 'category', 'VARCHAR(50) NULL');
     await ensureColumn('users', 'interests', 'JSON NULL');
     await ensureColumn('users', 'not_interested', 'JSON NULL');
-    console.log('[moderation] schema ensured');
+    await ensureColumn('reels', 'category', 'VARCHAR(50) NULL');
+
+    // PERMANENT FIX: Verify all critical columns exist, fail fast if not
+    const critical = [
+      ['users', 'interests'],
+      ['users', 'not_interested'],
+      ['reels', 'category'],
+      ['users', 'message_restricted_until'],
+    ] as const;
+    for (const [table, column] of critical) {
+      const check = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
+        'SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+        table, column
+      );
+      if (Number(check[0]?.cnt || 0) === 0) {
+        throw new Error(`FATAL: Required column ${table}.${column} could not be created. Refusing to start.`);
+      }
+    }
+    console.log('[moderation] schema ensured and verified');
   } catch (err) {
     console.error('[moderation] schema ensure failed', err);
+    throw err;
   }
 }
 
