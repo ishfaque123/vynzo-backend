@@ -211,25 +211,6 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     prisma.user.findUnique({ where: { id: currentUserId }, select: { notInterested: true } }).then(u => Array.isArray(u?.notInterested) ? (u.notInterested as any[]) : []).catch(() => [] as any[]),
   ]);
 
-  // Build category affinity from watch history (like Facebook: watch comedy = more comedy)
-  const categoryWatch = new Map<string, number>();
-  if (viewedReels.length) {
-    const viewedWithCat = await prisma.reel.findMany({
-      where: { id: { in: viewedReelIds } },
-      select: { id: true, category: true },
-    }).catch(() => [] as Array<{ id: string; category: string | null }>);
-    const catMap = new Map(viewedWithCat.map((r) => [r.id, r.category]));
-    for (const v of viewHistory) {
-      const cat = catMap.get(v.reel_id);
-      if (!cat) continue;
-      const w = (Number(v.watch_sec) || 0) + (Number(v.completed) ? 10 : 0);
-      categoryWatch.set(cat, (categoryWatch.get(cat) || 0) + w);
-    }
-  }
-  // Top 3 watched categories get boost
-  const topCats = [...categoryWatch.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c]) => c);
-  const topCatSet = new Set(topCats);
-
   // Build not-interested sets
   const interestedCats = new Set<string>();
   const notInterestedCats = new Set<string>();
@@ -262,6 +243,25 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     }).catch(() => []);
   }
   const reelAuthorMap = new Map(viewedReels.map((r) => [r.id, r.userId]));
+
+  // Build category affinity from watch history (like Facebook: watch comedy = more comedy)
+  const categoryWatch = new Map<string, number>();
+  if (viewedReels.length) {
+    const viewedWithCat = await prisma.reel.findMany({
+      where: { id: { in: viewedReelIds } },
+      select: { id: true, category: true },
+    }).catch(() => [] as Array<{ id: string; category: string | null }>);
+    const catMap = new Map(viewedWithCat.map((r) => [r.id, r.category]));
+    for (const v of viewHistory) {
+      const cat = catMap.get(v.reel_id);
+      if (!cat) continue;
+      const w = (Number(v.watch_sec) || 0) + (Number(v.completed) ? 10 : 0);
+      categoryWatch.set(cat, (categoryWatch.get(cat) || 0) + w);
+    }
+  }
+  // Top 3 watched categories get boost
+  const topCats = [...categoryWatch.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c]) => c);
+  const topCatSet = new Set(topCats);
 
   for (const v of viewHistory) {
     const authorId = reelAuthorMap.get(v.reel_id);
