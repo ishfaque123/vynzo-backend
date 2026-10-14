@@ -25,7 +25,7 @@ interface VideoGenStatus {
 export async function startVideoGeneration(
   prompt: string,
   aspectRatio: '16:9' | '9:16' = '9:16',
-  durationSeconds: 8 = 8
+  durationSeconds: 4 | 8 = 8
 ): Promise<VideoGenResult> {
   if (!GEMINI_API_KEY) {
     return { success: false, error: 'Video generation not configured' };
