@@ -211,11 +211,32 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     prisma.user.findUnique({ where: { id: currentUserId }, select: { notInterested: true } }).then(u => Array.isArray(u?.notInterested) ? (u.notInterested as any[]) : []).catch(() => [] as any[]),
   ]);
 
+  // Build category affinity from watch history (like Facebook: watch comedy = more comedy)
+  const categoryWatch = new Map<string, number>();
+  if (viewedReels.length) {
+    const viewedWithCat = await prisma.reel.findMany({
+      where: { id: { in: viewedReelIds } },
+      select: { id: true, category: true },
+    }).catch(() => [] as Array<{ id: string; category: string | null }>);
+    const catMap = new Map(viewedWithCat.map((r) => [r.id, r.category]));
+    for (const v of viewHistory) {
+      const cat = catMap.get(v.reel_id);
+      if (!cat) continue;
+      const w = (Number(v.watch_sec) || 0) + (Number(v.completed) ? 10 : 0);
+      categoryWatch.set(cat, (categoryWatch.get(cat) || 0) + w);
+    }
+  }
+  // Top 3 watched categories get boost
+  const topCats = [...categoryWatch.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c]) => c);
+  const topCatSet = new Set(topCats);
+
   // Build not-interested sets
+  const interestedCats = new Set<string>();
   const notInterestedCats = new Set<string>();
   const notInterestedCreators = new Set<string>();
   for (const ni of notInterestedList) {
     if (ni.type === 'category') notInterestedCats.add(ni.value);
+    else if (ni.type === 'interested_category') interestedCats.add(ni.value);
     else if (ni.type === 'creator') notInterestedCreators.add(ni.value);
   }
 
@@ -311,9 +332,9 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     let score = 0;
     const isMine = r.userId === currentUserId;
 
-    // 1. Creator affinity (0-30 points)
+    // 1. Creator affinity (0-50 points) - STRONG: watch a lot = see a lot more
     const affinity = affinityScores.get(r.userId) || 0;
-    score += affinity * 30;
+    score += affinity * 50;
 
     // 2. Following bonus (20 points)
     if (followingSet.has(r.userId)) score += 20;
@@ -343,6 +364,10 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     if (r.user?.isVerified) score += 12;
     // Interest match boost (personalization)
     if (r.category && userInterests.has(r.category)) score += 25;
+    // Watched-category boost: you watch it a lot = you see more (Facebook-style)
+    if (r.category && topCatSet.has(r.category)) score += 35;
+    // Explicit "Interested" feedback boost (strongest positive signal)
+    if (r.category && interestedCats.has(r.category)) score += 40;
     // Not-interested penalty (Facebook-style feedback)
     if (r.category && notInterestedCats.has(r.category)) score -= 50;
     if (notInterestedCreators.has(r.userId)) score -= 50;

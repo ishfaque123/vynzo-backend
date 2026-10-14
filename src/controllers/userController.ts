@@ -321,9 +321,9 @@ export async function updateMyInterests(req: Request, res: Response, next: NextF
 
 export async function markNotInterested(req: Request, res: Response, next: NextFunction) {
   try {
-    const { type, value } = req.body; // type: 'category' | 'creator', value: string
-    if (!['category', 'creator'].includes(type) || typeof value !== 'string') {
-      throw new ApiError(400, 'INVALID_FEEDBACK', 'Type must be category or creator.');
+    const { type, value } = req.body; // type: 'category' | 'creator' | 'interested_category', value: string
+    if (!['category', 'creator', 'interested_category'].includes(type) || typeof value !== 'string') {
+      throw new ApiError(400, 'INVALID_FEEDBACK', 'Invalid feedback type.');
     }
     const user = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { notInterested: true } });
     const current = Array.isArray(user?.notInterested) ? (user.notInterested as any[]) : [];
