@@ -44,7 +44,7 @@ export async function startVideoGeneration(
           instances: [{ prompt }],
           parameters: {
             aspectRatio,
-            durationSeconds: `${durationSeconds}s`,
+            durationSeconds,
           },
         }),
       }
