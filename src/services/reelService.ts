@@ -206,7 +206,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       select: { city: true, country: true },
     }).catch(() => null),
     // User interests for personalization
-    prisma.user.findUnique({ where: { id: currentUserId }, select: { interests: true } }).then(u => new Set<string>((u?.interests as string[]) || [])).catch(() => new Set<string>()),
+    prisma.user.findUnique({ where: { id: currentUserId }, select: { interests: true } }).then(u => new Set<string>(Array.isArray(u?.interests) ? (u.interests as string[]) : [])).catch(() => new Set<string>()),
   ]);
 
   // Build creator affinity map: creatorId -> score (0-1)
