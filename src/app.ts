@@ -30,6 +30,7 @@ import authFailureRoutes from './routes/authFailureRoutes';
 import geoRoutes from './routes/geoRoutes';
 import settingsRoutes from './routes/settingsRoutes';
 import tagRoutes from './routes/tagRoutes';
+import videoGenRoutes from './routes/videoGenRoutes';
 
 export const app = express();
 
@@ -68,7 +69,8 @@ app.use('/api/reels', reelRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/auth-failures', authFailureRoutes);
 app.use('/api/geo', geoRoutes);
-app.use('/api/settings', settingsRoutes);
+app.use('/api/settings', settingsRoutes)
+app.use('/api/video-gen', videoGenRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
