@@ -175,24 +175,37 @@ export async function updateCoverHandler(req: Request, res: Response, next: Next
 async function getVerificationEligibility(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { createdAt: true, isVerified: true },
+    select: { createdAt: true, isVerified: true, profilePictureUrl: true, bio: true },
   });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
 
   const accountAgeDays = Math.floor((Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24));
-  const [posts, reels, comments, sharedPosts] = await Promise.all([
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const [posts, followers, referrals, strikes, removals] = await Promise.all([
     prisma.post.count({ where: { userId, originalPostId: null } }),
-    prisma.reel.count({ where: { userId } }),
-    prisma.comment.count({ where: { userId } }),
-    prisma.post.count({ where: { userId, originalPostId: { not: null } } }),
+    prisma.follow.count({ where: { followingId: userId } }),
+    prisma.referral.count({ where: { referrerId: userId } }).catch(() => 0),
+    prisma.chatAbuseStrike.count({ where: { userId, createdAt: { gte: ninetyDaysAgo } } }).catch(() => 0),
+    prisma.notification.count({
+      where: {
+        userId,
+        type: { in: ['comment_removed', 'post_removed', 'reel_removed'] },
+        createdAt: { gte: ninetyDaysAgo },
+      },
+    }).catch(() => 0),
   ]);
 
+  const hasPhoto = !!user.profilePictureUrl;
+  const hasBio = !!user.bio?.trim();
+  const violations = strikes + removals;
+
   const requirements = {
+    referrals: { current: referrals, required: 25, met: referrals >= 25 },
+    followers: { current: followers, required: 100, met: followers >= 100 },
     accountAge: { current: accountAgeDays, required: 30, met: accountAgeDays >= 30 },
-    posts: { current: posts, required: 10, met: posts >= 10 },
-    reels: { current: reels, required: 2, met: reels >= 2 },
-    comments: { current: comments, required: 10, met: comments >= 10 },
-    sharedPosts: { current: sharedPosts, required: 3, met: sharedPosts >= 3 },
+    posts: { current: posts, required: 5, met: posts >= 5 },
+    profile: { current: hasPhoto && hasBio ? 'Complete' : 'Incomplete', required: 'Photo + Bio', met: hasPhoto && hasBio },
+    cleanRecord: { current: violations === 0 ? 'Clean' : `${violations} violation(s)`, required: 'No violations (90d)', met: violations === 0 },
   };
 
   return {

@@ -519,27 +519,34 @@ export async function listAdminAuthFailures(req: Request, res: Response, next: N
 async function getVerificationEligibilityForUsers(userIds: string[]) {
   if (!userIds.length) return new Map<string, any>();
 
-  const [users, postCounts, reelCounts, commentCounts, sharedPostCounts] = await Promise.all([
-    prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, createdAt: true, isVerified: true } }),
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const [users, postCounts, followerCounts, referralCounts, strikeCounts, removalCounts] = await Promise.all([
+    prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, createdAt: true, isVerified: true, profilePictureUrl: true, bio: true } }),
     prisma.post.groupBy({ by: ['userId'], where: { userId: { in: userIds }, originalPostId: null }, _count: { _all: true } }),
-    prisma.reel.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } }),
-    prisma.comment.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } }),
-    prisma.post.groupBy({ by: ['userId'], where: { userId: { in: userIds }, originalPostId: { not: null } }, _count: { _all: true } }),
+    prisma.follow.groupBy({ by: ['followingId'], where: { followingId: { in: userIds } }, _count: { _all: true } }),
+    prisma.referral.groupBy({ by: ['referrerId'], where: { referrerId: { in: userIds } }, _count: { _all: true } }).catch(() => []),
+    prisma.chatAbuseStrike.groupBy({ by: ['userId'], where: { userId: { in: userIds }, createdAt: { gte: ninetyDaysAgo } }, _count: { _all: true } }).catch(() => []),
+    prisma.notification.groupBy({ by: ['userId'], where: { userId: { in: userIds }, type: { in: ['comment_removed', 'post_removed', 'reel_removed'] }, createdAt: { gte: ninetyDaysAgo } }, _count: { _all: true } }).catch(() => []),
   ]);
 
   const map = new Map<string, any>();
   for (const user of users) {
     const age = Math.floor((Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24));
     const posts = postCounts.find((x) => x.userId === user.id)?._count._all ?? 0;
-    const reels = reelCounts.find((x) => x.userId === user.id)?._count._all ?? 0;
-    const comments = commentCounts.find((x) => x.userId === user.id)?._count._all ?? 0;
-    const sharedPosts = sharedPostCounts.find((x) => x.userId === user.id)?._count._all ?? 0;
+    const followers = followerCounts.find((x: any) => x.followingId === user.id)?._count._all ?? 0;
+    const referrals = referralCounts.find((x: any) => x.referrerId === user.id)?._count._all ?? 0;
+    const strikes = strikeCounts.find((x: any) => x.userId === user.id)?._count._all ?? 0;
+    const removals = removalCounts.find((x: any) => x.userId === user.id)?._count._all ?? 0;
+    const violations = strikes + removals;
+    const hasPhoto = !!(user as any).profilePictureUrl;
+    const hasBio = !!((user as any).bio?.trim());
     const requirements = {
+      referrals: { current: referrals, required: 25, met: referrals >= 25 },
+      followers: { current: followers, required: 100, met: followers >= 100 },
       accountAge: { current: age, required: 30, met: age >= 30 },
-      posts: { current: posts, required: 10, met: posts >= 10 },
-      reels: { current: reels, required: 2, met: reels >= 2 },
-      comments: { current: comments, required: 10, met: comments >= 10 },
-      sharedPosts: { current: sharedPosts, required: 3, met: sharedPosts >= 3 },
+      posts: { current: posts, required: 5, met: posts >= 5 },
+      profile: { current: hasPhoto && hasBio ? 'Complete' : 'Incomplete', required: 'Photo + Bio', met: hasPhoto && hasBio },
+      cleanRecord: { current: violations === 0 ? 'Clean' : `${violations} violation(s)`, required: 'No violations (90d)', met: violations === 0 },
     };
     map.set(user.id, { eligible: Object.values(requirements).every((r) => r.met), requirements, isVerified: user.isVerified });
   }
