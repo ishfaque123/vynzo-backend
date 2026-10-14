@@ -24,7 +24,7 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
     const coverFile = files?.cover?.[0];
     if (!videoFile) throw new ApiError(400, 'NO_VIDEO', 'Please select a video to upload.');
     if (coverFile && coverFile.size > 10 * 1024 * 1024) throw new ApiError(400, 'COVER_TOO_LARGE', 'Cover image must be smaller than 10MB.');
-    const { caption, durationSec, trimStartSec = 0, trimEndSec, filter, textOverlay, textPosition, speed, letterbox, flip, rotate, crop } = createReelSchema.parse(req.body);
+    const { caption, category, durationSec, trimStartSec = 0, trimEndSec, filter, textOverlay, textPosition, speed, letterbox, flip, rotate, crop } = createReelSchema.parse(req.body);
     if (durationSec > env.reelMaxDurationSec) throw new ApiError(400, 'INVALID_DURATION', `Reel duration must be between 1 and ${env.reelMaxDurationSec} seconds.`);
     if (trimEndSec != null && trimEndSec <= trimStartSec) throw new ApiError(400, 'INVALID_TRIM', 'Trim end must be after trim start.');
     if (trimEndSec != null && trimEndSec - trimStartSec < 1) throw new ApiError(400, 'INVALID_TRIM', 'Trimmed reel must be at least 1 second long.');
@@ -64,7 +64,7 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
       } else {
         videoUrl = await uploadStreamToR2(createReadStream(tempPath), videoFile.mimetype, 'reels', path.extname(videoFile.originalname).slice(1).toLowerCase() || 'mp4');
       }
-      sendSuccess(res, { reel: await createReel(req.user!.id, { videoUrl, caption, durationSec, thumbnailUrl, category: parsed.data.category}) }, 201);
+      sendSuccess(res, { reel: await createReel(req.user!.id, { videoUrl, caption, durationSec, thumbnailUrl, category}) }, 201);
     } catch (err) {
       if (videoUrl) await deleteFromR2(videoUrl).catch(() => {});
       if (thumbnailUrl) await deleteFromR2(thumbnailUrl).catch(() => {});
