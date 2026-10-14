@@ -143,7 +143,7 @@ export function initSocketServer(httpServer: HttpServer) {
       voiceDuration?: number;
       replyToId?: string;
       isForwarded?: boolean;
-    }, ack?: (res: { success: boolean; data?: unknown; error?: string; delivered?: boolean }) => void) => {
+    }, ack?: (res: { success: boolean; data?: unknown; error?: string; delivered?: boolean; restrictedUntil?: string }) => void) => {
       try {
         if (!checkSocketRateLimit(socket.id, 'message:send', 20, 10000)) {
           if (ack) ack({ success: false, error: 'RATE_LIMITED' });
