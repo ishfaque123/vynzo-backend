@@ -86,8 +86,23 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
     const days = [7, 30, 90].includes(daysParam) ? daysParam : 30;
     const stats = await getDashboardStats(req.user!.id, days);
 
+    // Weekly goals (Mon-Sun)
+    const weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    const [weekPosts, weekReels, weekStories] = await Promise.all([
+      prisma.post.count({ where: { userId: req.user!.id, originalPostId: null, createdAt: { gte: weekStart } } }),
+      prisma.reel.count({ where: { userId: req.user!.id, createdAt: { gte: weekStart } } }),
+      prisma.status.count({ where: { userId: req.user!.id, createdAt: { gte: weekStart } } }).catch(() => 0),
+    ]);
+
     sendSuccess(res, {
       earnings: user.walletBalance,
+      goals: {
+        posts: { current: weekPosts, target: 7 },
+        reels: { current: weekReels, target: 7 },
+        stories: { current: weekStories, target: 14 },
+      },
       monetization: {
         status: referrals >= requiredReferrals ? 'eligible' : 'locked',
         referrals,
