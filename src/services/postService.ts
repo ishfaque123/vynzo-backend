@@ -107,7 +107,7 @@ export async function sharePost(userId: string, originalPostId: string, content:
   return toPostDTO(post, userId);
 }
 
-const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, cityMatch: 70, followingBonus: 50, affinityPerPastLike: 8, affinityPerComment: 12, affinityCap: 100, recencyBase: 200 };
+const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, cityMatch: 70, followingBonus: 50, affinityPerPastLike: 8, affinityPerComment: 12, affinityCap: 100, recencyBase: 200, verifiedBonus: 60 };
 
 export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const [hiddenPostIds, blockedRows] = currentUserId
@@ -177,7 +177,9 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     const followingBonus = followingIds.has(post.userId) ? WEIGHTS.followingBonus : 0;
     // Affinity (capped)
     const affinityBoost = Math.min(affinityMap.get(post.userId) || 0, WEIGHTS.affinityCap);
-    return { post, score: recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost };
+    // Verified author boost (Blue Tick perk: better reach)
+    const verifiedBoost = (post.user as any).isVerified ? WEIGHTS.verifiedBonus : 0;
+    return { post, score: recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost + verifiedBoost };
   });
 
   scored.sort((a, b) => b.score - a.score);

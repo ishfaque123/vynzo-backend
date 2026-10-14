@@ -190,7 +190,9 @@ export async function searchUsers(query: string, currentUserId?: string) {
   });
 
   if (!currentUserId || users.length === 0) {
-    return users.map((u) => toPublicProfile(u));
+    return users
+      .sort((a, b) => Number(b.isVerified ?? false) - Number(a.isVerified ?? false))
+      .map((u) => toPublicProfile(u));
   }
 
   const userIds = users.map((u) => u.id);
@@ -223,6 +225,7 @@ export async function searchUsers(query: string, currentUserId?: string) {
 
   return users
     .filter((user) => !blockedIds.has(user.id))
+    .sort((a, b) => Number(b.isVerified ?? false) - Number(a.isVerified ?? false))
     .map((user) => {
       const friendStatus =
         user.id === currentUserId

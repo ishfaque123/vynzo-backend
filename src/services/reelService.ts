@@ -327,6 +327,9 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     // 6. Own reels get slight boost (user wants to see their own)
     if (isMine) score += 5;
 
+    // 7b. Verified creator boost (Blue Tick perk: better reach)
+    if (r.user.isVerified) score += 12;
+
     // 7. Penalize already-seen reels (avoid repeats)
     if (viewedReelIds.includes(r.id)) score -= 15;
 
