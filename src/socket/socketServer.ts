@@ -233,8 +233,18 @@ export function initSocketServer(httpServer: HttpServer) {
           : null;
 
         // Count links the sender shared in the last 10 minutes.
+        // Frianzo's own links are NEVER spam — only external links count.
         const URL_RE = /https?:\/\/[^\s]+|www\.[^\s]+/gi;
-        if (URL_RE.test(trimmed)) {
+        const OWN_DOMAINS = ['frianzo.online', 'www.frianzo.online'];
+        const isOwnLink = (url: string) => {
+          const lower = url.toLowerCase();
+          return OWN_DOMAINS.some((d) => lower.includes(d));
+        };
+        const externalLinksIn = (text: string) => {
+          const all = (text || '').match(URL_RE) || [];
+          return all.filter((l) => !isOwnLink(l));
+        };
+        if (externalLinksIn(trimmed).length > 0) {
           const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
           const recent = await prisma.message.findMany({
             where: { senderId: userId, createdAt: { gte: tenMinAgo } },
@@ -245,7 +255,7 @@ export function initSocketServer(httpServer: HttpServer) {
           let linkCount = 0;
           const seenLinks = new Map<string, number>();
           for (const m of recent) {
-            const links = (m.content || '').match(URL_RE) || [];
+            const links = externalLinksIn(m.content || '');
             for (const l of links) {
               linkCount++;
               const key = l.toLowerCase().replace(/\/$/, '');
