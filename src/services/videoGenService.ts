@@ -52,6 +52,10 @@ export async function startVideoGeneration(
 
     if (!response.ok) {
       const err = await response.text();
+      // Quota/billing errors → friendly premium message instead of raw API error
+      if (response.status === 429 || /quota|billing|exceeded/i.test(err)) {
+        return { success: false, error: 'PREMIUM_REQUIRED' };
+      }
       return { success: false, error: `Veo API error: ${err.slice(0, 200)}` };
     }
 
