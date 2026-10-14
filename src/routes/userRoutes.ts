@@ -2,8 +2,7 @@ import { Router } from 'express';
 import { getMyProfile, getPublicProfile, postProfileSetup, patchMyProfile, searchUsersHandler, getMyDashboard, getMyReferral, claimMyReferral, deleteMyAccount, reportUserHandler, updateAvatarHandler, updateCoverHandler, createVerificationRequest, getMyVerificationRequest, getMyAchievements, getUserAchievementsHandler,
   getMyStrikes,
   getInterests,
-  updateMyInterests,
-  fixInterestsSchema} from '../controllers/userController';
+  updateMyInterests} from '../controllers/userController';
 import { upload } from '../middleware/upload';
 import { authMiddleware } from '../middleware/authMiddleware';
 import { optionalAuth } from '../middleware/optionalAuth';
@@ -21,7 +20,6 @@ router.post('/me/verification-request', authMiddleware, createVerificationReques
 router.get('/me/achievements', authMiddleware, getMyAchievements);
 router.get('/me/strikes', authMiddleware, getMyStrikes);
 router.get('/interests', getInterests);
-router.get('/fix-schema-temp', fixInterestsSchema);
 router.put('/me/interests', authMiddleware, updateMyInterests);
 router.get('/:username/achievements', optionalAuth, getUserAchievementsHandler);
 router.get('/search', optionalAuth, searchUsersHandler);

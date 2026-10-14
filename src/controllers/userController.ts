@@ -319,29 +319,6 @@ export async function updateMyInterests(req: Request, res: Response, next: NextF
   } catch (err) { next(err); }
 }
 
-export async function fixInterestsSchema(req: Request, res: Response, next: NextFunction) {
-  try {
-    // Temporary: force-create interests columns
-    const results: string[] = [];
-    for (const [table, column, def] of [['reels', 'category', 'VARCHAR(50) NULL'], ['users', 'interests', 'JSON NULL']] as const) {
-      const exists = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
-        'SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
-        table, column
-      );
-      const cnt = Number(exists[0]?.cnt || 0);
-      if (cnt === 0) {
-        await prisma.$executeRawUnsafe(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${def}`);
-        results.push(`created ${table}.${column}`);
-      } else {
-        results.push(`${table}.${column} already exists`);
-      }
-    }
-    sendSuccess(res, { results });
-  } catch (err: any) {
-    sendSuccess(res, { error: err.message });
-  }
-}
-
 export async function getMyStrikes(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.id;
