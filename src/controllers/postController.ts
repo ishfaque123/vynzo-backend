@@ -134,6 +134,7 @@ export async function hidePostHandler(req: Request, res: Response, next: NextFun
 
 export async function recordPostViewHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    sendSuccess(res, await recordPostView(req.user!.id, req.params.id));
+    const watchSec = Number(req.body?.watchSec) || 0;
+    sendSuccess(res, await recordPostView(req.user!.id, req.params.id, watchSec));
   } catch (err) { next(err); }
 }

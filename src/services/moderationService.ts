@@ -202,6 +202,7 @@ export async function ensureModerationSchema() {
     await ensureColumn('users', 'interests', 'JSON NULL');
     await ensureColumn('users', 'not_interested', 'JSON NULL');
     await ensureColumn('reels', 'category', 'VARCHAR(50) NULL');
+    await ensureColumn('post_views', 'watch_sec', 'INT NOT NULL DEFAULT 0');
 
     // Verify interests columns (fail fast only for these - they're critical for app)
     const critical = [

@@ -826,6 +826,7 @@ model PostView {
   id        String   @id @default(uuid())
   postId    String   @map("post_id")
   viewerId  String   @map("viewer_id")
+  watchSec  Int      @default(0) @map("watch_sec")
   createdAt DateTime @default(now()) @map("created_at")
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)

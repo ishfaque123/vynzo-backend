@@ -108,7 +108,7 @@ export async function sharePost(userId: string, originalPostId: string, content:
   return toPostDTO(post, userId);
 }
 
-const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, cityMatch: 70, followingBonus: 50, affinityPerPastLike: 8, affinityPerComment: 12, affinityCap: 100, recencyBase: 200, verifiedBonus: 60 };
+const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, cityMatch: 70, followingBonus: 50, affinityPerPastLike: 15, affinityPerComment: 12, affinityPerWatchSec: 0.5, affinityCap: 100, recencyBase: 200, verifiedBonus: 60 };
 
 export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const [hiddenPostIds, blockedRows] = currentUserId
@@ -160,6 +160,17 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     for (const cm of pastComments) {
       if (cm.post?.userId) affinityMap.set(cm.post.userId, (affinityMap.get(cm.post.userId) || 0) + WEIGHTS.affinityPerComment);
     }
+    // Affinity from watch time (dwell time on posts)
+    try {
+      const watchRows = await prisma.$queryRawUnsafe<Array<{ user_id: string; total_sec: number }>>(
+        `SELECT p.user_id, SUM(pv.watch_sec) as total_sec FROM post_views pv JOIN posts p ON p.id = pv.post_id WHERE pv.viewer_id = ? GROUP BY p.user_id`,
+        currentUserId
+      );
+      for (const w of watchRows) {
+        const secs = Number(w.total_sec) || 0;
+        if (secs > 0) affinityMap.set(w.user_id, (affinityMap.get(w.user_id) || 0) + secs * WEIGHTS.affinityPerWatchSec);
+      }
+    } catch {}
   }
 
   const now = Date.now();
