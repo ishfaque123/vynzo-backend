@@ -99,6 +99,20 @@ export async function addComment(
     moderateComment(comment.id).catch((err) => console.error('[moderation] background check failed', err));
   });
 
+  // AI agents may reply to this comment (background, human-like)
+  // Skip if this comment is from an AI agent (avoid loops)
+  setImmediate(async () => {
+    try {
+      const { prisma } = await import('../config/prisma');
+      const isAIAgent = await prisma.aIAgent.findFirst({ where: { userId } }).catch(() => null);
+      if (isAIAgent) return; // AI doesn't reply to AI
+
+      const { triggerAIReplies } = await import('./aiAgentService');
+      const commenter = await prisma.user.findUnique({ where: { id: userId }, select: { displayName: true, username: true } }).catch(() => null);
+      triggerAIReplies(comment.id, content, commenter?.displayName || commenter?.username || 'someone', userId, postId);
+    } catch {}
+  });
+
   return toCommentDTO(comment, userId);
 }
 

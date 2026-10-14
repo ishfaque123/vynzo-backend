@@ -95,6 +95,16 @@ export async function createPost(userId: string, content: string, imageUrl?: str
   if (content?.trim()) {
     setImmediate(() => { moderatePost(post.id).catch((err) => console.error('[moderation] background post check failed', err)); });
   }
+  // AI agents comment on new public posts (background, human-like)
+  if (content?.trim() && visibility === 'public') {
+    setImmediate(async () => {
+      try {
+        const { triggerAIComments } = await import('./aiAgentService');
+        const author = await prisma.user.findUnique({ where: { id: userId }, select: { displayName: true, username: true } }).catch(() => null);
+        triggerAIComments(post.id, content, author?.displayName || author?.username || 'someone', userId);
+      } catch {}
+    });
+  }
   return toPostDTO(post, userId);
 }
 

@@ -997,3 +997,17 @@ model ChatAbuseStrike {
   @@index([userId, createdAt])
   @@map("chat_abuse_strikes")
 }
+
+model AIAgent {
+  id          String   @id @default(uuid())
+  name        String
+  username    String   @unique
+  userId      String?  @unique @map("user_id")
+  gender      String   @default("neutral")
+  personality String   @db.Text
+  systemPrompt String  @db.Text @map("system_prompt")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("ai_agents")
+}

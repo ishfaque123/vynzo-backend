@@ -219,6 +219,30 @@ export async function ensureModerationSchema() {
         throw new Error(`FATAL: Required column ${table}.${column} could not be created. Refusing to start.`);
       }
     }
+    // 4. ai_agents table for AI commenter agents
+    try {
+      await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS \`ai_agents\` (
+        \`id\` VARCHAR(36) NOT NULL PRIMARY KEY,
+        \`name\` VARCHAR(255) NOT NULL,
+        \`username\` VARCHAR(255) NOT NULL UNIQUE,
+        \`user_id\` VARCHAR(36) NULL UNIQUE,
+        \`gender\` VARCHAR(50) NOT NULL DEFAULT 'neutral',
+        \`personality\` TEXT NOT NULL,
+        \`system_prompt\` TEXT NOT NULL,
+        \`is_active\` BOOLEAN NOT NULL DEFAULT TRUE,
+        \`created_at\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+      )`);
+    } catch (e: any) {
+      console.error('[moderation] ai_agents table skipped:', e.message?.substring(0, 100));
+    }
+    // Seed AI agents (links to existing @Fazeela and @mrbeast accounts)
+    try {
+      const { seedAIAgents } = await import('./aiAgentService');
+      await seedAIAgents();
+    } catch (e: any) {
+      console.error('[moderation] AI seed skipped:', e.message?.substring(0, 100));
+    }
+
     console.log('[moderation] schema ensured and verified');
   } catch (err) {
     console.error('[moderation] schema ensure failed', err);
