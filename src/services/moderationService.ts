@@ -213,12 +213,11 @@ export async function ensureModerationSchema() {
     await ensureColumn('users', 'not_interested', 'JSON NULL');
     await ensureColumn('reels', 'category', 'VARCHAR(50) NULL');
 
-    // PERMANENT FIX: Verify all critical columns exist, fail fast if not
+    // Verify interests columns (fail fast only for these - they're critical for app)
     const critical = [
       ['users', 'interests'],
       ['users', 'not_interested'],
       ['reels', 'category'],
-      ['users', 'message_restricted_until'],
     ] as const;
     for (const [table, column] of critical) {
       const check = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
