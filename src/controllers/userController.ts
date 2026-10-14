@@ -274,6 +274,32 @@ export async function getMyAchievements(req: Request, res: Response, next: NextF
   }
 }
 
+export async function getMyStrikes(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user!.id;
+    const [strikes, removals] = await Promise.all([
+      prisma.chatAbuseStrike.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: { id: true, severity: true, reason: true, action: true, createdAt: true },
+      }).catch(() => []),
+      prisma.notification.findMany({
+        where: {
+          userId,
+          type: { in: ['comment_removed', 'post_removed', 'reel_removed'] },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: { id: true, type: true, detail: true, createdAt: true },
+      }).catch(() => []),
+    ]);
+    sendSuccess(res, { strikes, removals, total: strikes.length + removals.length });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getUserAchievementsHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { getUserAchievements } = await import('../services/achievementService');
