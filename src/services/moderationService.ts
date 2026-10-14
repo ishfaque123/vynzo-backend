@@ -183,20 +183,30 @@ export async function ensureModerationSchema() {
   try {
     // 1. message_restricted_until column on users
     await ensureRestrictColumn();
-    // 2. chat_abuse_strikes table
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS chat_abuse_strikes (
-        id VARCHAR(191) NOT NULL PRIMARY KEY,
-        user_id VARCHAR(191) NOT NULL,
-        severity VARCHAR(191) NOT NULL,
-        reason VARCHAR(191) NOT NULL,
-        message_id VARCHAR(191) NULL,
-        action VARCHAR(191) NOT NULL,
-        created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-        INDEX chat_abuse_strikes_user_id_created_at_idx (user_id, created_at),
-        CONSTRAINT chat_abuse_strikes_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `);
+    // 2. chat_abuse_strikes table (skip if exists - FK has type mismatch on some DBs)
+    try {
+      const tblExists = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
+        'SELECT COUNT(*) as cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+        'chat_abuse_strikes'
+      );
+      if (Number(tblExists[0]?.cnt || 0) === 0) {
+        await prisma.$executeRawUnsafe(`
+          CREATE TABLE chat_abuse_strikes (
+            id VARCHAR(191) NOT NULL PRIMARY KEY,
+            user_id VARCHAR(191) NOT NULL,
+            severity VARCHAR(191) NOT NULL,
+            reason VARCHAR(191) NOT NULL,
+            message_id VARCHAR(191) NULL,
+            action VARCHAR(191) NOT NULL,
+            created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+            INDEX chat_abuse_strikes_user_id_created_at_idx (user_id, created_at)
+          )
+        `);
+        console.log('[moderation] created chat_abuse_strikes table (no FK)');
+      }
+    } catch (e: any) {
+      console.error('[moderation] chat_abuse_strikes skipped:', e.message?.substring(0, 150));
+    }
     // 3. interests columns for reels personalization (robust: check information_schema first)
     const ensureColumn = async (table: string, column: string, definition: string) => {
       const exists = await prisma.$queryRawUnsafe<Array<{ cnt: number }>>(
