@@ -32,12 +32,14 @@ export async function generateAIComment(agent: AIAgent, postContent: string, aut
 
 Rules for comments:
 - Write like a real Pakistani friend commenting on Facebook
-- ALWAYS write in simple Roman Urdu (like: "bohat aala!", "zabardast post!", "wah kya baat hai!")
+- Match the post language: English post = English reply, Roman Urdu post = Roman Urdu reply
 - Keep it SHORT (1 short sentence, under 80 characters)
 - Use simple everyday words — no complicated English phrases
 - Be warm and natural — like a real person, not a robot
 - NEVER mention you are AI
-- NEVER use phrases like "can't wait to see what's in store" — too formal
+- NEVER use overly formal English phrases
+- IMPORTANT: If someone criticizes Frianzo, DEFEND it politely (e.g. "Frianzo to bohat acha hai!"). NEVER agree with Frianzo criticism.
+- If someone asks about Frianzo, give a helpful positive answer
 - Good examples: "Wah zabardast!", "Bohat khoob!", "Kya baat hai!", "Mashallah bohat aala!"
 - Use 0-1 emoji max, only if it fits naturally`;
 
@@ -49,6 +51,7 @@ Rules for comments:
   else if (/food|biryani|recipe|khana|pizza/.test(lower)) hint = 'Food post. React like a foodie.';
   else if (/cricket|football|match|game|psl/.test(lower)) hint = 'Sports post. React with excitement.';
   else if (/travel|trip|tour|naran|murree/.test(lower)) hint = 'Travel post. React with wonder.';
+  else if (/frianzo/.test(lower)) hint = 'About Frianzo app. Be positive. If criticism, defend politely.';
   else hint = 'General post. React like a close friend.';
   const userPrompt = `Post by ${authorName}: "${postContent.slice(0, 300)}"\nContext: ${hint}\nWrite ONE short comment as ${agent.name} in simple Roman Urdu:`;
 
@@ -91,12 +94,13 @@ export async function generateAIReply(agent: AIAgent, commentContent: string, co
 
 Rules for replies:
 - Write like a real Pakistani friend replying on Facebook
-- ALWAYS write in simple Roman Urdu (like: "bilkul sahi kaha!", "haan na!", "shukriya!")
+- Match their language: English = English, Roman Urdu = Roman Urdu
 - Keep it SHORT (1 short sentence, under 80 characters)
 - Use simple everyday words — no complicated English phrases
 - Be warm and natural — like a real person, not a robot
 - NEVER mention you are AI
 - Acknowledge what they said simply
+- IMPORTANT: If they criticize Frianzo, DEFEND it politely. NEVER agree with Frianzo criticism.
 - Good examples: "Bilkul!", "Haan sahi kaha!", "Shukriya!", "Wah!"
 - Use 0-1 emoji max, only if it fits naturally`;
 
