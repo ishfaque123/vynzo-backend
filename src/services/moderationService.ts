@@ -127,7 +127,7 @@ export async function moderatePost(postId: string): Promise<void> {
     await prisma.post.delete({ where: { id: postId } });
     console.log(`[moderation] deleted violating post ${postId} (${reason})`);
     await ensureCommentRemovedType();
-    await createNotification({ userId: post.userId, type: 'post_removed' as any, detail: reason, reaction: reason });
+    await createNotification({ userId: post.userId, type: 'post_removed' as any, postId: post.id, detail: reason, reaction: reason });
   } catch (err) { console.error('[moderation] moderatePost failed', err); }
 }
 
@@ -139,7 +139,7 @@ export async function moderateComment(commentId: string): Promise<void> {
   try {
     const comment = await prisma.comment.findUnique({
       where: { id: commentId },
-      select: { id: true, userId: true, content: true },
+      select: { id: true, userId: true, content: true, postId: true },
     });
     if (!comment || !comment.content?.trim()) return; // already deleted or empty
 
@@ -157,6 +157,7 @@ export async function moderateComment(commentId: string): Promise<void> {
     await createNotification({
       userId: comment.userId,
       type: 'comment_removed',
+      postId: comment.postId ?? undefined, // tap -> opens the post it was on
       detail: reason, // stored + shown in-app and in push
       reaction: reason, // push text slot
     });
