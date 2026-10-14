@@ -210,6 +210,7 @@ export async function ensureModerationSchema() {
     };
     await ensureColumn('reels', 'category', 'VARCHAR(50) NULL');
     await ensureColumn('users', 'interests', 'JSON NULL');
+    await ensureColumn('users', 'not_interested', 'JSON NULL');
     console.log('[moderation] schema ensured');
   } catch (err) {
     console.error('[moderation] schema ensure failed', err);

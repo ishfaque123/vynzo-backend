@@ -182,7 +182,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
 
   // --- Phase 2: Smart ranking data ---
   // Get user's interaction history for personalization
-  const [viewHistory, likeHistory, followRows, currentUser, userInterests] = await Promise.all([
+  const [viewHistory, likeHistory, followRows, currentUser, userInterests, notInterestedList] = await Promise.all([
     // Recent views with watch time (last 200)
     prisma.$queryRawUnsafe<Array<{ reel_id: string; user_id: string; watch_sec: number; completed: number }>>(
       `SELECT reel_id, viewer_id AS user_id, watch_sec, completed FROM reel_views WHERE viewer_id = ? ORDER BY created_at DESC LIMIT 200`,
@@ -207,7 +207,17 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     }).catch(() => null),
     // User interests for personalization
     prisma.user.findUnique({ where: { id: currentUserId }, select: { interests: true } }).then(u => new Set<string>(Array.isArray(u?.interests) ? (u.interests as string[]) : [])).catch(() => new Set<string>()),
+    // Not-interested feedback
+    prisma.user.findUnique({ where: { id: currentUserId }, select: { notInterested: true } }).then(u => Array.isArray(u?.notInterested) ? (u.notInterested as any[]) : []).catch(() => [] as any[]),
   ]);
+
+  // Build not-interested sets
+  const notInterestedCats = new Set<string>();
+  const notInterestedCreators = new Set<string>();
+  for (const ni of notInterestedList) {
+    if (ni.type === 'category') notInterestedCats.add(ni.value);
+    else if (ni.type === 'creator') notInterestedCreators.add(ni.value);
+  }
 
   // Build creator affinity map: creatorId -> score (0-1)
   const creatorStats = new Map<string, { watchTime: number; views: number; likes: number; completed: number }>();
@@ -333,6 +343,9 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     if (r.user?.isVerified) score += 12;
     // Interest match boost (personalization)
     if (r.category && userInterests.has(r.category)) score += 25;
+    // Not-interested penalty (Facebook-style feedback)
+    if (r.category && notInterestedCats.has(r.category)) score -= 50;
+    if (notInterestedCreators.has(r.userId)) score -= 50;
 
     // 7. Penalize already-seen reels (avoid repeats)
     if (viewedReelIds.includes(r.id)) score -= 15;

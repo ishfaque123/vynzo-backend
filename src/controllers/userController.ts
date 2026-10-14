@@ -319,6 +319,24 @@ export async function updateMyInterests(req: Request, res: Response, next: NextF
   } catch (err) { next(err); }
 }
 
+export async function markNotInterested(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { type, value } = req.body; // type: 'category' | 'creator', value: string
+    if (!['category', 'creator'].includes(type) || typeof value !== 'string') {
+      throw new ApiError(400, 'INVALID_FEEDBACK', 'Type must be category or creator.');
+    }
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { notInterested: true } });
+    const current = Array.isArray(user?.notInterested) ? (user.notInterested as any[]) : [];
+    // Remove existing entry for same type+value, then add
+    const filtered = current.filter((x: any) => !(x.type === type && x.value === value));
+    filtered.push({ type, value, at: new Date().toISOString() });
+    // Keep max 100 entries
+    const trimmed = filtered.slice(-100);
+    await prisma.user.update({ where: { id: req.user!.id }, data: { notInterested: trimmed } });
+    sendSuccess(res, { ok: true });
+  } catch (err) { next(err); }
+}
+
 export async function getMyStrikes(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.id;
