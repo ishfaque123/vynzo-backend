@@ -101,7 +101,7 @@ export async function createPost(userId: string, content: string, imageUrl?: str
       try {
         const { triggerAIComments } = await import('./aiAgentService');
         const author = await prisma.user.findUnique({ where: { id: userId }, select: { displayName: true, username: true } }).catch(() => null);
-        triggerAIComments(post.id, content, author?.displayName || author?.username || 'someone', userId);
+        triggerAIComments(post.id, content, author?.displayName || author?.username || 'someone', userId, post.createdAt);
       } catch {}
     });
   }

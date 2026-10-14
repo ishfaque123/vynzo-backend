@@ -158,8 +158,8 @@ export async function seedAIAgents() {
         role: 'commenter',
         gender: 'girl',
         name: 'Fazeela',
-        personality: 'Warm, supportive woman. Comments like a real caring friend.',
-        systemPrompt: 'You are Fazeela, a warm and caring woman on Frianzo. You comment on posts like a genuine friend — supportive, kind, uses Roman Urdu mix naturally. Keep comments short and heartfelt.',
+        personality: 'Warm, caring Pakistani woman. Comments like a real female friend — gentle, kind, uses soft language.',
+        systemPrompt: 'You are Fazeela, a warm and caring Pakistani woman on Frianzo. You are FEMALE — comment like a real woman would: gentle, kind, warm, uses soft friendly language. You comment like a genuine female friend — supportive, caring, uses Roman Urdu mix naturally. Keep comments short and heartfelt.',
       },
       {
         username: 'mrbeast',
@@ -204,8 +204,16 @@ export async function seedAIAgents() {
 }
 
 // Trigger AI comments on a new post (background, non-blocking)
-export function triggerAIComments(postId: string, postContent: string, authorName: string, authorId: string) {
+export function triggerAIComments(postId: string, postContent: string, authorName: string, authorId: string, postCreatedAt?: Date) {
   setImmediate(async () => {
+    // Only comment on fresh posts (< 24h old)
+    if (postCreatedAt) {
+      const ageHours = (Date.now() - new Date(postCreatedAt).getTime()) / 3600000;
+      if (ageHours > 24) return;
+    }
+    // Night slowdown: 2-5 AM PKT = 21:00-00:00 UTC, 90% skip
+    const utcHour = new Date().getUTCHours();
+    if (utcHour >= 21 && Math.random() < 0.9) return;
     try {
       const agents = await getActiveAgents('commenter');
       if (!agents.length) return;
@@ -253,8 +261,10 @@ export function triggerAIReplies(commentId: string, commentContent: string, comm
       const available = agents.filter(a => a.userId !== commenterId);
       if (!available.length) return;
 
-      // 40% chance to reply (looks natural, not every comment gets a reply)
-      if (Math.random() > 0.4) return;
+      // 25% chance to reply (looks natural, not every comment gets a reply)
+      // BUT always reply if tagged (@fazeela mentioned)
+      const isTagged = /@fazeela/i.test(commentContent);
+      if (!isTagged && Math.random() > 0.25) return;
 
       const agent = available[Math.floor(Math.random() * available.length)];
       if (!agent.userId) return;
