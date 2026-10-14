@@ -182,9 +182,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
 
   // --- Phase 2: Smart ranking data ---
   // Get user's interaction history for personalization
-  const [viewHistory, likeHistory, followRows, currentUser, userInterests,
-    // User interests for personalization
-    prisma.user.findUnique({ where: { id: currentUserId }, select: { interests: true } }).then(u => new Set<string>((u?.interests as string[]) || []))] = await Promise.all([
+  const [viewHistory, likeHistory, followRows, currentUser, userInterests] = await Promise.all([
     // Recent views with watch time (last 200)
     prisma.$queryRawUnsafe<Array<{ reel_id: string; user_id: string; watch_sec: number; completed: number }>>(
       `SELECT reel_id, viewer_id AS user_id, watch_sec, completed FROM reel_views WHERE viewer_id = ? ORDER BY created_at DESC LIMIT 200`,
@@ -207,6 +205,8 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       where: { id: currentUserId },
       select: { city: true, country: true },
     }).catch(() => null),
+    // User interests for personalization
+    prisma.user.findUnique({ where: { id: currentUserId }, select: { interests: true } }).then(u => new Set<string>((u?.interests as string[]) || [])).catch(() => new Set<string>()),
   ]);
 
   // Build creator affinity map: creatorId -> score (0-1)
