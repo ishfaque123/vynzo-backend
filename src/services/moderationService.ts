@@ -89,8 +89,8 @@ export async function checkCommentToxicity(content: string): Promise<{ toxic: bo
   return aiCheck(content);
 }
 
-// Ensure the 'comment_removed' enum value exists on notifications.type.
-// Safe + idempotent: only ADDS the value, never removes anything.
+// Ensure moderation enum values exist on notifications.type + the restriction column.
+// Safe + idempotent: only ADDs, never removes/alters.
 let enumReady = false;
 async function ensureCommentRemovedType() {
   if (enumReady) return;
@@ -99,12 +99,13 @@ async function ensureCommentRemovedType() {
       `SELECT COLUMN_TYPE AS columnType FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notifications' AND COLUMN_NAME = 'type'`
     );
     const columnType: string = rows[0]?.columnType ?? '';
-    if (columnType && (!columnType.includes("'comment_removed'") || !columnType.includes("'post_removed'"))) {
+    if (columnType && (!columnType.includes("'comment_removed'") || !columnType.includes("'post_removed'") || !columnType.includes("'reel_removed'"))) {
       const values: string[] = columnType.match(/'[^']+'/g) ?? [];
-      if (!values.includes("'comment_removed'")) values.push("'comment_removed'");
-      if (!values.includes("'post_removed'")) values.push("'post_removed'");
+      for (const v of ["'comment_removed'", "'post_removed'", "'reel_removed'"]) {
+        if (!values.includes(v)) values.push(v);
+      }
       await prisma.$executeRawUnsafe(`ALTER TABLE notifications MODIFY COLUMN type ENUM(${values.join(',')}) NOT NULL`);
-      console.log('[moderation] added comment_removed/post_removed to notification types');
+      console.log('[moderation] ensured removal notification types');
     }
   } catch (err) {
     console.error('[moderation] enum ensure failed', err);
@@ -129,6 +130,43 @@ export async function moderatePost(postId: string): Promise<void> {
     await ensureCommentRemovedType();
     await createNotification({ userId: post.userId, type: 'post_removed' as any, postId: post.id, detail: reason, reaction: reason });
   } catch (err) { console.error('[moderation] moderatePost failed', err); }
+}
+
+/**
+ * Background moderation for a freshly published reel (caption check).
+ * Deletes the reel + notifies the author if it violates guidelines. Never throws.
+ */
+export async function moderateReel(reelId: string): Promise<void> {
+  try {
+    const reel = await prisma.reel.findUnique({ where: { id: reelId }, select: { id: true, userId: true, caption: true } });
+    if (!reel || !reel.caption?.trim()) return;
+    const { toxic, reason } = await checkCommentToxicity(reel.caption);
+    if (!toxic) return;
+    const stillThere = await prisma.reel.findUnique({ where: { id: reelId }, select: { id: true } });
+    if (!stillThere) return;
+    await prisma.reel.delete({ where: { id: reelId } });
+    console.log(`[moderation] deleted violating reel ${reelId} (${reason})`);
+    await ensureCommentRemovedType();
+    await createNotification({ userId: reel.userId, type: 'reel_removed' as any, detail: reason, reaction: reason });
+  } catch (err) { console.error('[moderation] moderateReel failed', err); }
+}
+
+/**
+ * Ensure the message_restricted_until column exists on users (safe ADD only).
+ */
+let restrictColReady = false;
+export async function ensureRestrictColumn() {
+  if (restrictColReady) return;
+  try {
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT COUNT(*) AS c FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'message_restricted_until'`
+    );
+    if (Number(rows[0]?.c ?? 0) === 0) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE users ADD COLUMN message_restricted_until DATETIME(3) NULL`);
+      console.log('[moderation] added message_restricted_until column');
+    }
+  } catch (err) { console.error('[moderation] restrict column ensure failed', err); }
+  restrictColReady = true;
 }
 
 /**

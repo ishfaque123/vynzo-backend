@@ -6,6 +6,7 @@ import { env } from '../config/env';
 import { isEitherBlocked } from '../services/blockService';
 import { deleteMessageForMe, deleteMessageForEveryone } from '../services/messageService';
 import { sendPushToUser } from '../services/pushService';
+import { ensureRestrictColumn } from '../services/moderationService';
 
 interface AuthedSocket extends Socket {
   userId?: string;
@@ -148,6 +149,13 @@ export function initSocketServer(httpServer: HttpServer) {
           if (ack) ack({ success: false, error: 'RATE_LIMITED' });
           return;
         }
+        // Link-spam protection: repeated link sharing temporarily restricts messaging.
+        await ensureRestrictColumn();
+        const meRow = await prisma.user.findUnique({ where: { id: userId }, select: { messageRestrictedUntil: true } });
+        if (meRow?.messageRestrictedUntil && meRow.messageRestrictedUntil > new Date()) {
+          if (ack) ack({ success: false, error: 'MESSAGING_RESTRICTED', restrictedUntil: meRow.messageRestrictedUntil.toISOString() });
+          return;
+        }
         const trimmed = (content || '').trim();
         if (!trimmed && !mediaUrl) {
           if (ack) ack({ success: false, error: 'EMPTY_MESSAGE' });
@@ -219,6 +227,37 @@ export function initSocketServer(httpServer: HttpServer) {
         const expiresAt = conv?.disappearingDuration
           ? new Date(Date.now() + conv.disappearingDuration * 1000)
           : null;
+
+        // Count links the sender shared in the last 10 minutes.
+        const URL_RE = /https?:\/\/[^\s]+|www\.[^\s]+/gi;
+        if (URL_RE.test(trimmed)) {
+          const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+          const recent = await prisma.message.findMany({
+            where: { senderId: userId, createdAt: { gte: tenMinAgo } },
+            select: { content: true },
+            take: 50,
+            orderBy: { createdAt: 'desc' },
+          });
+          let linkCount = 0;
+          const seenLinks = new Map<string, number>();
+          for (const m of recent) {
+            const links = (m.content || '').match(URL_RE) || [];
+            for (const l of links) {
+              linkCount++;
+              const key = l.toLowerCase().replace(/\/$/, '');
+              seenLinks.set(key, (seenLinks.get(key) || 0) + 1);
+            }
+          }
+          const sameLinkMax = Math.max(0, ...seenLinks.values());
+          // 5+ link messages in 10 min, or the same link 3+ times -> 1-hour messaging restriction
+          if (linkCount >= 4 || sameLinkMax >= 2) {
+            const until = new Date(Date.now() + 60 * 60 * 1000);
+            await prisma.user.update({ where: { id: userId }, data: { messageRestrictedUntil: until } });
+            console.log(`[spam] restricted messaging for ${userId} until ${until.toISOString()} (linkCount=${linkCount}, sameLinkMax=${sameLinkMax})`);
+            if (ack) ack({ success: false, error: 'LINK_SPAM_RESTRICTED', restrictedUntil: until.toISOString() });
+            return;
+          }
+        }
 
         const message = await prisma.message.create({
           data: {

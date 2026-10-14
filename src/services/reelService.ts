@@ -6,6 +6,7 @@ import { getFriendStatus } from './followService';
 import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
 import { awardAchievement } from './achievementService';
+import { moderateReel } from './moderationService';
 
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true };
 
@@ -159,9 +160,14 @@ export async function createReel(userId: string, data: { videoUrl: string; capti
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentCount = await tx.reel.count({ where: { userId, createdAt: { gt: oneDayAgo } } });
     if (recentCount >= env.reelDailyLimit) throw new ApiError(429, 'DAILY_LIMIT_REACHED', `You can only post ${env.reelDailyLimit} reel${env.reelDailyLimit === 1 ? '' : 's'} per day. Try again later.`);
-    return tx.reel.create({ data: { userId, videoUrl: data.videoUrl, caption: data.caption, durationSec: data.durationSec, thumbnailUrl: data.thumbnailUrl } });
+    const reel = await tx.reel.create({ data: { userId, videoUrl: data.videoUrl, caption: data.caption, durationSec: data.durationSec, thumbnailUrl: data.thumbnailUrl } });
+    return reel;
   }, { isolationLevel: 'Serializable' }).then((reel) => {
     awardAchievement(userId, 'first_reel').catch(() => {});
+    // Background caption moderation (after commit)
+    if (data.caption?.trim()) {
+      setImmediate(() => { moderateReel(reel.id).catch((err) => console.error('[moderation] background reel check failed', err)); });
+    }
     return reel;
   });
 }

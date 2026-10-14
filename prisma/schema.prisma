@@ -68,6 +68,7 @@ enum NotificationType {
   verification_rejected
   comment_removed
   post_removed
+  reel_removed
 }
 
 enum VerificationRequestStatus {
@@ -112,6 +113,7 @@ model User {
   role                   String            @default("user")
   commentsDisabled       Boolean           @default(false) @map("comments_disabled")
   messagePermission      String            @default("everyone") @map("message_permission")
+  messageRestrictedUntil DateTime?         @map("message_restricted_until")
   tagPermission          String            @default("everyone") @map("tag_permission")
   showOnlineStatus       Boolean           @default(true) @map("show_online_status")
   isPrivate              Boolean           @default(false) @map("is_private")
