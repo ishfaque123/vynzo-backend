@@ -6,6 +6,7 @@ import { moderatePost } from './moderationService';
 import { awardAchievement } from './achievementService';
 
 function toAuthorDTO(user: any) {
+  if (!user) return { id: '', username: 'deleted', displayName: 'Deleted User', profilePictureUrl: null, isVerified: false };
   return { id: user.id, username: user.username, displayName: typeof user.displayName === 'string' ? user.displayName.trim() : user.displayName, profilePictureUrl: user.profilePictureUrl, isVerified: user.isVerified ?? false };
 }
 
