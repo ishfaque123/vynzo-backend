@@ -59,6 +59,7 @@ function toAuthorDTO(user: any) {
     username: user.username,
     displayName: user.displayName,
     profilePictureUrl: user.profilePictureUrl,
+    isVerified: !!user.isVerified,
   };
 }
 
