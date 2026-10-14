@@ -142,7 +142,7 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     include: includeShape,
   });
 
-  const candidatePosts = rawCandidatePosts.filter((p) => !p.user.isPrivate || p.userId === currentUserId || followingIds.has(p.userId));
+  const candidatePosts = rawCandidatePosts.filter((p) => !p.user?.isPrivate || p.userId === currentUserId || followingIds.has(p.userId));
 
   let currentUserCountry: string | null = null;
   let currentUserCity: string | null = null;
@@ -178,7 +178,7 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     // Affinity (capped)
     const affinityBoost = Math.min(affinityMap.get(post.userId) || 0, WEIGHTS.affinityCap);
     // Verified author boost (Blue Tick perk: better reach)
-    const verifiedBoost = (post.user as any).isVerified ? WEIGHTS.verifiedBonus : 0;
+    const verifiedBoost = (post.user as any)?.isVerified ? WEIGHTS.verifiedBonus : 0;
     return { post, score: recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost + verifiedBoost };
   });
 
