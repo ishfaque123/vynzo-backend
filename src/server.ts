@@ -5,11 +5,15 @@ import { prisma } from './config/prisma';
 import { initSocketServer } from './socket/socketServer';
 import { cleanupExpiredStatuses } from './services/statusService';
 import { cleanupExpiredMessages } from './services/messageCleanupService';
+import { ensureModerationSchema } from './services/moderationService';
 
 async function start() {
   try {
     await prisma.$queryRaw`SELECT 1`;
     console.log('Database connection successful.');
+
+    // Ensure moderation tables/columns exist (safe, idempotent)
+    await ensureModerationSchema();
 
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);

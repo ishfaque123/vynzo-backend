@@ -176,6 +176,34 @@ export async function moderateReel(reelId: string): Promise<void> {
 }
 
 /**
+ * Ensure all moderation schema objects exist (safe CREATE/ADD only).
+ * Called on server startup.
+ */
+export async function ensureModerationSchema() {
+  try {
+    // 1. message_restricted_until column on users
+    await ensureRestrictColumn();
+    // 2. chat_abuse_strikes table
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS chat_abuse_strikes (
+        id VARCHAR(191) NOT NULL PRIMARY KEY,
+        user_id VARCHAR(191) NOT NULL,
+        severity VARCHAR(191) NOT NULL,
+        reason VARCHAR(191) NOT NULL,
+        message_id VARCHAR(191) NULL,
+        action VARCHAR(191) NOT NULL,
+        created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+        INDEX chat_abuse_strikes_user_id_created_at_idx (user_id, created_at),
+        CONSTRAINT chat_abuse_strikes_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
+      )
+    `);
+    console.log('[moderation] schema ensured');
+  } catch (err) {
+    console.error('[moderation] schema ensure failed', err);
+  }
+}
+
+/**
  * Ensure the message_restricted_until column exists on users (safe ADD only).
  */
 let restrictColReady = false;
