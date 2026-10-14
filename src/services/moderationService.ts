@@ -183,38 +183,10 @@ export async function ensureModerationSchema() {
   try {
     // 1. message_restricted_until column on users
     await ensureRestrictColumn();
-    // 2. chat_abuse_strikes table - proper fix with matching charset/collation + FK
-    try {
-      const tblExists = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
-        'SELECT COUNT(*) as cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
-        'chat_abuse_strikes'
-      );
-      if (Number(tblExists[0]?.cnt || 0) === 0) {
-        // Get users.id column definition to match exactly
-        const colDef = await prisma.$queryRawUnsafe<Array<{ COLUMN_TYPE: string; CHARACTER_SET_NAME: string; COLLATION_NAME: string }>>(
-          `SELECT COLUMN_TYPE, CHARACTER_SET_NAME, COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'id'`
-        );
-        const colType = colDef[0]?.COLUMN_TYPE || 'varchar(191)';
-        const charset = colDef[0]?.CHARACTER_SET_NAME || 'utf8mb4';
-        const collation = colDef[0]?.COLLATION_NAME || 'utf8mb4_unicode_ci';
-        await prisma.$executeRawUnsafe(`
-          CREATE TABLE chat_abuse_strikes (
-            id VARCHAR(191) NOT NULL PRIMARY KEY,
-            user_id ${colType} CHARACTER SET ${charset} COLLATE ${collation} NOT NULL,
-            severity VARCHAR(191) NOT NULL,
-            reason VARCHAR(191) NOT NULL,
-            message_id VARCHAR(191) NULL,
-            action VARCHAR(191) NOT NULL,
-            created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-            INDEX chat_abuse_strikes_user_id_created_at_idx (user_id, created_at),
-            CONSTRAINT chat_abuse_strikes_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
-          )
-        `);
-        console.log('[moderation] created chat_abuse_strikes table with FK');
-      }
-    } catch (e: any) {
-      console.error('[moderation] chat_abuse_strikes skipped:', e.message?.substring(0, 150));
-    }
+    // 2. chat_abuse_strikes table - already exists in production, skip creation
+    // (FK type mismatch on some DBs caused crashes; table is managed separately)
+    console.log('[moderation] skipping chat_abuse_strikes creation (exists)');
+
     // 3. interests columns for reels personalization (robust: check information_schema first)
     const ensureColumn = async (table: string, column: string, definition: string) => {
       const exists = await prisma.$queryRawUnsafe<Array<{ cnt: number }>>(
