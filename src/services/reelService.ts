@@ -235,11 +235,11 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
 
   // Get reel authors for view history to build affinity
   const viewedReelIds = [...new Set(viewHistory.map((v) => v.reel_id))];
-  let viewedReels: Array<{ id: string; userId: string }> = [];
+  let viewedReels: Array<{ id: string; userId: string; category: string | null }> = [];
   if (viewedReelIds.length) {
     viewedReels = await prisma.reel.findMany({
       where: { id: { in: viewedReelIds } },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, category: true },
     }).catch(() => []);
   }
   const reelAuthorMap = new Map(viewedReels.map((r) => [r.id, r.userId]));
@@ -247,11 +247,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
   // Build category affinity from watch history (like Facebook: watch comedy = more comedy)
   const categoryWatch = new Map<string, number>();
   if (viewedReels.length) {
-    const viewedWithCat = await prisma.reel.findMany({
-      where: { id: { in: viewedReelIds } },
-      select: { id: true, category: true },
-    }).catch(() => [] as Array<{ id: string; category: string | null }>);
-    const catMap = new Map(viewedWithCat.map((r) => [r.id, r.category]));
+    const catMap = new Map(viewedReels.map((r) => [r.id, r.category]));
     for (const v of viewHistory) {
       const cat = catMap.get(v.reel_id);
       if (!cat) continue;
