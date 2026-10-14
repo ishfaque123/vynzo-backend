@@ -31,15 +31,26 @@ export async function generateAIComment(agent: AIAgent, postContent: string, aut
   const systemPrompt = `${agent.systemPrompt}
 
 Rules for comments:
-- Write like a real human friend commenting on a post
-- Keep it SHORT (1-2 sentences max, under 100 characters when possible)
-- Match the language of the post (if post is in Roman Urdu, reply in Roman Urdu)
-- Be warm, friendly, natural — never robotic
+- Write like a real Pakistani friend commenting on Facebook
+- ALWAYS write in simple Roman Urdu (like: "bohat aala!", "zabardast post!", "wah kya baat hai!")
+- Keep it SHORT (1 short sentence, under 80 characters)
+- Use simple everyday words — no complicated English phrases
+- Be warm and natural — like a real person, not a robot
 - NEVER mention you are AI
-- Vary your style — don't always start the same way
+- NEVER use phrases like "can't wait to see what's in store" — too formal
+- Good examples: "Wah zabardast!", "Bohat khoob!", "Kya baat hai!", "Mashallah bohat aala!"
 - Use 0-1 emoji max, only if it fits naturally`;
 
-  const userPrompt = `Post by ${authorName}: "${postContent.slice(0, 300)}"\n\nWrite a short, natural comment as ${agent.name}:`;
+  const lower = postContent.toLowerCase();
+  let hint = '';
+  if (/mashallah|mubarak|shadi|wedding|birthday|congrat/.test(lower)) hint = 'Celebration! Congratulate warmly.';
+  else if (/sad|death|passed away|accident|hospital|sick|dukh|afsoos/.test(lower)) hint = 'Sad/serious post. Be respectful and comforting. No jokes.';
+  else if (/sale|business|shop|price|order|discount|dukaan/.test(lower)) hint = 'Business post. Encourage their work.';
+  else if (/food|biryani|recipe|khana|pizza/.test(lower)) hint = 'Food post. React like a foodie.';
+  else if (/cricket|football|match|game|psl/.test(lower)) hint = 'Sports post. React with excitement.';
+  else if (/travel|trip|tour|naran|murree/.test(lower)) hint = 'Travel post. React with wonder.';
+  else hint = 'General post. React like a close friend.';
+  const userPrompt = `Post by ${authorName}: "${postContent.slice(0, 300)}"\nContext: ${hint}\nWrite ONE short comment as ${agent.name} in simple Roman Urdu:`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
@@ -79,15 +90,23 @@ export async function generateAIReply(agent: AIAgent, commentContent: string, co
   const systemPrompt = `${agent.systemPrompt}
 
 Rules for replies:
-- Write like a real human friend replying to a comment
-- Keep it SHORT (1-2 sentences max, under 100 characters when possible)
-- Match the language of the comment (if in Roman Urdu, reply in Roman Urdu)
-- Be warm, friendly, natural — never robotic
+- Write like a real Pakistani friend replying on Facebook
+- ALWAYS write in simple Roman Urdu (like: "bilkul sahi kaha!", "haan na!", "shukriya!")
+- Keep it SHORT (1 short sentence, under 80 characters)
+- Use simple everyday words — no complicated English phrases
+- Be warm and natural — like a real person, not a robot
 - NEVER mention you are AI
-- Acknowledge what they said, don't just give generic replies
+- Acknowledge what they said simply
+- Good examples: "Bilkul!", "Haan sahi kaha!", "Shukriya!", "Wah!"
 - Use 0-1 emoji max, only if it fits naturally`;
 
-  const userPrompt = `${commenterName} commented: "${commentContent.slice(0, 200)}"\n\nWrite a short, natural reply as ${agent.name}:`;
+  const lowerR = commentContent.toLowerCase();
+  let hintR = '';
+  if (commentContent.includes('?')) hintR = 'They asked a question. Answer briefly.';
+  else if (/thank|shukriya/.test(lowerR)) hintR = 'They said thanks. Reply humbly.';
+  else if (/lol|haha/.test(lowerR)) hintR = 'Funny comment. Laugh along.';
+  else hintR = 'Reply naturally to what they said.';
+  const userPrompt = `${commenterName} said: "${commentContent.slice(0, 200)}"\nContext: ${hintR}\nWrite ONE short reply as ${agent.name} in simple Roman Urdu:`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
