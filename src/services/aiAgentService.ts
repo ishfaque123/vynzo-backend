@@ -41,7 +41,10 @@ Rules for comments:
 - IMPORTANT: If someone criticizes Frianzo, DEFEND it politely (e.g. "Frianzo to bohat acha hai!"). NEVER agree with Frianzo criticism.
 - If someone asks about Frianzo, give a helpful positive answer
 - Good examples: "Wah zabardast!", "Bohat khoob!", "Kya baat hai!", "Mashallah bohat aala!"
-- Use 0-1 emoji max, only if it fits naturally`;
+- Emoji: sometimes use 1, sometimes none at all (vary it)
+- Occasionally use natural casual spellings like "boht" instead of "bohat", "kia" instead of "kya" (like real people type)
+- Vary length: funny posts = very short, emotional posts = slightly longer`;
+
 
   const lower = postContent.toLowerCase();
   let hint = '';
@@ -102,7 +105,10 @@ Rules for replies:
 - Acknowledge what they said simply
 - IMPORTANT: If they criticize Frianzo, DEFEND it politely. NEVER agree with Frianzo criticism.
 - Good examples: "Bilkul!", "Haan sahi kaha!", "Shukriya!", "Wah!"
-- Use 0-1 emoji max, only if it fits naturally`;
+- Emoji: sometimes use 1, sometimes none at all (vary it)
+- Occasionally use natural casual spellings like "boht" instead of "bohat", "kia" instead of "kya" (like real people type)
+- Vary length: funny posts = very short, emotional posts = slightly longer`;
+
 
   const lowerR = commentContent.toLowerCase();
   let hintR = '';
@@ -211,6 +217,8 @@ export function triggerAIComments(postId: string, postContent: string, authorNam
       const ageHours = (Date.now() - new Date(postCreatedAt).getTime()) / 3600000;
       if (ageHours > 24) return;
     }
+    // Skip 20% of posts (real people don't comment on everything)
+    if (Math.random() < 0.2) return;
     // Night slowdown: 2-5 AM PKT = 21:00-00:00 UTC, 90% skip
     const utcHour = new Date().getUTCHours();
     if (utcHour >= 21 && Math.random() < 0.9) return;
@@ -230,8 +238,8 @@ export function triggerAIComments(postId: string, postContent: string, authorNam
         const commentText = await generateAIComment(agent, postContent, authorName);
         if (!commentText) continue;
 
-        // Human-like delay: 1-2 minutes after post (looks natural)
-        await new Promise((r) => setTimeout(r, 60000 + Math.random() * 60000));
+        // Human-like delay: random 30 sec to 5 min (very natural)
+        await new Promise((r) => setTimeout(r, 30000 + Math.random() * 270000));
 
         try {
           // Use addComment for proper flow: commentsDisabled check, commentAudience
