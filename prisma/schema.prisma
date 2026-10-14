@@ -97,7 +97,7 @@ model User {
   dateOfBirth            DateTime?         @map("date_of_birth")
   bio                    String?            @db.VarChar(300)
   interests              Json?
-  notInterested          Json?
+  notInterested          Json?            @map("not_interested")
   profilePictureUrl      String?           @map("profile_picture_url")
   coverPhotoUrl          String?           @map("cover_photo_url")
   gender                 Gender?
