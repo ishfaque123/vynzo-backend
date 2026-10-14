@@ -358,12 +358,15 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
 
     // 7b. Verified creator boost (Blue Tick perk: better reach)
     if (r.user?.isVerified) score += 12;
-    // Interest match boost (personalization)
-    if (r.category && userInterests.has(r.category)) score += 25;
-    // Watched-category boost: you watch it a lot = you see more (Facebook-style)
-    if (r.category && topCatSet.has(r.category)) score += 35;
-    // Explicit "Interested" feedback boost (strongest positive signal)
-    if (r.category && interestedCats.has(r.category)) score += 40;
+    // Interest boosts: take the MAX, not the sum (avoid +100 stacking)
+    // Settings interest (+25), watched a lot (+35), explicit "Interested" (+40)
+    if (r.category) {
+      let interestBoost = 0;
+      if (userInterests.has(r.category)) interestBoost = Math.max(interestBoost, 25);
+      if (topCatSet.has(r.category)) interestBoost = Math.max(interestBoost, 35);
+      if (interestedCats.has(r.category)) interestBoost = Math.max(interestBoost, 40);
+      score += interestBoost;
+    }
     // Not-interested penalty (Facebook-style feedback)
     if (r.category && notInterestedCats.has(r.category)) score -= 50;
     if (notInterestedCreators.has(r.userId)) score -= 50;
