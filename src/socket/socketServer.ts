@@ -6,7 +6,7 @@ import { env } from '../config/env';
 import { isEitherBlocked } from '../services/blockService';
 import { deleteMessageForMe, deleteMessageForEveryone } from '../services/messageService';
 import { sendPushToUser } from '../services/pushService';
-import { ensureRestrictColumn } from '../services/moderationService';
+import { ensureRestrictColumn, moderateChatMessage } from '../services/moderationService';
 
 interface AuthedSocket extends Socket {
   userId?: string;
@@ -151,7 +151,11 @@ export function initSocketServer(httpServer: HttpServer) {
         }
         // Link-spam protection: repeated link sharing temporarily restricts messaging.
         await ensureRestrictColumn();
-        const meRow = await prisma.user.findUnique({ where: { id: userId }, select: { messageRestrictedUntil: true } });
+        const meRow = await prisma.user.findUnique({ where: { id: userId }, select: { messageRestrictedUntil: true, accountStatus: true } });
+        if (meRow?.accountStatus !== 'active') {
+          if (ack) ack({ success: false, error: 'ACCOUNT_SUSPENDED' });
+          return;
+        }
         if (meRow?.messageRestrictedUntil && meRow.messageRestrictedUntil > new Date()) {
           if (ack) ack({ success: false, error: 'MESSAGING_RESTRICTED', restrictedUntil: meRow.messageRestrictedUntil.toISOString() });
           return;
@@ -277,6 +281,11 @@ export function initSocketServer(httpServer: HttpServer) {
             reactions: { select: { userId: true, emoji: true } },
           },
         });
+
+        // Background abuse check on text content (delayed action handled inside)
+        if (message.content?.trim()) {
+          setImmediate(() => { moderateChatMessage(message.id).catch((err) => console.error('[moderation] background chat check failed', err)); });
+        }
 
         await prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
         io.to(`conversation:${conversationId}`).emit('message:new', message);

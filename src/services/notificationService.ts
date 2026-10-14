@@ -45,7 +45,8 @@ type NotificationType =
   | 'verification_rejected'
   | 'comment_removed'
   | 'post_removed'
-  | 'reel_removed';
+  | 'reel_removed'
+  | 'messaging_restricted';
 
 // Toggle-style actions (like/unlike, follow/unfollow) must not notify the
 // same person about the same thing again and again.
@@ -185,6 +186,7 @@ const PUSH_TEXT: Record<string, (name: string, others: number, reaction?: string
   comment_removed: (n, o, r) => `Your comment was removed${r ? ` for ${r}` : ''}`,
   post_removed: (n, o, r) => `Your post was removed${r ? ` for ${r}` : ''}`,
   reel_removed: (n, o, r) => `Your reel was removed${r ? ` for ${r}` : ''}`,
+  messaging_restricted: (n, o, r) => `Messaging restricted${r ? `: ${r}` : ''}`,
 };
 
 // Several people doing the same thing to the same target are merged into

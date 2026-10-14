@@ -69,6 +69,7 @@ enum NotificationType {
   comment_removed
   post_removed
   reel_removed
+  messaging_restricted
 }
 
 enum VerificationRequestStatus {
@@ -113,6 +114,7 @@ model User {
   role                   String            @default("user")
   commentsDisabled       Boolean           @default(false) @map("comments_disabled")
   messagePermission      String            @default("everyone") @map("message_permission")
+  chatAbuseStrikes       ChatAbuseStrike[]
   messageRestrictedUntil DateTime?         @map("message_restricted_until")
   tagPermission          String            @default("everyone") @map("tag_permission")
   showOnlineStatus       Boolean           @default(true) @map("show_online_status")
@@ -976,4 +978,18 @@ model UserAchievement {
   @@unique([userId, achievementId])
   @@index([userId])
   @@map("user_achievements")
+}
+
+model ChatAbuseStrike {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  severity  String   // low | medium | high | critical
+  reason    String
+  messageId String?  @map("message_id")
+  action    String   // e.g. RESTRICTED_48H, RESTRICTED_7D, RESTRICTED_30D, SUSPENDED
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("chat_abuse_strikes")
 }
