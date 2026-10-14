@@ -30,9 +30,12 @@ const BLOCKED_PATTERNS: RegExp[] = [
 
 
 function localCheck(content: string): string | null {
+  // Frianzo's own links are NEVER spam — strip them before checking.
+  const OWN_LINK_RE = /https?:\/\/(www\.)?frianzo\.online[^\s]*/gi;
+  const contentWithoutOwnLinks = content.replace(OWN_LINK_RE, '');
   for (const re of BLOCKED_PATTERNS) {
-    if (re.test(content)) {
-      const m = content.match(re);
+    if (re.test(contentWithoutOwnLinks)) {
+      const m = contentWithoutOwnLinks.match(re);
       const hit = (m?.[0] ?? '').toLowerCase();
       if (/https?:\/\//i.test(hit) || /free money|earn money|click here|buy followers|viagra|casino|betting/i.test(hit)) {
         return 'spam or promotional links';
@@ -62,6 +65,7 @@ async function aiCheck(content: string): Promise<ToxicityResult> {
                 'You are a content moderator for a social media app (like Facebook/Instagram). Classify the user comment as VIOLATION or OK. ' +
                 'Mark VIOLATION only for: severe profanity/swear words, slurs, hate speech (targeting race/religion/gender), sexual/explicit language, ' +
                 'threats of violence, harassment/bullying, spam/scam links. ' +
+                'Links to frianzo.online (our own site) are ALWAYS OK, never a violation. ' +
                 'Mark OK for: mild words like idiot/stupid/dumb, disagreements, criticism, sarcasm, normal conversation. ' +
                 'Reply with OK if fine, or VIOLATION followed by a 2-4 word reason and severity, like "VIOLATION: profanity | SEVERITY: medium". ' +
                 'Severity guide: critical = threats of violence, child-safety issues, violent extremism; ' +
