@@ -189,11 +189,11 @@ export async function ensureModerationSchema() {
 
     // 3. interests columns for reels personalization (robust: check information_schema first)
     const ensureColumn = async (table: string, column: string, definition: string) => {
-      const exists = await prisma.$queryRawUnsafe<Array<{ cnt: number }>>(
-        `SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+      const exists = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
+        'SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
         table, column
       );
-      if (exists[0]?.cnt === 0) {
+      if (Number(exists[0]?.cnt || 0) === 0) {
         await prisma.$executeRawUnsafe(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition}`);
         console.log(`[moderation] added column ${table}.${column}`);
       }
