@@ -31,6 +31,7 @@ import geoRoutes from './routes/geoRoutes';
 import settingsRoutes from './routes/settingsRoutes';
 import tagRoutes from './routes/tagRoutes';
 import videoGenRoutes from './routes/videoGenRoutes';
+import aiAssistantRoutes from './routes/aiAssistantRoutes';
 
 export const app = express();
 
@@ -71,6 +72,7 @@ app.use('/api/auth-failures', authFailureRoutes);
 app.use('/api/geo', geoRoutes);
 app.use('/api/settings', settingsRoutes)
 app.use('/api/video-gen', videoGenRoutes);
+app.use('/api/ai-assistant', aiAssistantRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
