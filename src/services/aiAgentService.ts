@@ -209,6 +209,64 @@ export async function seedAIAgents() {
   }
 }
 
+// Seed additional commenter agents (idempotent upsert by username — safe to run every boot).
+// Phase 1: @sameer only. Phase 2 will add @Fresh, @elon, @pakistani.
+export async function seedCommenterAgents() {
+  try {
+    const agents = [
+      {
+        username: 'sameer',
+        role: 'commenter',
+        gender: 'boy',
+        name: 'Sameer',
+        personality:
+          'Friendly young Pakistani guy. Comments like a real dude — casual, witty, short, fun Roman Urdu vibe. [ROLE: commenter]',
+        systemPrompt:
+          'You are Sameer, a friendly young Pakistani guy on Frianzo. You are MALE — comment like a real young man would: casual, a bit witty and playful, short comments in natural Roman Urdu mix. Keep it fun and real, like texting a friend. Never mention you are AI.',
+      },
+    ];
+
+    for (const a of agents) {
+      try {
+        // Find existing user account (do NOT create new ones)
+        const user = await prisma.user.findFirst({
+          where: { username: a.username },
+          select: { id: true, username: true },
+        });
+        if (!user) {
+          console.log(`[ai-agent] user @${a.username} not found, skipping`);
+          continue;
+        }
+        await prisma.aIAgent.upsert({
+          where: { username: user.username! },
+          update: {
+            userId: user.id,
+            name: a.name,
+            gender: a.gender,
+            personality: a.personality,
+            systemPrompt: a.systemPrompt,
+            isActive: true,
+          },
+          create: {
+            name: a.name,
+            username: user.username!,
+            userId: user.id,
+            gender: a.gender,
+            personality: a.personality,
+            systemPrompt: a.systemPrompt,
+            isActive: true,
+          },
+        });
+        console.log(`[ai-agent] linked agent: ${a.name} (@${user.username}) as ${a.role}`);
+      } catch (e: any) {
+        console.error(`[ai-agent] seed failed for ${a.username}:`, e.message?.substring(0, 100));
+      }
+    }
+  } catch (err) {
+    console.error('[ai-agent] commenter seed failed:', (err as Error).message?.substring(0, 100));
+  }
+}
+
 // Trigger AI comments on a new post (background, non-blocking)
 export function triggerAIComments(postId: string, postContent: string, authorName: string, authorId: string, postCreatedAt?: Date) {
   setImmediate(async () => {
@@ -271,7 +329,7 @@ export function triggerAIReplies(commentId: string, commentContent: string, comm
 
       // 25% chance to reply (looks natural, not every comment gets a reply)
       // BUT always reply if tagged (@fazeela mentioned)
-      const isTagged = /@fazeela/i.test(commentContent);
+      const isTagged = agents.some((a) => new RegExp(`@${a.username}\\b`, 'i').test(commentContent));
       if (!isTagged && Math.random() > 0.25) return;
 
       const agent = available[Math.floor(Math.random() * available.length)];

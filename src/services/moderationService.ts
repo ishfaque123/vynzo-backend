@@ -247,6 +247,14 @@ export async function ensureModerationSchema() {
       console.error('[moderation] AI seed skipped:', e.message?.substring(0, 100));
     }
 
+    // Seed additional commenter agents (idempotent upsert — Phase 1: @sameer)
+    try {
+      const { seedCommenterAgents } = await import('./aiAgentService');
+      await seedCommenterAgents();
+    } catch (e: any) {
+      console.error('[moderation] AI commenter seed skipped:', e.message?.substring(0, 100));
+    }
+
     console.log('[moderation] schema ensured and verified');
   } catch (err) {
     console.error('[moderation] schema ensure failed', err);
