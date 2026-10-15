@@ -187,7 +187,10 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const scored = candidatePosts.map((post) => {
     const hoursOld = (now - new Date(post.createdAt).getTime()) / 3600000;
     const recencyScore = WEIGHTS.recencyBase / (hoursOld + 2);
-    const engagementScore = post._count.likes * WEIGHTS.like + post._count.comments * WEIGHTS.comment + post._count.reposts * WEIGHTS.share;
+    const rawEngagement = post._count.likes * WEIGHTS.like + post._count.comments * WEIGHTS.comment + post._count.reposts * WEIGHTS.share;
+    // FIX 1 (2026-10-15): engagement time-decay — value halves every ~24h so old viral
+    // posts sink and fresh posts can surface instead of being buried forever.
+    const engagementScore = rawEngagement / (1 + hoursOld / 24);
     // Location: city match stronger than country
     let locationBoost = 0;
     if (currentUserCity && (post.user as any).city && currentUserCity === (post.user as any).city) {
