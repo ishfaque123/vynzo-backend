@@ -183,7 +183,22 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     } catch {}
   }
 
+  // FIX 3 (2026-10-15): posts this user already viewed (for seen-suppression on refresh)
+  const seenPostIds = new Set<string>();
+  if (currentUserId) {
+    try {
+      const seenRows = await prisma.postView.findMany({
+        where: { viewerId: currentUserId },
+        select: { postId: true },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      });
+      for (const r of seenRows) seenPostIds.add(r.postId);
+    } catch {}
+  }
+
   const now = Date.now();
+  const isFirstPage = safeOffset === 0;
   const scored = candidatePosts.map((post) => {
     const hoursOld = (now - new Date(post.createdAt).getTime()) / 3600000;
     const recencyScore = WEIGHTS.recencyBase / (hoursOld + 2);
@@ -206,10 +221,33 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     // FIX 2 (2026-10-15): verified boost decays with age too — the Blue Tick reach perk
     // stays strong for fresh posts but no longer keeps month-old verified posts immortal.
     const verifiedBoost = (post.user as any)?.isVerified ? WEIGHTS.verifiedBonus / (1 + hoursOld / 24) : 0;
-    return { post, score: recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost + verifiedBoost };
+    const baseScore = recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost + verifiedBoost;
+    // FIX 3 (2026-10-15): seen posts sink on first-page refresh (IG-style), plus a small
+    // jitter so refresh order varies slightly without breaking ranking quality.
+    // Only applied on the first page so offset pagination stays stable.
+    const seenFactor = isFirstPage && seenPostIds.has(post.id) ? 0.25 : 1;
+    const jitter = isFirstPage ? 1 + (Math.random() - 0.5) * 0.08 : 1;
+    return { post, hoursOld, score: baseScore * seenFactor * jitter };
   });
 
   scored.sort((a, b) => b.score - a.score);
+
+  // FIX 4 (2026-10-15): exploration slot — guarantee at least 2 fresh (<3h) posts in the
+  // top 5 on the first page, so brand-new posts always get a chance to be discovered.
+  if (isFirstPage) {
+    const freshInTop5 = scored.slice(0, 5).filter((x) => x.hoursOld < 3).length;
+    const need = Math.max(0, 2 - freshInTop5);
+    if (need > 0) {
+      const picked: typeof scored = [];
+      const rest = scored.filter((x, i) => {
+        if (i >= 5 && x.hoursOld < 3 && picked.length < need) { picked.push(x); return false; }
+        return true;
+      });
+      picked.forEach((item, k) => rest.splice(k === 0 ? 1 : 3, 0, item));
+      scored.length = 0;
+      scored.push(...rest);
+    }
+  }
   const pageSlice = scored.slice(safeOffset, safeOffset + safeLimit).map((s) => s.post);
   const hasMore = scored.length > safeOffset + safeLimit;
   const shareCodeMap = await getShareCodeMap('post', pageSlice.map((p) => p.id));
