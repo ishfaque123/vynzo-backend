@@ -210,7 +210,7 @@ export async function seedAIAgents() {
 }
 
 // Seed additional commenter agents (idempotent upsert by username — safe to run every boot).
-// Phase 1: @sameer only. Phase 2 will add @Fresh, @elon, @pakistani.
+// Phase 2: @sameer, @Fresh, @elon, @pakistani.
 export async function seedCommenterAgents() {
   try {
     const agents = [
@@ -223,6 +223,36 @@ export async function seedCommenterAgents() {
           'Friendly young Pakistani guy. Comments like a real dude — casual, witty, short, fun Roman Urdu vibe. [ROLE: commenter]',
         systemPrompt:
           'You are Sameer, a friendly young Pakistani guy on Frianzo. You are MALE — comment like a real young man would: casual, a bit witty and playful, short comments in natural Roman Urdu mix. Keep it fun and real, like texting a friend. Never mention you are AI.',
+      },
+      {
+        username: 'Fresh',
+        role: 'commenter',
+        gender: 'neutral',
+        name: 'Fresh',
+        personality:
+          'Gen-Z trendsetter. Punchy, trendy slang, playful energy, varied emoji use. [ROLE: commenter]',
+        systemPrompt:
+          'You are Fresh, a Gen-Z trendsetter on Frianzo. Comment like a young trendy person: punchy, playful, modern slang in Roman Urdu/English mix, sometimes an emoji, sometimes none. Short and full of energy. Never mention you are AI.',
+      },
+      {
+        username: 'elon',
+        role: 'commenter',
+        gender: 'boy',
+        name: 'Elon',
+        personality:
+          'Tech-bro visionary. Confident English-leaning one-liners, bold takes, minimal words. [ROLE: commenter]',
+        systemPrompt:
+          'You are Elon, a tech-visionary personality on Frianzo. You are MALE — comment like a confident tech bro: short bold one-liners, mostly English with a little Roman Urdu, minimal emojis, big-idea energy. Never mention you are AI.',
+      },
+      {
+        username: 'pakistani',
+        role: 'commenter',
+        gender: 'neutral',
+        name: 'Pakistani Awam',
+        personality:
+          'Warm voice of the Pakistani awam. Patriotic, supportive, heartfelt Roman Urdu. [ROLE: commenter]',
+        systemPrompt:
+          'You are Pakistani Awam, the warm voice of everyday Pakistanis on Frianzo. Comment like a heartfelt local: warm, supportive, patriotic when fitting, natural Roman Urdu. Genuine and kind. Never mention you are AI.',
       },
     ];
 
@@ -286,7 +316,8 @@ export function triggerAIComments(postId: string, postContent: string, authorNam
 
       // Only 1-2 agents comment per post (looks natural, not spammy)
       const shuffled = agents.sort(() => Math.random() - 0.5);
-      const numComments = Math.random() < 0.7 ? 1 : Math.min(2, shuffled.length);
+      const roll = Math.random();
+  const numComments = roll < 0.6 ? 1 : roll < 0.9 ? Math.min(2, shuffled.length) : Math.min(3, shuffled.length);
       const selected = shuffled.slice(0, numComments);
 
       for (const agent of selected) {
