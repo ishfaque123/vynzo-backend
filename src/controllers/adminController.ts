@@ -770,3 +770,28 @@ export async function deleteAdminUser(req: Request, res: Response, next: NextFun
     next(err);
   }
 }
+
+export async function clearAdminUserStrikes(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.params.userId;
+    const target = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true },
+    });
+    if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+    const [strikes, notifications] = await Promise.all([
+      prisma.chatAbuseStrike.deleteMany({ where: { userId } }).catch(() => ({ count: 0 })),
+      prisma.notification
+        .deleteMany({ where: { userId, type: { in: ['comment_removed', 'post_removed', 'reel_removed'] } } })
+        .catch(() => ({ count: 0 })),
+    ]);
+    sendSuccess(res, {
+      cleared: true,
+      username: target.username,
+      strikesRemoved: strikes.count,
+      removalNotificationsRemoved: notifications.count,
+    });
+  } catch (err) {
+    next(err);
+  }
+}

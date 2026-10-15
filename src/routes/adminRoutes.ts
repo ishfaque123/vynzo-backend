@@ -7,6 +7,7 @@ import {
   updateAdminUserStatus,
   updateAdminUserVerification,
   deleteAdminUser,
+  clearAdminUserStrikes,
   listAdminPosts,
   deleteAdminPost,
   listAdminReports,
@@ -31,6 +32,7 @@ router.get('/users', listAdminUsers);
 router.patch('/users/:userId/status', updateAdminUserStatus);
 router.patch('/users/:userId/verification', updateAdminUserVerification);
 router.delete('/users/:userId', deleteAdminUser);
+router.delete('/users/:userId/strikes', clearAdminUserStrikes);
 router.get('/posts', listAdminPosts);
 router.delete('/posts/:postId', deleteAdminPost);
 router.get('/reports', listAdminReports);
