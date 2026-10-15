@@ -166,7 +166,28 @@ export async function listAdminUsers(req: Request, res: Response, next: NextFunc
       }),
     ]);
 
-    return sendSuccess(res, { users, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+    // Attach all-time warning counts (abuse strikes + removed-content notices) so the
+    // admin panel can show "Clear warning" only for users who actually have one.
+    const userIds = users.map((u) => u.id);
+    const [strikeCounts, removalCounts] = await Promise.all([
+      prisma.chatAbuseStrike
+        .groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } })
+        .catch(() => []),
+      prisma.notification
+        .groupBy({
+          by: ['userId'],
+          where: { userId: { in: userIds }, type: { in: ['comment_removed', 'post_removed', 'reel_removed'] } },
+          _count: { _all: true },
+        })
+        .catch(() => []),
+    ]);
+    const usersWithWarnings = users.map((u) => {
+      const strikes = strikeCounts.find((x: any) => x.userId === u.id)?._count._all ?? 0;
+      const removals = removalCounts.find((x: any) => x.userId === u.id)?._count._all ?? 0;
+      return { ...u, warningCount: strikes + removals };
+    });
+
+    return sendSuccess(res, { users: usersWithWarnings, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
   } catch (err) {
     next(err);
   }
