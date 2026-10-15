@@ -203,7 +203,9 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     // Affinity (capped)
     const affinityBoost = Math.min(affinityMap.get(post.userId) || 0, WEIGHTS.affinityCap);
     // Verified author boost (Blue Tick perk: better reach)
-    const verifiedBoost = (post.user as any)?.isVerified ? WEIGHTS.verifiedBonus : 0;
+    // FIX 2 (2026-10-15): verified boost decays with age too — the Blue Tick reach perk
+    // stays strong for fresh posts but no longer keeps month-old verified posts immortal.
+    const verifiedBoost = (post.user as any)?.isVerified ? WEIGHTS.verifiedBonus / (1 + hoursOld / 24) : 0;
     return { post, score: recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost + verifiedBoost };
   });
 
