@@ -113,3 +113,20 @@ export async function checkVideoStatus(operationName: string): Promise<VideoGenS
 export function isVideoGenEnabled(): boolean {
   return !!GEMINI_API_KEY;
 }
+
+export const VIDEO_GEN_REFERRAL_THRESHOLD = 25;
+
+/**
+ * Check if a user has unlocked AI video generation via referrals.
+ * (user-ordered 2026-10-16): 25 completed referrals = free access,
+ * instead of a premium paywall.
+ */
+export async function hasVideoGenAccess(userId: string): Promise<{ hasAccess: boolean; referralCount: number; needed: number }> {
+  const { prisma } = await import('../config/prisma');
+  const referralCount = await prisma.referral.count({ where: { referrerId: userId } });
+  return {
+    hasAccess: referralCount >= VIDEO_GEN_REFERRAL_THRESHOLD,
+    referralCount,
+    needed: Math.max(0, VIDEO_GEN_REFERRAL_THRESHOLD - referralCount),
+  };
+}

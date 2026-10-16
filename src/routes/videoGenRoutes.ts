@@ -1,18 +1,25 @@
 import { Router } from 'express';
-import { startVideoGeneration, checkVideoStatus, isVideoGenEnabled } from '../services/videoGenService';
+import { startVideoGeneration, checkVideoStatus, isVideoGenEnabled, hasVideoGenAccess } from '../services/videoGenService';
 import { authMiddleware } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Check if video generation is available
+// Check if video generation is available (global + per-user referral unlock)
 router.get('/status', authMiddleware, async (req, res) => {
+  const access = await hasVideoGenAccess(req.user!.id);
   res.json({
     success: true,
-    data: { enabled: isVideoGenEnabled() },
+    data: {
+      enabled: isVideoGenEnabled(),
+      hasAccess: access.hasAccess,
+      referralCount: access.referralCount,
+      referralsNeeded: access.needed,
+      threshold: 25,
+    },
   });
 });
 
-// Start video generation
+// Start video generation (requires 25 referrals)
 router.post('/generate', authMiddleware, async (req, res) => {
   const { prompt, aspectRatio, durationSeconds } = req.body;
 
@@ -23,6 +30,21 @@ router.post('/generate', authMiddleware, async (req, res) => {
 
   if (prompt.length > 500) {
     res.status(400).json({ success: false, error: { message: 'Prompt too long (max 500 chars)' } });
+    return;
+  }
+
+  // Referral gate: 25 referrals unlocks access
+  const access = await hasVideoGenAccess(req.user!.id);
+  if (!access.hasAccess) {
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'REFERRALS_REQUIRED',
+        message: `Invite ${access.needed} more friend(s) to unlock AI video generation (${access.referralCount}/25 referrals)`,
+        referralCount: access.referralCount,
+        referralsNeeded: access.needed,
+      },
+    });
     return;
   }
 
