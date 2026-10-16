@@ -215,12 +215,12 @@ export { OUTREACH_CYCLE_MS };
 
 /**
  * Welcome DM for new users (user-ordered 2026-10-16).
- * Sent once after profile setup completes, from @frianzo_dost.
+ * Sent once after profile setup completes, from official @frienzo.
  */
 export async function sendWelcomeDM(newUserId: string) {
   try {
     const welcomer = await prisma.user.findUnique({
-      where: { username: 'frianzo_dost' },
+      where: { username: 'frienzo' },
       select: { id: true, username: true },
     });
     if (!welcomer) return;
