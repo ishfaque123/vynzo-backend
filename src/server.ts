@@ -7,6 +7,7 @@ import { cleanupExpiredStatuses } from './services/statusService';
 import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
+import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS } from './services/aiPosterService';
 
 async function start() {
   try {
@@ -18,6 +19,9 @@ async function start() {
 
     // Ensure viral_post notification type exists (safe, idempotent)
     await ensureViralPostSchema();
+
+    // Seed the 10 AI poster accounts (safe, idempotent)
+    await seedPosterAgents();
 
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);
@@ -48,6 +52,18 @@ async function start() {
     }
     runViralCheck();
     setInterval(runViralCheck, VIRAL_CHECK_INTERVAL_MS);
+
+    // AI poster accounts: ~1 original post/day each, staggered
+    async function runPoster() {
+      try {
+        await runPosterCycle();
+      } catch (err) {
+        console.error('AI poster cycle failed:', err);
+      }
+    }
+    // Small delay so startup isn't blocked, then every 4 hours
+    setTimeout(runPoster, 2 * 60 * 1000);
+    setInterval(runPoster, POSTER_CYCLE_MS);
 
     const MESSAGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
     async function runMessageCleanup() {

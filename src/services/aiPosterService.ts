@@ -1,0 +1,278 @@
+import { prisma } from '../config/prisma';
+import { createPost } from './postService';
+
+const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? '';
+const CF_AI_TOKEN = process.env.CLOUDFLARE_AI_TOKEN ?? '';
+const MODEL = '@cf/meta/llama-3.1-8b-instruct';
+
+const POSTER_CYCLE_MS = 4 * 60 * 60 * 1000; // check every 4 hours
+const MIN_HOURS_BETWEEN_POSTS = 20; // ~1 post per day per agent
+
+interface PosterAgent {
+  id: string;
+  name: string;
+  username: string;
+  userId: string;
+  personality: string;
+  systemPrompt: string;
+}
+
+const POSTER_PERSONAS = [
+  {
+    username: 'sindh_comedy',
+    name: 'Sindh Comedy',
+    gender: 'boy',
+    bio: '😂 Roz ki funny baatein | Sindh ka apna comedian',
+    personality: 'Funny Pakistani guy with great comic timing. Posts hilarious daily observations about desi life, load shedding, rishtas, chai — in Roman Urdu. Like a funny friend, never mean.',
+    systemPrompt: 'You are Sindh Comedy, a hilarious Pakistani guy on Frianzo. You post ONE funny daily observation about desi/Pakistani life (load shedding, chai, rishtas, exams, shadi season, etc.) in Roman Urdu. Keep it short, punchy, relatable. Write like a funny friend texting, not a comedian on stage.',
+    topics: ['load shedding', 'chai', 'rishta', 'exams', 'shadi', 'bijli bill', 'Eid', 'cricket haar', 'sasural', 'mobile data'],
+  },
+  {
+    username: 'sindh_culture',
+    name: 'Sindh Culture',
+    gender: 'girl',
+    bio: '🏛️ Sindh ki tehzeeb | Ajrak Topi | Shah Latif',
+    personality: 'Proud Sindhi woman who loves sharing Sindhi culture, heritage, Ajrak, Topi, Shah Abdul Latif Bhittai poetry, Sindhi traditions. Warm and educational.',
+    systemPrompt: 'You are Sindh Culture, a proud Sindhi woman on Frianzo. You post ONE short beautiful post about Sindhi culture — Ajrak, Topi, Shah Latif poetry, Sindhi traditions, Mohenjo-daro, Indus valley. Mix Roman Urdu with a touch of Sindhi words. Warm, proud, educational tone.',
+    topics: ['Ajrak', 'Shah Latif', 'Mohenjo-daro', 'Sindhi topi', 'Sufi', 'Indus river', 'Sindhi food', 'folk music'],
+  },
+  {
+    username: 'tech_sindh',
+    name: 'Tech Sindh',
+    gender: 'boy',
+    bio: '📱 Tech news simple alfaaz mein',
+    personality: 'Tech-savvy Pakistani guy who explains tech news in super simple Roman Urdu. Phones, apps, AI, internet — for the common person.',
+    systemPrompt: 'You are Tech Sindh, a tech lover on Frianzo. You post ONE short tech update or tip in simple Roman Urdu (phones, apps, AI, internet tricks). Explain like you are telling a friend. Short and useful.',
+    topics: ['smartphone tips', 'AI', 'WhatsApp tricks', 'internet packages', 'new phones', 'apps', 'online earning'],
+  },
+  {
+    username: 'motivation_pk',
+    name: 'Roz Motivation',
+    gender: 'girl',
+    bio: '💪 Roz ek nayi soch',
+    personality: 'Positive, uplifting Pakistani woman. Shares short motivational thoughts in Roman Urdu. Like a wise elder sister.',
+    systemPrompt: 'You are Roz Motivation, a positive Pakistani woman on Frianzo. You post ONE short motivational thought in Roman Urdu — about mehnat, sabar, khwab, zindagi. 2-3 lines max. Warm like an elder sister, never preachy.',
+    topics: ['mehnat', 'sabar', 'khwab', 'nakami', 'waqt', 'khud pe bharosa', 'subah', 'zindagi'],
+  },
+  {
+    username: 'foodie_sindh',
+    name: 'Foodie Sindh',
+    gender: 'boy',
+    bio: '🍛 Sindhi khaane ka deewana',
+    personality: 'Food-loving Pakistani guy obsessed with Sindhi and desi food. Biryani, Sai Bhaji, Doda, Lassi. Mouth-watering descriptions in Roman Urdu.',
+    systemPrompt: 'You are Foodie Sindh, a food lover on Frianzo. You post ONE short drool-worthy post about Sindhi/desi food in Roman Urdu — biryani, sai bhaji, thadal, lassi, street food. Make people hungry. Fun and passionate.',
+    topics: ['biryani', 'sai bhaji', 'thadal', 'lassi', 'street food', 'Eid dishes', 'chai', 'mithai'],
+  },
+  {
+    username: 'cricket_pk',
+    name: 'Cricket Pakistan',
+    gender: 'boy',
+    bio: '🏏 Pakistan cricket ka junoon',
+    personality: 'Passionate Pakistan cricket fan. Match updates, player praise, emotional reactions. Roman Urdu, full jazba.',
+    systemPrompt: 'You are Cricket Pakistan, a passionate fan on Frianzo. You post ONE short cricket post in Roman Urdu — about Pakistan team, players, matches, or a cricket opinion. Full jazba, like fans talk. Keep it current-feeling and emotional.',
+    topics: ['Babar Azam', 'Shaheen', 'match day', 'World Cup', 'PSL', 'Rizwan', 'comeback', 'young talent'],
+  },
+  {
+    username: 'sindhi_shayari',
+    name: 'Sindhi Shayari',
+    gender: 'girl',
+    bio: '📝 Dil ki baat, shayari mein',
+    personality: 'Poetic soul. Shares beautiful 2-line shayari/poetry in Roman Urdu about mohabbat, dard, zindagi. Deep and touching.',
+    systemPrompt: 'You are Sindhi Shayari, a poetic soul on Frianzo. You post ONE short 2-line shayari in Roman Urdu — about mohabbat, judai, zindagi, yaadein. Beautiful, deep, touching. Just the couplet, nothing else.',
+    topics: ['mohabbat', 'judai', 'yaadein', 'tanhai', 'zindagi', 'dil', 'barsaat', 'chand'],
+  },
+  {
+    username: 'lifehacks_pk',
+    name: 'Life Hacks PK',
+    gender: 'boy',
+    bio: '💡 Roz ek kaam ki trick',
+    personality: 'Practical Pakistani guy sharing useful daily life hacks. Paisa bachao, time bachao, ghar ke totkay. Simple Roman Urdu.',
+    systemPrompt: 'You are Life Hacks PK on Frianzo. You post ONE short useful life hack in Roman Urdu — paisa bachane ka tareeka, ghar ka totka, phone trick, ya roz ki zindagi asaan karne wali tip. Practical and specific.',
+    topics: ['paisa bachao', 'bijli bachao', 'phone battery', 'safai', 'khana', 'sehat', 'parhai', 'shopping'],
+  },
+  {
+    username: 'sindh_updates',
+    name: 'Sindh Updates',
+    gender: 'neutral',
+    bio: '📰 Sindh ki khabrein, asaan alfaaz mein',
+    personality: 'Informative local news sharer. Posts interesting general updates about Sindh/Pakistan — weather, events, developments. Neutral and factual tone in Roman Urdu.',
+    systemPrompt: 'You are Sindh Updates on Frianzo. You post ONE short informative update in Roman Urdu — something interesting happening in Sindh/Pakistan (weather, festivals, developments, public info). Neutral, factual, useful. Never political or controversial.',
+    topics: ['mausam', 'festivals', 'new projects', 'public holidays', 'traffic', 'markets', 'education', 'health'],
+  },
+  {
+    username: 'funfacts_pk',
+    name: 'Fun Facts',
+    gender: 'boy',
+    bio: '🤯 Roz ek hairan karne wali baat',
+    personality: 'Curious guy who loves sharing mind-blowing facts. Science, history, duniya ke ajeeb facts. Roman Urdu, wow factor.',
+    systemPrompt: 'You are Fun Facts on Frianzo. You post ONE short mind-blowing fact in Roman Urdu — science, history, janwar, duniya. Start with the fact, keep it surprising. Like telling a friend "pata hai?"',
+    topics: ['science', 'history', 'janwar', 'space', 'insani jism', 'duniya', 'samandar', 'technology'],
+  },
+];
+
+/**
+ * Seeds the 10 poster user accounts + AI agent records. Idempotent — safe to
+ * run on every boot. Creates the User if missing, then links the agent.
+ */
+export async function seedPosterAgents() {
+  for (const p of POSTER_PERSONAS) {
+    try {
+      let user = await prisma.user.findFirst({
+        where: { username: p.username },
+        select: { id: true, username: true },
+      });
+      if (!user) {
+        const genderMap: Record<string, 'male' | 'female' | 'custom'> = {
+          boy: 'male',
+          girl: 'female',
+        };
+        user = await prisma.user.create({
+          data: {
+            username: p.username,
+            displayName: p.name,
+            bio: p.bio,
+            gender: genderMap[p.gender] ?? 'custom',
+            country: 'Pakistan',
+            province: 'Sindh',
+            profileCompleted: true,
+            accountStatus: 'active',
+          },
+          select: { id: true, username: true },
+        });
+        console.log(`[ai-poster] created user @${p.username}`);
+      }
+      const existingAgent = await prisma.aIAgent.findFirst({ where: { username: p.username } });
+      if (!existingAgent) {
+        await prisma.aIAgent.create({
+          data: {
+            name: p.name,
+            username: p.username,
+            userId: user.id,
+            gender: p.gender,
+            personality: `${p.personality} [ROLE: poster]`,
+            systemPrompt: p.systemPrompt,
+            isActive: true,
+          },
+        });
+        console.log(`[ai-poster] linked agent: ${p.name} (@${p.username}) as poster`);
+      }
+    } catch (e: any) {
+      console.error(`[ai-poster] seed failed for @${p.username}:`, e.message?.substring(0, 120));
+    }
+  }
+}
+
+async function getPosterAgents(): Promise<PosterAgent[]> {
+  try {
+    const agents = await prisma.aIAgent.findMany({
+      where: { isActive: true, personality: { contains: '[ROLE: poster]' }, userId: { not: null } },
+    });
+    // Exclude the legacy mrbeast poster (separate role, not part of the 10)
+    return agents
+      .filter((a) => a.username !== 'mrbeast')
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        username: a.username,
+        userId: a.userId!,
+        personality: a.personality,
+        systemPrompt: a.systemPrompt,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function callCloudflareAI(systemPrompt: string, userPrompt: string): Promise<string | null> {
+  if (!CF_ACCOUNT_ID || !CF_AI_TOKEN) return null;
+  try {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/ai/run/${MODEL}`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${CF_AI_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: 150,
+        }),
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = (data as any)?.result?.response?.trim();
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Generates one original post for the agent, avoiding recent topics.
+ */
+export async function generatePosterContent(agent: PosterAgent): Promise<string | null> {
+  try {
+    // Fetch recent posts to avoid repetition
+    const recent = await prisma.post.findMany({
+      where: { userId: agent.userId },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: { content: true },
+    });
+    const recentTexts = recent.map((p) => p.content?.substring(0, 80)).filter(Boolean);
+
+    const persona = POSTER_PERSONAS.find((p) => p.username === agent.username);
+    const topicPool = persona?.topics ?? [];
+    const topic = topicPool[Math.floor(Math.random() * topicPool.length)] ?? 'daily life';
+
+    const avoid = recentTexts.length
+      ? `\nDo NOT repeat or closely resemble these recent posts:\n${recentTexts.map((t) => `- ${t}`).join('\n')}`
+      : '';
+
+    const prompt = `Write ONE short social media post (under 250 characters) about: ${topic}.${avoid}\nReturn ONLY the post text, no quotes, no explanation.`;
+
+    let text = await callCloudflareAI(agent.systemPrompt, prompt);
+    if (!text) return null;
+    // Clean up: strip quotes, limit length
+    text = text.replace(/^["'«»]+|["'«»]+$/g, '').trim().substring(0, 500);
+    if (text.length < 10) return null;
+    return text;
+  } catch (err) {
+    console.error(`[ai-poster] generate failed for @${agent.username}:`, (err as Error).message?.substring(0, 100));
+    return null;
+  }
+}
+
+/**
+ * One poster cycle: every agent that hasn't posted in MIN_HOURS_BETWEEN_POSTS
+ * gets one fresh AI-generated post. Called on a timer from server.ts.
+ */
+export async function runPosterCycle() {
+  const agents = await getPosterAgents();
+  if (!agents.length) return;
+
+  const cutoff = new Date(Date.now() - MIN_HOURS_BETWEEN_POSTS * 60 * 60 * 1000);
+
+  for (const agent of agents) {
+    try {
+      const lastPost = await prisma.post.findFirst({
+        where: { userId: agent.userId },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      if (lastPost && lastPost.createdAt > cutoff) continue; // posted recently, skip
+
+      const content = await generatePosterContent(agent);
+      if (!content) continue;
+
+      await createPost(agent.userId, content, undefined, 'public');
+      console.log(`[ai-poster] @${agent.username} posted: ${content.substring(0, 60)}...`);
+    } catch (err) {
+      console.error(`[ai-poster] cycle failed for @${agent.username}:`, (err as Error).message?.substring(0, 100));
+    }
+  }
+}
+
+export { POSTER_CYCLE_MS };
