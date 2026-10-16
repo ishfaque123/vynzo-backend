@@ -214,6 +214,55 @@ export async function runOutreachCycle() {
 export { OUTREACH_CYCLE_MS };
 
 /**
+ * Welcome DM for new users (user-ordered 2026-10-16).
+ * Sent once after profile setup completes, from @frianzo_dost.
+ */
+export async function sendWelcomeDM(newUserId: string) {
+  try {
+    const welcomer = await prisma.user.findUnique({
+      where: { username: 'frianzo_dost' },
+      select: { id: true, username: true },
+    });
+    if (!welcomer) return;
+
+    const newUser = await prisma.user.findUnique({
+      where: { id: newUserId },
+      select: { displayName: true, username: true },
+    });
+    if (!newUser) return;
+
+    const name = newUser.displayName || newUser.username || 'dost';
+    const { getOrCreateConversation } = await import('./conversationService');
+
+    // Don't send twice
+    const convo = await getOrCreateConversation(welcomer.id, newUserId);
+    const alreadySent = await prisma.message.findFirst({
+      where: { conversationId: convo.id, senderId: welcomer.id },
+      select: { id: true },
+    });
+    if (alreadySent) return;
+
+    const welcomeText = `Assalam-o-Alaikum ${name}! 🎉\n\nFrianzo mein khush aamdeed! Main Frianzo Dost hun — yahan naye doston se milne mein madad karta hun.\n\nYahan tum posts, reels aur stories share kar sakte ho, doston se chat kar sakte ho, aur dilchasp logon ko follow kar sakte ho.\n\nKoi sawal ho to bas yahin likh do! 😊`;
+
+    await prisma.message.create({
+      data: {
+        conversationId: convo.id,
+        senderId: welcomer.id,
+        content: welcomeText,
+      },
+    });
+    await prisma.conversation.update({
+      where: { id: convo.id },
+      data: { updatedAt: new Date() },
+    }).catch(() => {});
+
+    console.log(`[ai-outreach] Welcome DM sent to @${newUser.username}`);
+  } catch (err) {
+    console.error('[ai-outreach] welcome DM failed:', (err as Error).message?.substring(0, 100));
+  }
+}
+
+/**
  * Follow rules (user-ordered):
  * - ALL accounts on the app follow the official @frienzo account.
  * - All AI accounts follow each other (full mesh).

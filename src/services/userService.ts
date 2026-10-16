@@ -129,7 +129,7 @@ export async function completeProfile(userId: string, data: any) {
   const existing = await prisma.user.findUnique({ where: { username: data.username } });
   if (existing && existing.id !== userId) throw new ApiError(409, 'USERNAME_TAKEN', 'Username already taken.');
   const now = new Date();
-  return prisma.user.update({
+  const updated = await prisma.user.update({
     where: { id: userId },
     data: {
       ...normalizeData(data),
@@ -139,6 +139,16 @@ export async function completeProfile(userId: string, data: any) {
       dobChangedAt: now,
     },
   });
+
+  // Welcome DM for new users (user-ordered 2026-10-16)
+  setImmediate(async () => {
+    try {
+      const { sendWelcomeDM } = await import('./aiOutreachService');
+      await sendWelcomeDM(userId);
+    } catch {}
+  });
+
+  return updated;
 }
 
 export async function updateProfile(userId: string, data: any) {
