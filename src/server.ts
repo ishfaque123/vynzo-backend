@@ -8,6 +8,7 @@ import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
+import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle } from './services/aiEngagerService';
 import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
 
 async function start() {
@@ -26,6 +27,9 @@ async function start() {
 
     // Seed the 4 AI outreach accounts (safe, idempotent)
     await seedOutreachAgents();
+
+    // Seed the 10 AI engager accounts (safe, idempotent)
+    await seedEngagerAgents();
 
     // Official @frianzo follows all AI accounts (safe, idempotent)
     await seedOfficialFollows();
@@ -93,6 +97,28 @@ async function start() {
     }
     setTimeout(runOutreach, 5 * 60 * 1000);
     setInterval(runOutreach, OUTREACH_CYCLE_MS);
+
+    // AI engager accounts: like, follow, comment like real users (every 3 hours)
+    async function runEngagers() {
+      try {
+        await runEngagerCycle();
+      } catch (err) {
+        console.error('AI engager cycle failed:', err);
+      }
+    }
+    setTimeout(runEngagers, 15 * 60 * 1000);
+    setInterval(runEngagers, 3 * 60 * 60 * 1000);
+
+    // AI engagers follow back anyone who follows them (every hour)
+    async function runFollowBacks() {
+      try {
+        await runFollowBackCycle();
+      } catch (err) {
+        console.error('AI follow-back cycle failed:', err);
+      }
+    }
+    setTimeout(runFollowBacks, 20 * 60 * 1000);
+    setInterval(runFollowBacks, 60 * 60 * 1000);
 
     const MESSAGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
     async function runMessageCleanup() {
