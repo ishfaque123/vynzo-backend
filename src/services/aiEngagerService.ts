@@ -107,9 +107,12 @@ async function getEngagerAgents() {
 }
 
 // Follow back anyone who followed the engager but isn't followed back yet
+// NATURAL TIMING: random subset of agents, random delays — never all at once.
 export async function runFollowBackCycle() {
   const agents = await getEngagerAgents();
-  for (const agent of agents) {
+  // Only 2-5 random agents do follow-backs per cycle
+  const activeAgents = agents.sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 4));
+  for (const agent of activeAgents) {
     if (!agent.userId) continue;
     try {
       // Find followers not yet followed back
@@ -127,8 +130,8 @@ export async function runFollowBackCycle() {
             data: { followerId: agent.userId, followingId: f.followerId },
           });
           console.log(`[ai-engager] @${agent.username} followed back user ${f.followerId}`);
-          // Small delay to look natural
-          await new Promise((r) => setTimeout(r, 2000));
+          // Random delay 1-10 minutes (human-like, not instant bot)
+          await new Promise((r) => setTimeout(r, 60000 + Math.random() * 540000));
         }
       }
     } catch (e: any) {
@@ -138,11 +141,17 @@ export async function runFollowBackCycle() {
 }
 
 // Like recent posts + follow their authors + drop follower-seeking comments
+// NATURAL TIMING (user-ordered 2026-10-16): agents must NOT all act at once —
+// random subset per cycle, random delays, so nobody suspects bots.
 export async function runEngagerCycle() {
   const agents = await getEngagerAgents();
   if (agents.length === 0) return;
 
-  for (const agent of agents) {
+  // Only 3-6 random agents act per cycle (not all 10)
+  const shuffledAgents = agents.sort(() => Math.random() - 0.5);
+  const activeAgents = shuffledAgents.slice(0, 3 + Math.floor(Math.random() * 4));
+
+  for (const agent of activeAgents) {
     if (!agent.userId) continue;
     try {
       // Get recent public posts (not from AI accounts, not own)
@@ -161,29 +170,31 @@ export async function runEngagerCycle() {
       const shuffled = posts.sort(() => Math.random() - 0.5).slice(0, 3 + Math.floor(Math.random() * 3));
 
       for (const post of shuffled) {
-        // Like (skip if already liked)
-        const existingLike = await prisma.like.findFirst({
-          where: { userId: agent.userId, postId: post.id },
-        });
-        if (!existingLike) {
-          await prisma.like.create({ data: { userId: agent.userId, postId: post.id } });
-        }
+        // NEVER do like+follow+comment together (user-ordered 2026-10-16).
+        // Pick ONE action per post like a real user would.
+        const roll = Math.random();
+        const action = roll < 0.5 ? 'like' : roll < 0.75 ? 'follow' : 'comment';
 
-        // Follow the author (skip if already following, skip AI accounts)
-        const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: post.userId } });
-        if (!isAIAuthor) {
-          const existingFollow = await prisma.follow.findFirst({
-            where: { followerId: agent.userId, followingId: post.userId },
+        if (action === 'like') {
+          const existingLike = await prisma.like.findFirst({
+            where: { userId: agent.userId, postId: post.id },
           });
-          if (!existingFollow) {
-            await prisma.follow.create({
-              data: { followerId: agent.userId, followingId: post.userId },
-            });
+          if (!existingLike) {
+            await prisma.like.create({ data: { userId: agent.userId, postId: post.id } });
           }
-        }
-
-        // Comment (40% chance, follower-seeking style)
-        if (Math.random() < 0.4) {
+        } else if (action === 'follow') {
+          const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: post.userId } });
+          if (!isAIAuthor) {
+            const existingFollow = await prisma.follow.findFirst({
+              where: { followerId: agent.userId, followingId: post.userId },
+            });
+            if (!existingFollow) {
+              await prisma.follow.create({
+                data: { followerId: agent.userId, followingId: post.userId },
+              });
+            }
+          }
+        } else {
           const template = COMMENT_TEMPLATES[Math.floor(Math.random() * COMMENT_TEMPLATES.length)];
           const existingComment = await prisma.comment.findFirst({
             where: { userId: agent.userId, postId: post.id },
@@ -195,9 +206,12 @@ export async function runEngagerCycle() {
           }
         }
 
-        await new Promise((r) => setTimeout(r, 3000));
+        // Random delay 30s-5min between actions (looks human, not bot)
+        await new Promise((r) => setTimeout(r, 30000 + Math.random() * 270000));
       }
       console.log(`[ai-engager] @${agent.username} engaged with ${shuffled.length} posts`);
+      // Random gap 5-20 min before next agent acts
+      await new Promise((r) => setTimeout(r, 300000 + Math.random() * 900000));
     } catch (e: any) {
       console.error(`[ai-engager] cycle failed for @${agent.username}:`, e.message?.substring(0, 100));
     }
