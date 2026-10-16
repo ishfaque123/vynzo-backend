@@ -8,6 +8,34 @@ const MODEL = '@cf/meta/llama-3.1-8b-instruct';
 const POSTER_CYCLE_MS = 4 * 60 * 60 * 1000; // check every 4 hours
 const MIN_HOURS_BETWEEN_POSTS = 20; // ~1 post per day per agent
 
+// Language rotation (user-ordered): posts should use Pakistan's languages,
+// not just Roman Urdu. Weighted random per post.
+const LANGUAGES = [
+  { key: 'roman_urdu', weight: 45, instruction: 'Write in Roman Urdu (Urdu written in English letters, natural Pakistani style)' },
+  { key: 'urdu', weight: 20, instruction: 'Write in Urdu script (اردو) using proper Urdu alphabet' },
+  { key: 'sindhi', weight: 20, instruction: 'Write in Sindhi using Sindhi script (سنڌي). If unsure of script, use Roman Sindhi' },
+  { key: 'pashto', weight: 8, instruction: 'Write in Pashto using Pashto script (پښتو)' },
+  { key: 'hindi', weight: 7, instruction: 'Write in Hindi using Devanagari script (हिन्दी)' },
+];
+
+function pickLanguage(username: string): (typeof LANGUAGES)[number] {
+  // @sindh_culture posts mostly in Sindhi (user-ordered: Sindhi presence)
+  const pool = username === 'sindh_culture'
+    ? [
+        { key: 'sindhi', weight: 55, instruction: 'Write in Sindhi using Sindhi script (سنڌي). If unsure of script, use Roman Sindhi' },
+        { key: 'roman_urdu', weight: 25, instruction: 'Write in Roman Urdu (Urdu written in English letters, natural Pakistani style)' },
+        { key: 'urdu', weight: 20, instruction: 'Write in Urdu script (اردو) using proper Urdu alphabet' },
+      ]
+    : LANGUAGES;
+  const total = pool.reduce((s, l) => s + l.weight, 0);
+  let roll = Math.random() * total;
+  for (const lang of pool) {
+    roll -= lang.weight;
+    if (roll <= 0) return lang;
+  }
+  return pool[0];
+}
+
 interface PosterAgent {
   id: string;
   name: string;
@@ -254,6 +282,9 @@ export async function generatePosterContent(agent: PosterAgent): Promise<{ conte
     const topicPool = persona?.topics ?? [];
     const topic = topicPool[Math.floor(Math.random() * topicPool.length)] ?? 'daily life';
 
+    // Pick a language for this post (user-ordered: multi-language, not just Roman Urdu)
+    const lang = pickLanguage(agent.username);
+
     const avoid = `${avoidSelf}${avoidOthers}`;
 
     // 30% chance: mention another AI account naturally (like real friends do)
@@ -271,7 +302,7 @@ export async function generatePosterContent(agent: PosterAgent): Promise<{ conte
       }
     }
 
-    const prompt = `Write ONE short social media post (under 250 characters) about: ${topic}.${avoid}${mentionInstruction}\nReturn ONLY the post text, no quotes, no explanation.`;
+    const prompt = `Write ONE short social media post (under 250 characters) about: ${topic}.\nLANGUAGE: ${lang.instruction}.${avoid}${mentionInstruction}\nReturn ONLY the post text, no quotes, no explanation.`;
 
     let text = await callCloudflareAI(agent.systemPrompt, prompt);
     if (!text) return null;
