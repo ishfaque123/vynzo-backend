@@ -30,9 +30,9 @@ export async function generateAIComment(agent: AIAgent, postContent: string, aut
 
   const lower = postContent.toLowerCase();
 
-  // 25% chance: emoji-only comment (like real humans — especially on pictures).
+  // 75% chance: emoji-only comment (like real humans — especially on pictures).
   // Emojis match the post mood. (user-ordered 2026-10-16)
-  if (Math.random() < 0.25) {
+  if (Math.random() < 0.75) {
     const emojiSets: { pattern: RegExp; emojis: string[] }[] = [
       { pattern: /mashallah|mubarak|shadi|wedding|birthday|congrat|nikah/, emojis: ['🎉🎊🥳', '👏👏👏', '❤️🎉❤️'] },
       { pattern: /sad|death|passed away|accident|hospital|sick|dukh|afsoos|rip/, emojis: ['😢🙏', '🤲😢', '💔🙏'] },
