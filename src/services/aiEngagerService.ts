@@ -140,9 +140,175 @@ export async function runFollowBackCycle() {
   }
 }
 
-// Like recent posts + follow their authors + drop follower-seeking comments
-// NATURAL TIMING (user-ordered 2026-10-16): agents must NOT all act at once —
-// random subset per cycle, random delays, so nobody suspects bots.
+// --- Engager-generated posts: act like real people who post, not just engage ---
+// User-ordered 2026-10-16: engagers must POST too (text + pictures, various
+// topics) like real users, not only like/comment/follow.
+
+async function callEngagerAI(systemPrompt: string, userPrompt: string): Promise<string | null> {
+  if (!CF_ACCOUNT_ID || !CF_AI_TOKEN) return null;
+  try {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/ai/run/${MODEL}`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${CF_AI_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: 150,
+        }),
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = (data as any)?.result?.response?.trim();
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
+// Topics real Pakistani users post about — keeps content varied like a human
+const POST_TOPICS = [
+  'morning routine and chai',
+  'cricket match excitement',
+  'weekend plans with friends',
+  'favorite food craving',
+  'weather and mood',
+  'a motivational thought for the day',
+  'asking followers a fun question',
+  'sharing a small life update',
+  'talking about Frianzo and new friends',
+  'evening walk or city vibes',
+  'a funny observation about daily life',
+  'gratitude and positivity',
+];
+
+const BG_STYLES = ['sunset', 'ocean', 'violet', 'mint', 'peach', 'night', 'rose', 'sky'] as const;
+
+async function generateEngagerPostContent(persona: EngagerPersona): Promise<string | null> {
+  // Avoid repeating recent posts
+  const agent = await prisma.aIAgent.findFirst({ where: { username: persona.username }, select: { userId: true } });
+  let recentTexts: string[] = [];
+  if (agent?.userId) {
+    const recent = await prisma.post.findMany({
+      where: { userId: agent.userId },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: { content: true },
+    });
+    recentTexts = recent.map((p) => p.content?.substring(0, 60)).filter(Boolean) as string[];
+  }
+  const topic = POST_TOPICS[Math.floor(Math.random() * POST_TOPICS.length)];
+  const systemPrompt = `You are ${persona.name} (@${persona.username}), a real Pakistani user on Frianzo. ${persona.personality}. Write in simple Roman Urdu/English mix like a real person posts on social media. Keep it short (1-3 lines), natural, with 1-2 emojis max. Never sound like a bot or ad.`;
+  const avoid = recentTexts.length ? `\nAvoid repeating these recent topics: ${recentTexts.join(' | ')}` : '';
+  const text = await callEngagerAI(systemPrompt, `Write a casual personal post about: ${topic}.${avoid}\nJust the post text, nothing else.`);
+  return text;
+}
+
+// 2-4 random engagers create an original post per cycle (like real active users)
+export async function runEngagerPostCycle() {
+  const agents = await getEngagerAgents();
+  if (agents.length === 0) return;
+  const shuffled = agents.sort(() => Math.random() - 0.5);
+  const posters = shuffled.slice(0, 2 + Math.floor(Math.random() * 3));
+
+  for (const agent of posters) {
+    if (!agent.userId) continue;
+    try {
+      const persona = ENGAGER_PERSONAS.find((p) => p.username === agent.username);
+      if (!persona) continue;
+      // Skip if posted in the last 20 hours (don't spam)
+      const lastPost = await prisma.post.findFirst({
+        where: { userId: agent.userId },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      if (lastPost && Date.now() - lastPost.createdAt.getTime() < 20 * 60 * 60 * 1000) continue;
+
+      const content = await generateEngagerPostContent(persona);
+      if (!content) continue;
+
+      const { createPost } = await import('./postService');
+      const bgStyle = BG_STYLES[Math.floor(Math.random() * BG_STYLES.length)];
+      await createPost(agent.userId, content, undefined, 'public', [], 'everyone', bgStyle, persona.city);
+      console.log(`[ai-engager] @${agent.username} posted: ${content.substring(0, 50)}...`);
+      // Human gap 10-30 min between posters
+      await new Promise((r) => setTimeout(r, 600000 + Math.random() * 1200000));
+    } catch (e: any) {
+      console.error(`[ai-engager] post failed for @${agent.username}:`, e.message?.substring(0, 100));
+    }
+  }
+}
+
+// --- Reel engagement: watch reels like a real user, like + comment sometimes ---
+// User-ordered 2026-10-16: engagers must watch reels and engage with them too.
+export async function runEngagerReelCycle() {
+  const agents = await getEngagerAgents();
+  if (agents.length === 0) return;
+  // Only 3-6 random agents watch reels per cycle
+  const shuffled = agents.sort(() => Math.random() - 0.5);
+  const watchers = shuffled.slice(0, 3 + Math.floor(Math.random() * 4));
+
+  for (const agent of watchers) {
+    if (!agent.userId) continue;
+    try {
+      const reels = await prisma.reel.findMany({
+        where: {
+          userId: { not: agent.userId },
+          user: { accountStatus: 'active' },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { id: true, userId: true, durationSec: true },
+      });
+      const toWatch = reels.sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 3));
+
+      for (const reel of toWatch) {
+        // Record a view with realistic watch time (30-90% of duration)
+        const duration = reel.durationSec || 30;
+        const watchSec = Math.floor(duration * (0.3 + Math.random() * 0.6));
+        try {
+          await prisma.reelView.create({
+            data: { reelId: reel.id, viewerId: agent.userId },
+          });
+        } catch {} // already viewed — fine
+
+        // 50% like, 25% comment (one action like a real viewer)
+        const roll = Math.random();
+        if (roll < 0.5) {
+          const existing = await prisma.reelLike.findFirst({
+            where: { reelId: reel.id, userId: agent.userId },
+          });
+          if (!existing) {
+            await prisma.reelLike.create({ data: { reelId: reel.id, userId: agent.userId } });
+          }
+        } else if (roll < 0.75) {
+          const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: reel.userId } });
+          if (!isAIAuthor) {
+            const template = COMMENT_TEMPLATES[Math.floor(Math.random() * COMMENT_TEMPLATES.length)];
+            const existing = await prisma.reelComment.findFirst({
+              where: { reelId: reel.id, userId: agent.userId },
+            });
+            if (!existing) {
+              await prisma.reelComment.create({
+                data: { reelId: reel.id, userId: agent.userId, content: template },
+              });
+            }
+          }
+        }
+        // Simulate watch time: 5-20 seconds per reel (not full duration, human-like)
+        await new Promise((r) => setTimeout(r, 5000 + Math.random() * 15000));
+      }
+      console.log(`[ai-engager] @${agent.username} watched ${toWatch.length} reels`);
+      await new Promise((r) => setTimeout(r, 300000 + Math.random() * 900000));
+    } catch (e: any) {
+      console.error(`[ai-engager] reel cycle failed for @${agent.username}:`, e.message?.substring(0, 100));
+    }
+  }
+}
 export async function runEngagerCycle() {
   const agents = await getEngagerAgents();
   if (agents.length === 0) return;
