@@ -28,6 +28,33 @@ export async function getActiveAgents(role?: string): Promise<AIAgent[]> {
 export async function generateAIComment(agent: AIAgent, postContent: string, authorName: string): Promise<string | null> {
   if (!CF_ACCOUNT_ID || !CF_AI_TOKEN) return null;
 
+  const lower = postContent.toLowerCase();
+
+  // 25% chance: emoji-only comment (like real humans — especially on pictures).
+  // Emojis match the post mood. (user-ordered 2026-10-16)
+  if (Math.random() < 0.25) {
+    const emojiSets: { pattern: RegExp; emojis: string[] }[] = [
+      { pattern: /mashallah|mubarak|shadi|wedding|birthday|congrat|nikah/, emojis: ['🎉🎊🥳', '👏👏👏', '❤️🎉❤️'] },
+      { pattern: /sad|death|passed away|accident|hospital|sick|dukh|afsoos|rip/, emojis: ['😢🙏', '🤲😢', '💔🙏'] },
+      { pattern: /food|biryani|recipe|khana|pizza|burger/, emojis: ['😋🤤', '👌👌👌', '🔥😋🔥'] },
+      { pattern: /cricket|football|match|game|psl|babar|shaheen/, emojis: ['🔥🔥🔥', '👏👏👏', '🇵🇰🔥'] },
+      { pattern: /travel|trip|tour|naran|murree|mountain/, emojis: ['😍😍😍', '✈️❤️', '🌄😲'] },
+      { pattern: /love|mohabbat|ishq|dil/, emojis: ['🥰🥰🥰', '❤️❤️❤️', '😍❤️😍'] },
+      { pattern: /angry|gussa|zulm|nafrat/, emojis: ['😡😡', '😤😤'] },
+      { pattern: /wow|amazing|unbelievable|hairan/, emojis: ['😲😲😲', '🤯🤯'] },
+      { pattern: /cute|pyara|masoom|baby/, emojis: ['🫠🫠', '🥺❤️', '😘😘'] },
+      { pattern: /funny|haha|mazak|comedy/, emojis: ['😂😂😂', '🤣🤣'] },
+    ];
+    for (const set of emojiSets) {
+      if (set.pattern.test(lower)) {
+        return set.emojis[Math.floor(Math.random() * set.emojis.length)];
+      }
+    }
+    // Default: generic positive emojis
+    const defaults = ['❤️❤️', '👌👌', '🔥🔥', '😍', '👏'];
+    return defaults[Math.floor(Math.random() * defaults.length)];
+  }
+
   const systemPrompt = `${agent.systemPrompt}
 
 Rules for comments:
@@ -46,7 +73,6 @@ Rules for comments:
 - Vary length: funny posts = very short, emotional posts = slightly longer`;
 
 
-  const lower = postContent.toLowerCase();
   let hint = '';
   if (/mashallah|mubarak|shadi|wedding|birthday|congrat/.test(lower)) hint = 'Celebration! Congratulate warmly.';
   else if (/sad|death|passed away|accident|hospital|sick|dukh|afsoos/.test(lower)) hint = 'Sad/serious post. Be respectful and comforting. No jokes.';
