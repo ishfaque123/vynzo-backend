@@ -7,7 +7,7 @@ import { cleanupExpiredStatuses } from './services/statusService';
 import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
-import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS } from './services/aiPosterService';
+import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
 import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
 
 async function start() {
@@ -71,6 +71,17 @@ async function start() {
     // Small delay so startup isn't blocked, then every 4 hours
     setTimeout(runPoster, 2 * 60 * 1000);
     setInterval(runPoster, POSTER_CYCLE_MS);
+
+    // AI agents like posts too (like real active users)
+    async function runLikes() {
+      try {
+        await runLikeCycle();
+      } catch (err) {
+        console.error('AI like cycle failed:', err);
+      }
+    }
+    setTimeout(runLikes, 10 * 60 * 1000);
+    setInterval(runLikes, LIKE_CYCLE_MS);
 
     // AI outreach accounts: one-time friendly follow invite per user, daily
     async function runOutreach() {

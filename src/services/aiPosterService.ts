@@ -359,3 +359,67 @@ export async function runPosterCycle() {
 }
 
 export { POSTER_CYCLE_MS };
+
+const LIKE_CYCLE_MS = 6 * 60 * 60 * 1000; // every 6 hours
+const LIKES_PER_CYCLE = 4; // likes per agent per cycle (~16/day)
+
+/**
+ * AI agents like recent posts (like real active users do).
+ * Targets: recent posts from real users + other AI accounts.
+ * Skips: own posts, already-liked posts.
+ */
+export async function runLikeCycle() {
+  const agents = await getPosterAgents();
+  if (!agents.length) return;
+
+  // Also include outreach agents as likers
+  try {
+    const outreach = await prisma.aIAgent.findMany({
+      where: { isActive: true, personality: { contains: '[ROLE: outreach]' }, userId: { not: null } },
+      select: { userId: true, username: true },
+    });
+    for (const o of outreach) {
+      if (o.userId && !agents.some((a) => a.userId === o.userId)) {
+        agents.push({ id: o.userId, name: o.username, username: o.username, userId: o.userId, personality: '', systemPrompt: '' });
+      }
+    }
+  } catch {}
+
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  for (const agent of agents) {
+    try {
+      // Recent posts not by this agent, not already liked
+      const candidates = await prisma.post.findMany({
+        where: {
+          userId: { not: agent.userId },
+          createdAt: { gte: dayAgo },
+          visibility: 'public',
+          likes: { none: { userId: agent.userId } },
+        },
+        select: { id: true },
+        take: 50,
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!candidates.length) continue;
+
+      // Pick random subset
+      const shuffled = candidates.sort(() => Math.random() - 0.5);
+      const toLike = shuffled.slice(0, LIKES_PER_CYCLE);
+
+      const { setReaction } = await import('./likeService');
+      let liked = 0;
+      for (const p of toLike) {
+        try {
+          await setReaction(agent.userId, p.id, 'like');
+          liked++;
+        } catch {}
+      }
+      if (liked > 0) console.log(`[ai-poster] @${agent.username} liked ${liked} post(s)`);
+    } catch (err) {
+      console.error(`[ai-poster] like cycle failed for @${agent.username}:`, (err as Error).message?.substring(0, 100));
+    }
+  }
+}
+
+export { LIKE_CYCLE_MS };
