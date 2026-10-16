@@ -16,10 +16,11 @@ const MODEL = '@cf/meta/llama-3.1-8b-instruct';
 
 // Fast local pre-check: obvious spam / slur patterns (any language), so we
 // don't burn AI quota on the obvious stuff. Llama Guard handles the rest.
+// NOTE (user-ordered 2026-10-16): in comments, ONLY links count as spam —
+// normal text is NEVER spam, no matter the words.
 const BLOCKED_PATTERNS: RegExp[] = [
-  // spam links / promos
+  // spam links (Frianzo's own links are stripped before this check)
   /https?:\/\/\S+/i,
-  /\b(free money|earn money|click here|buy followers|viagra|casino|betting)\b/i,
   // severe profanity (EN + Roman Urdu) — mild words like idiot/stupid are ALLOWED
   /\b(fuck|motherfucker|bitch|asshole|bastard|slut|whore|dick|pussy|cunt)\b/i,
   /\b(bhenchod|behenchod|madarchod|chutiya|gandu|harami)\b/i,
@@ -39,7 +40,7 @@ function localCheck(content: string): string | null {
     if (re.test(contentWithoutOwnLinks)) {
       const m = contentWithoutOwnLinks.match(re);
       const hit = (m?.[0] ?? '').toLowerCase();
-      if (/https?:\/\//i.test(hit) || /free money|earn money|click here|buy followers|viagra|casino|betting/i.test(hit)) {
+      if (/https?:\/\//i.test(hit)) {
         return 'spam or promotional links';
       }
       return 'abusive language';
@@ -66,13 +67,14 @@ async function aiCheck(content: string): Promise<ToxicityResult> {
             { role: 'system', content:
                 'You are a content moderator for a social media app (like Facebook/Instagram). Classify the user comment as VIOLATION or OK. ' +
                 'Mark VIOLATION ONLY for CLEAR cases of: severe profanity/swear words, slurs, hate speech (targeting race/religion/gender), sexual/explicit language, ' +
-                'threats of violence, harassment/bullying, spam/scam links. ' +
+                'threats of violence, harassment/bullying. ' +
+                'NEVER mark a comment as spam for its TEXT — only links/URLs count as spam, and those are handled separately. Normal text comments are NEVER spam. ' +
                 'When in doubt, mark OK — do NOT flag borderline or mild content. ' +
                 'Links to frianzo.online (our own site) and play.google.com/store/apps/details?id=com.frianzo.app are ALWAYS OK, never a violation. ' +
                 'Mark OK for: mild words like idiot/stupid/dumb, disagreements, criticism, sarcasm, normal conversation, emojis, short reactions like "nice", "wow", "haha". ' +
                 'Reply with OK if fine, or VIOLATION followed by a 2-4 word reason and severity, like "VIOLATION: profanity | SEVERITY: medium". ' +
                 'Severity guide: critical = threats of violence, child-safety issues, violent extremism; ' +
-                'high = hate speech, explicit sexual content; medium = severe profanity, harassment/bullying, spam/scam; low = mild/borderline (will be ignored). ' +
+                'high = hate speech, explicit sexual content; medium = severe profanity, harassment/bullying; low = mild/borderline (will be ignored). ' +
                 'Reply with ONLY that, nothing else.' },
             { role: 'user', content: content.slice(0, 500) },
           ],
@@ -346,6 +348,13 @@ export async function moderateChatMessage(messageId: string): Promise<void> {
 
     const { toxic, reason, severity } = await checkCommentToxicity(msg.content);
     if (!toxic) return;
+
+    // Low severity (mild/borderline, incl. emojis): no action — too many false positives
+    // (user-ordered 2026-10-16: emojis should never be spam in Messenger)
+    if (severity === 'low') {
+      console.log(`[moderation] low-severity chat message ${messageId} ignored (no action)`);
+      return;
+    }
     const sev: Severity = severity || 'medium';
 
     await ensureRestrictColumn();
