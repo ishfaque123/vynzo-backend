@@ -384,6 +384,30 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       if (Math.abs(a.score - b.score) > 0.01) return b.score - a.score;
       return new Date(b.reel.createdAt).getTime() - new Date(a.reel.createdAt).getTime();
     });
+
+    // NEW REEL DISCOVERY (user-ordered 2026-10-17): guarantee fresh reels surface.
+    // Without this, old viral reels (affinity 50 + following 20 + engagement 20 = 90pts)
+    // bury brand-new reels (recency 15 max). Like the post feed's exploration slot,
+    // ensure at least 3 fresh (<6h) reels appear in the top 10 so new creators get growth.
+    if (safeOffset === 0) {
+      const nowMs = Date.now();
+      const isFresh = (s: typeof scored[number]) =>
+        (nowMs - new Date(s.reel.createdAt).getTime()) / 3600000 < 6;
+      const freshInTop10 = scored.slice(0, 10).filter(isFresh).length;
+      const need = Math.max(0, 3 - freshInTop10);
+      if (need > 0) {
+        const picked: typeof scored = [];
+        const rest = scored.filter((x, i) => {
+          if (i >= 10 && isFresh(x) && picked.length < need) { picked.push(x); return false; }
+          return true;
+        });
+        // Insert fresh reels at positions 2, 5, 8 (spread through the feed)
+        const positions = [1, 4, 7];
+        picked.forEach((item, k) => rest.splice(positions[k] ?? 9, 0, item));
+        scored.length = 0;
+        scored.push(...rest);
+      }
+    }
   }
 
   // Apply pagination on ranked results
