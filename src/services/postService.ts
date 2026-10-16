@@ -127,26 +127,29 @@ const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, cityMatch: 70
  * Returns reelRatio 0..1 (0.5 = neutral, used for new users with no history).
  */
 export async function getContentMix(userId: string) {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const [[reelWatch], reelLikes, reelComments, [postWatch], postLikes, postComments] = await Promise.all([
-    prisma.$queryRawUnsafe<Array<{ total: number }>>(
-      `SELECT COALESCE(SUM(watch_sec), 0) AS total FROM reel_views WHERE viewer_id = ? AND created_at >= ?`,
-      userId, sevenDaysAgo
-    ).catch(() => [{ total: 0 }]),
-    prisma.reelLike.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
-    prisma.reelComment.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
-    prisma.$queryRawUnsafe<Array<{ total: number }>>(
-      `SELECT COALESCE(SUM(watch_sec), 0) AS total FROM post_views WHERE viewer_id = ? AND created_at >= ?`,
-      userId, sevenDaysAgo
-    ).catch(() => [{ total: 0 }]),
-    prisma.like.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
-    prisma.comment.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
-  ]);
-  const reelScore = Number(reelWatch?.total || 0) + reelLikes * 20 + reelComments * 30;
-  const postScore = Number(postWatch?.total || 0) + postLikes * 20 + postComments * 30;
-  const total = reelScore + postScore;
-  const reelRatio = total > 0 ? reelScore / total : 0.5;
-  return { reelRatio: Math.round(Math.min(Math.max(reelRatio, 0), 1) * 100) / 100 };
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 3600000);
+  try {
+    const [reelWatch, postWatch, reelLikes, postLikes] = await Promise.all([
+      prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
+        `SELECT COALESCE(SUM(watch_sec), 0) as total FROM reel_views WHERE viewer_id = ? AND created_at >= ?`,
+        userId, sevenDaysAgo
+      ).catch(() => [{ total: BigInt(0) }]),
+      prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
+        `SELECT COALESCE(SUM(watch_sec), 0) as total FROM post_views WHERE viewer_id = ? AND created_at >= ?`,
+        userId, sevenDaysAgo
+      ).catch(() => [{ total: BigInt(0) }]),
+      prisma.reelLike.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
+      prisma.like.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
+    ]);
+    const reelScore = Number(reelWatch[0]?.total || 0) + reelLikes * 30;
+    const postScore = Number(postWatch[0]?.total || 0) + postLikes * 30;
+    const total = reelScore + postScore;
+    const reelRatio = total > 0 ? reelScore / total : 0.5;
+    // Clamp between 0.2 and 0.8 so neither type disappears entirely
+    return { reelRatio: Math.min(0.8, Math.max(0.2, reelRatio)) };
+  } catch {
+    return { reelRatio: 0.5 };
+  }
 }
 
 export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
@@ -276,6 +279,41 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
       scored.length = 0;
       scored.push(...rest);
     }
+
+    // OWN NEW POST FIRST (user-ordered 2026-10-17): when you create a post,
+    // you see it at the very top the 1st time. After you've seen it (reload),
+    // normal ranking applies. Only for posts <1h old.
+    if (currentUserId) {
+      const ownFreshUnseen = scored.filter((x) => {
+        return x.post.userId === currentUserId && x.hoursOld < 1 && !seenPostIds.has(x.post.id);
+      });
+      if (ownFreshUnseen.length > 0) {
+        ownFreshUnseen.sort((a, b) => a.hoursOld - b.hoursOld);
+        const top = ownFreshUnseen[0];
+        const idx = scored.indexOf(top);
+        if (idx > 0) {
+          scored.splice(idx, 1);
+          scored.unshift(top);
+        }
+      }
+    }
+
+    // ANTI-BOREDOM DIVERSITY (user-ordered 2026-10-17): never show 2 posts
+    // from the same author back-to-back on the first page.
+    const diversified: typeof scored = [];
+    const remaining = [...scored];
+    while (remaining.length > 0) {
+      let pickIdx = 0;
+      if (diversified.length > 0) {
+        const lastAuthor = diversified[diversified.length - 1].post.userId;
+        pickIdx = remaining.findIndex((x) => x.post.userId !== lastAuthor);
+        if (pickIdx === -1) pickIdx = 0;
+      }
+      diversified.push(remaining[pickIdx]);
+      remaining.splice(pickIdx, 1);
+    }
+    scored.length = 0;
+    scored.push(...diversified);
   }
   const pageSlice = scored.slice(safeOffset, safeOffset + safeLimit).map((s) => s.post);
   const hasMore = scored.length > safeOffset + safeLimit;

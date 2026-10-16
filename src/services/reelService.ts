@@ -324,9 +324,27 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
 
   // Score each reel
   const now = Date.now();
+
+  // SKIP DETECTION (user-ordered 2026-10-17): if the user's last view was a
+  // skip (watched <3s or <30% without completing), the next feed should
+  // prioritize FRESH reels — the user is bored, show them something new.
+  let lastWasSkip = false;
+  if (viewHistory.length > 0) {
+    const last = viewHistory[0];
+    const wsec = Number(last.watch_sec) || 0;
+    const completed = Number(last.completed) === 1;
+    if (!completed && wsec < 3) lastWasSkip = true;
+  }
+
   const scored = reels.map((r) => {
     let score = 0;
     const isMine = r.userId === currentUserId;
+    const ageHours = (now - new Date(r.createdAt).getTime()) / (1000 * 60 * 60);
+
+    // SKIP BOOST: after a skip, fresh (<6h) unseen reels get +30 to surface immediately
+    if (lastWasSkip && ageHours < 6 && !viewedReelIds.includes(r.id)) {
+      score += 30;
+    }
 
     // 1. Creator affinity (0-50 points) - STRONG: watch a lot = see a lot more
     const affinity = affinityScores.get(r.userId) || 0;
@@ -343,7 +361,6 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     score += Math.min(engagement * 5, 20);
 
     // 4. Recency (0-15 points, decays over 7 days)
-    const ageHours = (now - new Date(r.createdAt).getTime()) / (1000 * 60 * 60);
     const recency = Math.max(0, 1 - ageHours / 168); // 168h = 7 days
     score += recency * 15;
 
@@ -407,6 +424,53 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
         scored.length = 0;
         scored.push(...rest);
       }
+
+      // OWN NEW REEL FIRST (user-ordered 2026-10-17): when you upload a reel,
+      // you see it at the very top the 1st time. After you've viewed it (reload),
+      // normal ranking applies. Only for reels <1h old.
+      const ownFreshUnviewed = scored.filter((x) => {
+        const ageH = (nowMs - new Date(x.reel.createdAt).getTime()) / 3600000;
+        return x.reel.userId === currentUserId && ageH < 1 && !viewedReelIds.includes(x.reel.id);
+      });
+      if (ownFreshUnviewed.length > 0) {
+        // Freshest first
+        ownFreshUnviewed.sort((a, b) => new Date(b.reel.createdAt).getTime() - new Date(a.reel.createdAt).getTime());
+        const top = ownFreshUnviewed[0];
+        const idx = scored.indexOf(top);
+        if (idx > 0) {
+          scored.splice(idx, 1);
+          scored.unshift(top);
+        }
+      }
+
+      // ANTI-BOREDOM DIVERSITY (user-ordered 2026-10-17): never show 2 reels
+      // from the same creator back-to-back, and avoid 3 same-category reels
+      // in a row. Keeps the feed feeling fresh like TikTok/IG.
+      const diversified: typeof scored = [];
+      const remaining = [...scored];
+      while (remaining.length > 0) {
+        // Find the highest-ranked reel that doesn't repeat the last creator
+        let pickIdx = 0;
+        if (diversified.length > 0) {
+          const lastCreator = diversified[diversified.length - 1].reel.userId;
+          const lastCat = (diversified[diversified.length - 1].reel as any).category;
+          const secondLastCat = diversified.length > 1
+            ? (diversified[diversified.length - 2].reel as any).category
+            : null;
+          pickIdx = remaining.findIndex((x) => {
+            if (x.reel.userId === lastCreator) return false;
+            // Avoid 3rd same-category in a row
+            const cat = (x.reel as any).category;
+            if (cat && cat === lastCat && cat === secondLastCat) return false;
+            return true;
+          });
+          if (pickIdx === -1) pickIdx = 0; // all remaining are same creator — take best
+        }
+        diversified.push(remaining[pickIdx]);
+        remaining.splice(pickIdx, 1);
+      }
+      scored.length = 0;
+      scored.push(...diversified);
     }
   }
 
