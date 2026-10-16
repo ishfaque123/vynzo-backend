@@ -40,6 +40,68 @@ export async function getMyReferralInfo(userId: string) {
   return { count, referralLink };
 }
 
+export type LeaderboardCategory = 'followers' | 'likers' | 'commenters' | 'referrers';
+
+export async function getLeaderboard(category: LeaderboardCategory, limit = 10) {
+  const safeLimit = Math.min(Math.max(Math.floor(limit) || 10, 1), 50);
+  const counts = new Map<string, number>();
+  const add = (id: string, n: number) => counts.set(id, (counts.get(id) ?? 0) + n);
+
+  if (category === 'followers') {
+    const rows = await prisma.follow.groupBy({
+      by: ['followingId'],
+      _count: { followingId: true },
+      orderBy: { _count: { followingId: 'desc' } },
+      take: safeLimit,
+    });
+    rows.forEach((r) => add(r.followingId, r._count.followingId));
+  } else if (category === 'likers') {
+    const [postLikes, reelLikes] = await Promise.all([
+      prisma.like.groupBy({ by: ['userId'], _count: { userId: true }, orderBy: { _count: { userId: 'desc' } }, take: safeLimit }),
+      prisma.reelLike.groupBy({ by: ['userId'], _count: { userId: true }, orderBy: { _count: { userId: 'desc' } }, take: safeLimit }),
+    ]);
+    postLikes.forEach((r) => add(r.userId, r._count.userId));
+    reelLikes.forEach((r) => add(r.userId, r._count.userId));
+  } else if (category === 'commenters') {
+    const [comments, reelComments] = await Promise.all([
+      prisma.comment.groupBy({ by: ['userId'], _count: { userId: true }, orderBy: { _count: { userId: 'desc' } }, take: safeLimit }),
+      prisma.reelComment.groupBy({ by: ['userId'], _count: { userId: true }, orderBy: { _count: { userId: 'desc' } }, take: safeLimit }),
+    ]);
+    comments.forEach((r) => add(r.userId, r._count.userId));
+    reelComments.forEach((r) => add(r.userId, r._count.userId));
+  } else {
+    const rows = await prisma.referral.groupBy({
+      by: ['referrerId'],
+      _count: { referrerId: true },
+      orderBy: { _count: { referrerId: 'desc' } },
+      take: safeLimit,
+    });
+    rows.forEach((r) => add(r.referrerId, r._count.referrerId));
+  }
+
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, safeLimit);
+  if (ranked.length === 0) return [];
+  const users = await prisma.user.findMany({
+    where: { id: { in: ranked.map(([id]) => id) } },
+    select: { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true },
+  });
+  const byId = new Map(users.map((u) => [u.id, u]));
+  return ranked
+    .map(([id, count], i) => {
+      const u = byId.get(id);
+      if (!u?.username) return null;
+      return {
+        rank: i + 1,
+        username: u.username,
+        displayName: u.displayName,
+        avatar: u.profilePictureUrl,
+        isVerified: u.isVerified,
+        count,
+      };
+    })
+    .filter((e): e is NonNullable<typeof e> => e !== null);
+}
+
 export async function claimReferral(
   referredUserId: string,
   rawInstallReferrer: string,

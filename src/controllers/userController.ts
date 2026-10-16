@@ -7,7 +7,7 @@ import { reportUser } from '../services/userReportService';
 import { prisma } from '../config/prisma';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
-import { claimReferral, getMyReferralInfo } from '../services/referralService';
+import { claimReferral, getMyReferralInfo, getLeaderboard, LeaderboardCategory } from '../services/referralService';
 import { getDashboardStats } from '../services/dashboardService';
 
 export async function getMyProfile(req: Request, res: Response, next: NextFunction) {
@@ -68,6 +68,19 @@ export async function claimMyReferral(req: Request, res: Response, next: NextFun
     const deviceFingerprint = typeof req.body?.deviceFingerprint === 'string' ? req.body.deviceFingerprint : '';
     const data = await claimReferral(req.user!.id, rawInstallReferrer, deviceFingerprint);
     sendSuccess(res, data);
+  } catch (err) { next(err); }
+}
+
+export async function getReferralLeaderboardHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const limit = parseInt(req.query.limit as string, 10);
+    const rawCategory = (req.query.category as string) || 'referrers';
+    const valid: LeaderboardCategory[] = ['followers', 'likers', 'commenters', 'referrers'];
+    const category: LeaderboardCategory = valid.includes(rawCategory as LeaderboardCategory)
+      ? (rawCategory as LeaderboardCategory)
+      : 'referrers';
+    const data = await getLeaderboard(category, Number.isFinite(limit) ? limit : 10);
+    sendSuccess(res, { leaderboard: data, category });
   } catch (err) { next(err); }
 }
 
