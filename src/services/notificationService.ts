@@ -188,6 +188,7 @@ const PUSH_TEXT: Record<string, (name: string, others: number, reaction?: string
   post_removed: (n, o, r) => `Your post was removed${r ? ` for ${r}` : ''}`,
   reel_removed: (n, o, r) => `Your reel was removed${r ? ` for ${r}` : ''}`,
   messaging_restricted: (n, o, r) => `Messaging restricted${r ? `: ${r}` : ''}`,
+  viral_post: (n) => `🔥 ${n}'s post is going viral!`,
 };
 
 // Several people doing the same thing to the same target are merged into
@@ -204,6 +205,7 @@ function prefCategoryFor(type: string): string | null {
   if (type === 'follow') return 'follows';
   if (type === 'comment_mention') return 'mentions';
   if (type === 'post_share') return 'shares';
+  if (type === 'viral_post') return 'viral';
   return null; // system/security types always send
 }
 
@@ -223,13 +225,13 @@ export async function getPreferences(userId: string) {
   const map: Record<string, boolean> = {};
   for (const p of prefs) map[p.category] = !!p.enabled;
   // Return all categories with defaults
-  const categories = ['likes', 'comments', 'follows', 'mentions', 'shares'];
+  const categories = ['likes', 'comments', 'follows', 'mentions', 'shares', 'viral'];
   return categories.map((c) => ({ category: c, enabled: map[c] !== undefined ? map[c] : true }));
 }
 
 export async function setPreference(userId: string, category: string, enabled: boolean) {
   await ensurePrefsTable();
-  const valid = ['likes', 'comments', 'follows', 'mentions', 'shares'];
+  const valid = ['likes', 'comments', 'follows', 'mentions', 'shares', 'viral'];
   if (!valid.includes(category)) throw new Error('INVALID_CATEGORY');
   return (prisma as any).notificationPreference.upsert({
     where: { userId_category: { userId, category } },

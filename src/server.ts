@@ -6,6 +6,7 @@ import { initSocketServer } from './socket/socketServer';
 import { cleanupExpiredStatuses } from './services/statusService';
 import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
+import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 
 async function start() {
   try {
@@ -14,6 +15,9 @@ async function start() {
 
     // Ensure moderation tables/columns exist (safe, idempotent)
     await ensureModerationSchema();
+
+    // Ensure viral_post notification type exists (safe, idempotent)
+    await ensureViralPostSchema();
 
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);
@@ -33,6 +37,17 @@ async function start() {
     }
     runStatusCleanup();
     setInterval(runStatusCleanup, STATUS_CLEANUP_INTERVAL_MS);
+
+    const VIRAL_CHECK_INTERVAL_MS = 15 * 60 * 1000; // every 15 minutes
+    async function runViralCheck() {
+      try {
+        await checkViralPosts();
+      } catch (err) {
+        console.error('Viral post check failed:', err);
+      }
+    }
+    runViralCheck();
+    setInterval(runViralCheck, VIRAL_CHECK_INTERVAL_MS);
 
     const MESSAGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
     async function runMessageCleanup() {

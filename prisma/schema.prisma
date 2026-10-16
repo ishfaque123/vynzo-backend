@@ -70,6 +70,7 @@ enum NotificationType {
   post_removed
   reel_removed
   messaging_restricted
+  viral_post
 }
 
 enum VerificationRequestStatus {
