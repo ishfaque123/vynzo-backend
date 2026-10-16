@@ -215,7 +215,7 @@ async function callCloudflareAI(systemPrompt: string, userPrompt: string): Promi
  */
 export async function generatePosterContent(agent: PosterAgent): Promise<{ content: string; taggedUserIds: string[] } | null> {
   try {
-    // Fetch recent posts to avoid repetition
+    // Fetch this agent's recent posts to avoid self-repetition
     const recent = await prisma.post.findMany({
       where: { userId: agent.userId },
       orderBy: { createdAt: 'desc' },
@@ -224,13 +224,37 @@ export async function generatePosterContent(agent: PosterAgent): Promise<{ conte
     });
     const recentTexts = recent.map((p) => p.content?.substring(0, 80)).filter(Boolean);
 
+    // Fetch OTHER AI accounts' recent posts to avoid cross-account duplication
+    // (user-ordered: every account must post on different topics)
+    const aiUserIds = (
+      await prisma.aIAgent.findMany({
+        where: { isActive: true, userId: { not: null } },
+        select: { userId: true },
+      })
+    ).map((a) => a.userId!) as string[];
+    const othersRecent = await prisma.post.findMany({
+      where: {
+        userId: { in: aiUserIds.filter((id) => id !== agent.userId) },
+        createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 15,
+      select: { content: true },
+    });
+    const othersTexts = othersRecent.map((p) => p.content?.substring(0, 80)).filter(Boolean);
+
+    const avoidSelf = recentTexts.length
+      ? `\nDo NOT repeat or closely resemble YOUR recent posts:\n${recentTexts.map((t) => `- ${t}`).join('\n')}`
+      : '';
+    const avoidOthers = othersTexts.length
+      ? `\nDo NOT post about the same topic as these OTHER users' recent posts (everyone must cover DIFFERENT topics):\n${othersTexts.map((t) => `- ${t}`).join('\n')}`
+      : '';
+
     const persona = POSTER_PERSONAS.find((p) => p.username === agent.username);
     const topicPool = persona?.topics ?? [];
     const topic = topicPool[Math.floor(Math.random() * topicPool.length)] ?? 'daily life';
 
-    const avoid = recentTexts.length
-      ? `\nDo NOT repeat or closely resemble these recent posts:\n${recentTexts.map((t) => `- ${t}`).join('\n')}`
-      : '';
+    const avoid = `${avoidSelf}${avoidOthers}`;
 
     // 30% chance: mention another AI account naturally (like real friends do)
     let mentionInstruction = '';
