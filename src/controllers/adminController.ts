@@ -859,8 +859,21 @@ export async function adminUploadReel(req: Request, res: Response, next: NextFun
     });
     if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
 
-    const { uploadToR2 } = await import('../config/r2');
-    const videoUrl = await uploadToR2(req.file.buffer, req.file.mimetype || 'video/mp4', 'reels');
+    const { uploadToR2, uploadStreamToR2 } = await import('../config/r2');
+    let videoUrl: string;
+    if (req.file.buffer) {
+      videoUrl = await uploadToR2(req.file.buffer, req.file.mimetype || 'video/mp4', 'reels');
+    } else if (req.file.path) {
+      // Disk storage (reelUpload middleware): stream from temp file
+      const { createReadStream } = await import('fs');
+      const ext = (req.file.originalname.split('.').pop() || 'mp4').toLowerCase();
+      videoUrl = await uploadStreamToR2(createReadStream(req.file.path), req.file.mimetype || 'video/mp4', 'reels', ext);
+      // Clean up temp file
+      const { unlink } = await import('fs/promises');
+      await unlink(req.file.path).catch(() => {});
+    } else {
+      throw new ApiError(400, 'NO_VIDEO_DATA', 'Could not read video file.');
+    }
 
     const reel = await prisma.reel.create({
       data: {

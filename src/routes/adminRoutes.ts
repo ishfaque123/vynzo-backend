@@ -25,6 +25,7 @@ import {
   adminUploadReel,
 } from '../controllers/adminController';
 import { upload } from '../middleware/upload';
+import { reelUpload } from '../middleware/reelUpload';
 
 const router = Router();
 
@@ -50,6 +51,6 @@ router.delete('/messages/clear-all', clearAllAdminMessages);
 router.get('/seo-settings', getAdminSeoSettings);
 router.put('/seo-settings', updateAdminSeoSettings);
 router.post('/users/avatar', upload.single('image'), setAdminUserAvatar);
-router.post('/reels/upload', upload.single('video'), adminUploadReel);
+router.post('/reels/upload', reelUpload.single('video'), adminUploadReel);
 
 export default router;
