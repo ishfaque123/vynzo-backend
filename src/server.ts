@@ -8,6 +8,7 @@ import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS } from './services/aiPosterService';
+import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS } from './services/aiOutreachService';
 
 async function start() {
   try {
@@ -22,6 +23,9 @@ async function start() {
 
     // Seed the 10 AI poster accounts (safe, idempotent)
     await seedPosterAgents();
+
+    // Seed the 4 AI outreach accounts (safe, idempotent)
+    await seedOutreachAgents();
 
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);
@@ -64,6 +68,17 @@ async function start() {
     // Small delay so startup isn't blocked, then every 4 hours
     setTimeout(runPoster, 2 * 60 * 1000);
     setInterval(runPoster, POSTER_CYCLE_MS);
+
+    // AI outreach accounts: one-time friendly follow invite per user, daily
+    async function runOutreach() {
+      try {
+        await runOutreachCycle();
+      } catch (err) {
+        console.error('AI outreach cycle failed:', err);
+      }
+    }
+    setTimeout(runOutreach, 5 * 60 * 1000);
+    setInterval(runOutreach, OUTREACH_CYCLE_MS);
 
     const MESSAGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
     async function runMessageCleanup() {

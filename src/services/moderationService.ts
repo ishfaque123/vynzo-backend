@@ -31,7 +31,9 @@ const BLOCKED_PATTERNS: RegExp[] = [
 
 function localCheck(content: string): string | null {
   // Frianzo's own links are NEVER spam — strip them before checking.
-  const OWN_LINK_RE = /https?:\/\/(www\.)?frianzo\.online[^\s]*/gi;
+  // Allowed: frianzo.online (site + user post/reel links), and the official
+  // Frianzo Play Store app link. All other external links are spam.
+  const OWN_LINK_RE = /https?:\/\/(www\.)?frianzo\.online[^\s]*|https?:\/\/play\.google\.com\/store\/apps\/details\?id=com\.frianzo\.app[^\s]*/gi;
   const contentWithoutOwnLinks = content.replace(OWN_LINK_RE, '');
   for (const re of BLOCKED_PATTERNS) {
     if (re.test(contentWithoutOwnLinks)) {

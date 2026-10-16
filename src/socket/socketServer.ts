@@ -235,10 +235,13 @@ export function initSocketServer(httpServer: HttpServer) {
         // Count links the sender shared in the last 10 minutes.
         // Frianzo's own links are NEVER spam — only external links count.
         const URL_RE = /https?:\/\/[^\s]+|www\.[^\s]+/gi;
+        // Frianzo's own links are NEVER spam: frianzo.online (site + user
+        // post/reel links) and the official Play Store app link.
         const OWN_DOMAINS = ['frianzo.online', 'www.frianzo.online'];
+        const OWN_APP_LINK = 'play.google.com/store/apps/details?id=com.frianzo.app';
         const isOwnLink = (url: string) => {
           const lower = url.toLowerCase();
-          return OWN_DOMAINS.some((d) => lower.includes(d));
+          return OWN_DOMAINS.some((d) => lower.includes(d)) || lower.includes(OWN_APP_LINK);
         };
         const externalLinksIn = (text: string) => {
           const all = (text || '').match(URL_RE) || [];
