@@ -21,10 +21,12 @@ import {
   reportReelHandler,
   recordReelViewHandler,
   downloadReelHandler,
+  detectCategoryHandler,
 } from '../controllers/reelController';
 
 const router = Router();
 router.get('/config', getReelsConfigHandler);
+router.post('/detect-category', authMiddleware, detectCategoryHandler);
 router.get('/', authMiddleware, getReelFeedHandler);
 router.get('/me/status', authMiddleware, getMyReelStatusHandler);
 router.get('/me/favorites', authMiddleware, getMyFavoriteReelsHandler);

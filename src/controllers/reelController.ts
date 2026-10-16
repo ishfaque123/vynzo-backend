@@ -14,8 +14,23 @@ import { env } from '../config/env';
 import { createWatermarkedReelDownload } from '../services/reelDownloadService';
 import { createTrimmedReel } from '../services/reelTrimService';
 import { extractVideoFrameToR2 } from '../services/videoThumbnailService';
+import { detectVideoCategory, REEL_CATEGORIES } from '../services/videoCategoryService';
 
 export async function getReelsConfigHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await getReelsConfig()); } catch (err) { next(err); } }
+
+// AI auto-detects reel category from video frames (user-ordered 2026-10-16:
+// manual category picker removed, AI watches the video instead)
+const detectCategorySchema = z.object({
+  frames: z.array(z.string().max(500000)).min(1).max(3),
+  caption: z.string().max(500).optional(),
+});
+export async function detectCategoryHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { frames, caption } = detectCategorySchema.parse(req.body);
+    const category = await detectVideoCategory(frames, caption);
+    sendSuccess(res, { category, categories: REEL_CATEGORIES });
+  } catch (err) { next(err); }
+}
 const createReelSchema = z.object({ caption: z.string().max(500).optional(), category: z.string().max(50).optional(), durationSec: z.coerce.number().int().positive(), trimStartSec: z.coerce.number().min(0).optional(), trimEndSec: z.coerce.number().positive().optional(), filter: z.enum(['normal', 'warm', 'cool', 'bw', 'vintage', 'vivid', 'beauty']).optional(), textOverlay: z.string().max(100).optional(), textPosition: z.enum(['top', 'middle', 'bottom']).optional(), speed: z.enum(['0.5', '1', '1.5', '2']).optional(), letterbox: z.string().optional(), flip: z.string().optional(), rotate: z.string().optional(), crop: z.enum(['square', 'portrait']).optional() });
 export async function createReelHandler(req: Request, res: Response, next: NextFunction) {
   try {
