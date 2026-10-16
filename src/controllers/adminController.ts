@@ -816,3 +816,32 @@ export async function clearAdminUserStrikes(req: Request, res: Response, next: N
     next(err);
   }
 }
+
+export async function setAdminUserAvatar(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { username, bio, city } = req.body;
+    if (!username) throw new ApiError(400, 'NO_USERNAME', 'Username is required.');
+    const target = await prisma.user.findFirst({
+      where: { username: String(username).toLowerCase() },
+      select: { id: true, username: true },
+    });
+    if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+    const data: any = {};
+    if (req.file) {
+      const { uploadToR2 } = await import('../config/r2');
+      data.profilePictureUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'avatars');
+    }
+    if (bio !== undefined) data.bio = String(bio).substring(0, 300);
+    if (city !== undefined) data.city = String(city).substring(0, 100);
+
+    const updated = await prisma.user.update({
+      where: { id: target.id },
+      data,
+      select: { id: true, username: true, profilePictureUrl: true, bio: true, city: true },
+    });
+    sendSuccess(res, { updated });
+  } catch (err) {
+    next(err);
+  }
+}
