@@ -214,8 +214,9 @@ export async function runOutreachCycle() {
 export { OUTREACH_CYCLE_MS };
 
 /**
- * Makes the official @frianzo account follow all AI agent accounts
- * (posters, commenters, outreach). Idempotent — safe to run every boot.
+ * Makes the official @frianzo account follow all AI agent accounts,
+ * AND makes all AI accounts follow each other (full mesh).
+ * Idempotent — safe to run every boot.
  */
 export async function seedOfficialFollows() {
   try {
@@ -223,27 +224,41 @@ export async function seedOfficialFollows() {
       where: { username: 'frianzo' },
       select: { id: true },
     });
-    if (!official) {
-      console.log('[ai-outreach] @frianzo not found, skipping official follows');
-      return;
-    }
     const agents = await prisma.aIAgent.findMany({
       where: { isActive: true, userId: { not: null } },
       select: { userId: true, username: true },
     });
-    let followed = 0;
-    for (const a of agents) {
-      if (!a.userId || a.userId === official.id) continue;
-      const existing = await prisma.follow.findUnique({
-        where: { followerId_followingId: { followerId: official.id, followingId: a.userId } },
-      });
-      if (existing) continue;
-      await prisma.follow.create({
-        data: { followerId: official.id, followingId: a.userId },
-      });
-      followed++;
+    const aiUserIds = agents.map((a) => a.userId!).filter(Boolean);
+
+    // 1. @frianzo follows all AI accounts
+    if (official) {
+      let followed = 0;
+      for (const uid of aiUserIds) {
+        if (uid === official.id) continue;
+        const existing = await prisma.follow.findUnique({
+          where: { followerId_followingId: { followerId: official.id, followingId: uid } },
+        });
+        if (existing) continue;
+        await prisma.follow.create({ data: { followerId: official.id, followingId: uid } });
+        followed++;
+      }
+      if (followed > 0) console.log(`[ai-outreach] @frianzo now follows ${followed} AI account(s)`);
     }
-    if (followed > 0) console.log(`[ai-outreach] @frianzo now follows ${followed} AI account(s)`);
+
+    // 2. Every AI account follows every other AI account (full mesh)
+    let meshCount = 0;
+    for (const followerId of aiUserIds) {
+      for (const followingId of aiUserIds) {
+        if (followerId === followingId) continue;
+        const existing = await prisma.follow.findUnique({
+          where: { followerId_followingId: { followerId, followingId } },
+        });
+        if (existing) continue;
+        await prisma.follow.create({ data: { followerId, followingId } });
+        meshCount++;
+      }
+    }
+    if (meshCount > 0) console.log(`[ai-outreach] AI mesh: ${meshCount} new follow(s) between AI accounts`);
   } catch (err) {
     console.error('[ai-outreach] official follows failed:', (err as Error).message?.substring(0, 100));
   }
