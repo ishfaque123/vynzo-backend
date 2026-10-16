@@ -231,8 +231,7 @@ export async function sendWelcomeDM(newUserId: string) {
     });
     if (!newUser) return;
 
-    const name = newUser.displayName || newUser.username || 'dost';
-    const { getOrCreateConversation } = await import('./conversationService');
+    const { getOrCreateConversation } = await import('./messageService');
 
     // Don't send twice
     const convo = await getOrCreateConversation(welcomer.id, newUserId);
@@ -242,7 +241,7 @@ export async function sendWelcomeDM(newUserId: string) {
     });
     if (alreadySent) return;
 
-    const welcomeText = `Assalam-o-Alaikum ${name}! 🎉\n\nFrianzo mein khush aamdeed! Main Frianzo Dost hun — yahan naye doston se milne mein madad karta hun.\n\nYahan tum posts, reels aur stories share kar sakte ho, doston se chat kar sakte ho, aur dilchasp logon ko follow kar sakte ho.\n\nKoi sawal ho to bas yahin likh do! 😊`;
+    const welcomeText = `Welcome to Frianzo! 🎉\n\nWe're glad you're here. Share posts and reels, discover creators, and chat with friends.\n\nNeed help getting started? Just reply to this message.`;
 
     await prisma.message.create({
       data: {
