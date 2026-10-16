@@ -7,11 +7,13 @@ import {
   createPostHandler, getFeedHandler, deletePostHandler, setReactionHandler,
   sharePostHandler, getPostHandler, getUserPostsHandler, updatePostHandler,
   reportPostHandler, hidePostHandler, recordPostViewHandler, togglePinPostHandler,
+  getContentMixHandler,
 } from '../controllers/postController';
 
 const router = Router();
 
 router.get('/', optionalAuth, getFeedHandler);
+router.get('/content-mix', authMiddleware, getContentMixHandler);
 router.post('/', authMiddleware, postCreateLimiter, upload.single('image'), createPostHandler);
 router.get('/user/:username', optionalAuth, getUserPostsHandler);
 router.get('/:id', optionalAuth, getPostHandler);

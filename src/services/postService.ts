@@ -120,6 +120,35 @@ export async function sharePost(userId: string, originalPostId: string, content:
 
 const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, cityMatch: 70, followingBonus: 50, affinityPerPastLike: 15, affinityPerComment: 12, affinityPerWatchSec: 0.5, affinityCap: 100, recencyBase: 200, verifiedBonus: 60 };
 
+/**
+ * Adaptive home-feed content mix: how much of the mixed feed should be reels
+ * vs posts, based on the user's actual consumption over the last 7 days.
+ * Watch time is the strongest signal; likes/comments add intent weight.
+ * Returns reelRatio 0..1 (0.5 = neutral, used for new users with no history).
+ */
+export async function getContentMix(userId: string) {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const [[reelWatch], reelLikes, reelComments, [postWatch], postLikes, postComments] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<{ total: number }>>(
+      `SELECT COALESCE(SUM(watch_sec), 0) AS total FROM reel_views WHERE viewer_id = ? AND created_at >= ?`,
+      userId, sevenDaysAgo
+    ).catch(() => [{ total: 0 }]),
+    prisma.reelLike.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
+    prisma.reelComment.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
+    prisma.$queryRawUnsafe<Array<{ total: number }>>(
+      `SELECT COALESCE(SUM(watch_sec), 0) AS total FROM post_views WHERE viewer_id = ? AND created_at >= ?`,
+      userId, sevenDaysAgo
+    ).catch(() => [{ total: 0 }]),
+    prisma.like.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
+    prisma.comment.count({ where: { userId, createdAt: { gte: sevenDaysAgo } } }).catch(() => 0),
+  ]);
+  const reelScore = Number(reelWatch?.total || 0) + reelLikes * 20 + reelComments * 30;
+  const postScore = Number(postWatch?.total || 0) + postLikes * 20 + postComments * 30;
+  const total = reelScore + postScore;
+  const reelRatio = total > 0 ? reelScore / total : 0.5;
+  return { reelRatio: Math.round(Math.min(Math.max(reelRatio, 0), 1) * 100) / 100 };
+}
+
 export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const [hiddenPostIds, blockedRows] = currentUserId
     ? await Promise.all([

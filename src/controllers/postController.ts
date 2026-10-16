@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import {
   createPost, getFeed, deletePost, sharePost, getPostById, getPostsByUsername,
-  updatePost, reportPost, hidePost, togglePinPost,
+  updatePost, reportPost, hidePost, togglePinPost, getContentMix,
 } from '../services/postService';
 import { setReaction } from '../services/likeService';
 import { recordPostView } from '../services/postAnalyticsService';
@@ -46,6 +46,13 @@ export async function getFeedHandler(req: Request, res: Response, next: NextFunc
     const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
     const { posts, hasMore } = await getFeed(req.user?.id, limit, offset);
     sendSuccess(res, { posts, hasMore, nextOffset: offset + posts.length });
+  } catch (err) { next(err); }
+}
+
+export async function getContentMixHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await getContentMix(req.user!.id);
+    sendSuccess(res, data);
   } catch (err) { next(err); }
 }
 
