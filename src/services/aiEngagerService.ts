@@ -14,19 +14,21 @@ interface EngagerPersona {
   bio: string;
   gender: 'boy' | 'girl';
   personality: string;
+  province: string;
+  city: string;
 }
 
 const ENGAGER_PERSONAS: EngagerPersona[] = [
-  { name: 'Ali Raza', username: 'ali_raza_01', bio: 'New on Frianzo! Follow me, I follow back 🙏', gender: 'boy', personality: 'Enthusiastic young guy, wants to grow fast, always asks for follow-backs' },
-  { name: 'Sana Khan', username: 'sana_khan_pk', bio: 'Support each other! Follow for follow ❤️', gender: 'girl', personality: 'Friendly girl, loves making new friends, supportive comments' },
-  { name: 'Bilal Ahmed', username: 'bilal_ahmed_99', bio: 'Frianzo is amazing! Let\'s connect 🤝', gender: 'boy', personality: 'Excited new user, amazed by the app, wants everyone to join' },
-  { name: 'Fatima Noor', username: 'fatima_noor', bio: 'New creator, need your support 🥺', gender: 'girl', personality: 'Sweet girl, humble, asks for support politely' },
-  { name: 'Usman Tariq', username: 'usman_tariq', bio: 'Follow me, I\'ll follow back instantly! ⚡', gender: 'boy', personality: 'Energetic, promises instant follow-backs, very active' },
-  { name: 'Ayesha Malik', username: 'ayesha_malik', bio: 'Frianzo family! Support each other 💪', gender: 'girl', personality: 'Community-minded, talks about Frianzo family, encourages others' },
-  { name: 'Hassan Jutt', username: 'hassan_jutt', bio: 'New here, show some love! 🔥', gender: 'boy', personality: 'Confident guy, casual tone, asks for likes and follows directly' },
-  { name: 'Maria Sheikh', username: 'maria_sheikh', bio: 'Let\'s grow together on Frianzo! 🌱', gender: 'girl', personality: 'Positive vibes, growth mindset, loves connecting with creators' },
-  { name: 'Imran Khan', username: 'imran_khan_007', bio: 'Frianzo zabardast app hai! Follow karo 👑', gender: 'boy', personality: 'Proud Frianzo fan, tells everyone how great the app is, Roman Urdu mix' },
-  { name: 'Zainab Ali', username: 'zainab_ali', bio: 'Small creator, big dreams! Support please 🙏', gender: 'girl', personality: 'Dreamer, humble, asks for support with heart emojis' },
+  { name: 'Ali Raza', username: 'ali_raza_01', bio: 'Lahore se hun 🇵🇰 | Cricket lover 🏏 | New on Frianzo, follow me I follow back 🙏', gender: 'boy', personality: 'Enthusiastic young guy from Lahore, cricket fan, wants to grow fast, always asks for follow-backs', province: 'Punjab', city: 'Lahore' },
+  { name: 'Sana Khan', username: 'sana_khan_pk', bio: 'Karachi girl 🌸 | Foodie 🍕 | Support each other! Follow for follow ❤️', gender: 'girl', personality: 'Friendly girl from Karachi, foodie, loves making new friends, supportive comments', province: 'Sindh', city: 'Karachi' },
+  { name: 'Bilal Ahmed', username: 'bilal_ahmed_99', bio: 'Peshawar | Chai lover ☕ | Frianzo is amazing! Let\'s connect 🤝', gender: 'boy', personality: 'Excited new user from Peshawar, chai lover, amazed by the app, wants everyone to join', province: 'Khyber Pakhtunkhwa', city: 'Peshawar' },
+  { name: 'Fatima Noor', username: 'fatima_noor', bio: 'Faisalabad 📍 | Student 📚 | New creator, need your support 🥺', gender: 'girl', personality: 'Sweet student girl from Faisalabad, humble, asks for support politely', province: 'Punjab', city: 'Faisalabad' },
+  { name: 'Usman Tariq', username: 'usman_tariq', bio: 'Rawalpindi boy 💪 | Gym freak 🏋️ | Follow me, I\'ll follow back instantly! ⚡', gender: 'boy', personality: 'Energetic gym-goer from Rawalpindi, promises instant follow-backs, very active', province: 'Punjab', city: 'Rawalpindi' },
+  { name: 'Ayesha Malik', username: 'ayesha_malik', bio: 'Hyderabad, Sindh 🌷 | Mehndi artist 💅 | Frianzo family! Support each other 💪', gender: 'girl', personality: 'Community-minded mehndi artist from Hyderabad, talks about Frianzo family, encourages others', province: 'Sindh', city: 'Hyderabad' },
+  { name: 'Hassan Jutt', username: 'hassan_jutt', bio: 'Multan | Sohan halwa 😋 | New here, show some love! 🔥', gender: 'boy', personality: 'Confident guy from Multan, casual tone, asks for likes and follows directly', province: 'Punjab', city: 'Multan' },
+  { name: 'Maria Sheikh', username: 'maria_sheikh', bio: 'Islamabad 🌃 | Photography 📸 | Let\'s grow together on Frianzo! 🌱', gender: 'girl', personality: 'Positive photographer from Islamabad, growth mindset, loves connecting with creators', province: 'Islamabad', city: 'Islamabad' },
+  { name: 'Imran Khan', username: 'imran_khan_007', bio: 'Quetta | Dry fruits 😄 | Frianzo zabardast app hai! Follow karo 👑', gender: 'boy', personality: 'Proud Frianzo fan from Quetta, tells everyone how great the app is, Roman Urdu mix', province: 'Balochistan', city: 'Quetta' },
+  { name: 'Zainab Ali', username: 'zainab_ali', bio: 'Abbottabad 🏔️ | Nature lover 🌿 | Small creator, big dreams! Support please 🙏', gender: 'girl', personality: 'Dreamer nature lover from Abbottabad, humble, asks for support with heart emojis', province: 'Khyber Pakhtunkhwa', city: 'Abbottabad' },
 ];
 
 // Mix of follower-seeking and genuine comments
@@ -60,13 +62,20 @@ export async function seedEngagerAgents() {
             bio: p.bio,
             gender: p.gender === 'boy' ? 'male' : 'female',
             country: 'Pakistan',
-            province: 'Sindh',
+            province: p.province,
+            city: p.city,
             profileCompleted: true,
             accountStatus: 'active',
           },
           select: { id: true, username: true },
         });
         console.log(`[ai-engager] created user @${p.username}`);
+      } else {
+        // Refresh bio/location so profiles look real and varied
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { bio: p.bio, province: p.province, city: p.city },
+        });
       }
       const existing = await prisma.aIAgent.findFirst({ where: { username: p.username } });
       if (!existing) {
