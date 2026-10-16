@@ -215,19 +215,19 @@ export { OUTREACH_CYCLE_MS };
 
 /**
  * Follow rules (user-ordered):
- * - ALL accounts on the app follow the official @frianzo account.
+ * - ALL accounts on the app follow the official @frienzo account.
  * - All AI accounts follow each other (full mesh).
- * - The official @frianzo account follows NOBODY.
+ * - The official @frienzo account follows NOBODY.
  * Idempotent — safe to run every boot.
  */
 export async function seedOfficialFollows() {
   try {
     const official = await prisma.user.findFirst({
-      where: { username: 'frianzo' },
+      where: { username: 'frienzo' },
       select: { id: true },
     });
     if (!official) {
-      console.log('[ai-outreach] @frianzo not found, skipping follow seeding');
+      console.log('[ai-outreach] @frienzo not found, skipping follow seeding');
       return;
     }
     const agents = await prisma.aIAgent.findMany({
@@ -236,7 +236,7 @@ export async function seedOfficialFollows() {
     });
     const aiUserIds = agents.map((a) => a.userId!).filter((id) => id !== official.id);
 
-    // 1. @frianzo follows NOBODY — remove any @frianzo -> AI follows
+    // 1. @frienzo follows NOBODY — remove any @frienzo -> AI follows
     const badFollows = await prisma.follow.findMany({
       where: { followerId: official.id, followingId: { in: aiUserIds } },
       select: { followerId: true, followingId: true },
@@ -246,9 +246,9 @@ export async function seedOfficialFollows() {
         where: { followerId_followingId: { followerId: f.followerId, followingId: f.followingId } },
       }).catch(() => {});
     }
-    if (badFollows.length > 0) console.log(`[ai-outreach] removed ${badFollows.length} @frianzo -> AI follow(s)`);
+    if (badFollows.length > 0) console.log(`[ai-outreach] removed ${badFollows.length} @frienzo -> AI follow(s)`);
 
-    // 2. EVERY account on the app follows @frianzo (batched, idempotent)
+    // 2. EVERY account on the app follows @frienzo (batched, idempotent)
     let allFollowed = 0;
     const BATCH = 200;
     let cursor: string | undefined = undefined;
@@ -272,7 +272,7 @@ export async function seedOfficialFollows() {
       cursor = users[users.length - 1].id;
       if (users.length < BATCH) break;
     }
-    if (allFollowed > 0) console.log(`[ai-outreach] ${allFollowed} account(s) now follow @frianzo`);
+    if (allFollowed > 0) console.log(`[ai-outreach] ${allFollowed} account(s) now follow @frienzo`);
 
     // 3. Every AI account follows every other AI account (full mesh)
     let meshCount = 0;
