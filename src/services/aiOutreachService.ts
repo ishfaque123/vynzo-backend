@@ -215,7 +215,7 @@ export { OUTREACH_CYCLE_MS };
 
 /**
  * Follow rules (user-ordered):
- * - All AI accounts follow the official @frianzo account.
+ * - ALL accounts on the app follow the official @frianzo account.
  * - All AI accounts follow each other (full mesh).
  * - The official @frianzo account follows NOBODY.
  * Idempotent — safe to run every boot.
@@ -248,17 +248,31 @@ export async function seedOfficialFollows() {
     }
     if (badFollows.length > 0) console.log(`[ai-outreach] removed ${badFollows.length} @frianzo -> AI follow(s)`);
 
-    // 2. Every AI account follows @frianzo
-    let toOfficial = 0;
-    for (const followerId of aiUserIds) {
-      const existing = await prisma.follow.findUnique({
-        where: { followerId_followingId: { followerId, followingId: official.id } },
+    // 2. EVERY account on the app follows @frianzo (batched, idempotent)
+    let allFollowed = 0;
+    const BATCH = 200;
+    let cursor: string | undefined = undefined;
+    while (true) {
+      const users: { id: string }[] = await prisma.user.findMany({
+        where: { accountStatus: 'active', id: { not: official.id } },
+        select: { id: true },
+        take: BATCH,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        orderBy: { id: 'asc' },
       });
-      if (existing) continue;
-      await prisma.follow.create({ data: { followerId, followingId: official.id } });
-      toOfficial++;
+      if (!users.length) break;
+      for (const u of users) {
+        const existing = await prisma.follow.findUnique({
+          where: { followerId_followingId: { followerId: u.id, followingId: official.id } },
+        });
+        if (existing) continue;
+        await prisma.follow.create({ data: { followerId: u.id, followingId: official.id } }).catch(() => {});
+        allFollowed++;
+      }
+      cursor = users[users.length - 1].id;
+      if (users.length < BATCH) break;
     }
-    if (toOfficial > 0) console.log(`[ai-outreach] ${toOfficial} AI account(s) now follow @frianzo`);
+    if (allFollowed > 0) console.log(`[ai-outreach] ${allFollowed} account(s) now follow @frianzo`);
 
     // 3. Every AI account follows every other AI account (full mesh)
     let meshCount = 0;
