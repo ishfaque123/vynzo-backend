@@ -188,7 +188,16 @@ const POST_TOPICS = [
 
 const BG_STYLES = ['sunset', 'ocean', 'violet', 'mint', 'peach', 'night', 'rose', 'sky'] as const;
 
-async function generateEngagerPostContent(persona: EngagerPersona): Promise<string | null> {
+// Picture pool for engager photo posts (uploaded to R2 2026-10-17)
+// 30% of engager posts include a picture like real users do
+const PICTURE_POOL: { url: string; topic: string }[] = [
+  { url: 'https://pub-72f9ea3dc70249cdb12b7e61642d0bb7.r2.dev/posts/9ff54ab7-b4b5-45e0-8b48-69a30e90e86d.webp', topic: 'chai at a dhaba' },
+  { url: 'https://pub-72f9ea3dc70249cdb12b7e61642d0bb7.r2.dev/posts/b0a8bfc1-ace8-40f5-b4f9-842d666afff9.webp', topic: 'cricket in the evening' },
+  { url: 'https://pub-72f9ea3dc70249cdb12b7e61642d0bb7.r2.dev/posts/f60e40ad-7cbb-4d5a-98c1-d151612ec97d.webp', topic: 'delicious biryani' },
+  { url: 'https://pub-72f9ea3dc70249cdb12b7e61642d0bb7.r2.dev/posts/753fcf41-31c1-4a17-b732-7da6716a7950.webp', topic: 'mountain morning view' },
+];
+
+async function generateEngagerPostContent(persona: EngagerPersona, topicOverride?: string): Promise<string | null> {
   // Avoid repeating recent posts
   const agent = await prisma.aIAgent.findFirst({ where: { username: persona.username }, select: { userId: true } });
   let recentTexts: string[] = [];
@@ -201,7 +210,7 @@ async function generateEngagerPostContent(persona: EngagerPersona): Promise<stri
     });
     recentTexts = recent.map((p) => p.content?.substring(0, 60)).filter(Boolean) as string[];
   }
-  const topic = POST_TOPICS[Math.floor(Math.random() * POST_TOPICS.length)];
+  const topic = topicOverride || POST_TOPICS[Math.floor(Math.random() * POST_TOPICS.length)];
   const systemPrompt = `You are ${persona.name} (@${persona.username}), a real Pakistani user on Frianzo. ${persona.personality}. Write in simple Roman Urdu/English mix like a real person posts on social media. Keep it short (1-3 lines), natural, with 1-2 emojis max. Never sound like a bot or ad.`;
   const avoid = recentTexts.length ? `\nAvoid repeating these recent topics: ${recentTexts.join(' | ')}` : '';
   const text = await callEngagerAI(systemPrompt, `Write a casual personal post about: ${topic}.${avoid}\nJust the post text, nothing else.`);
@@ -228,12 +237,21 @@ export async function runEngagerPostCycle() {
       });
       if (lastPost && Date.now() - lastPost.createdAt.getTime() < 20 * 60 * 60 * 1000) continue;
 
-      const content = await generateEngagerPostContent(persona);
-      if (!content) continue;
-
       const { createPost } = await import('./postService');
-      const bgStyle = BG_STYLES[Math.floor(Math.random() * BG_STYLES.length)];
-      await createPost(agent.userId, content, undefined, 'public', [], 'everyone', bgStyle, persona.city);
+      // 30% of posts include a picture (like real users)
+      let imageUrl: string | undefined;
+      let bgStyle: typeof BG_STYLES[number] | undefined;
+      let topicOverride: string | undefined;
+      if (Math.random() < 0.3) {
+        const pic = PICTURE_POOL[Math.floor(Math.random() * PICTURE_POOL.length)];
+        imageUrl = pic.url;
+        topicOverride = pic.topic;
+      } else {
+        bgStyle = BG_STYLES[Math.floor(Math.random() * BG_STYLES.length)];
+      }
+      const content = await generateEngagerPostContent(persona, topicOverride);
+      if (!content) continue;
+      await createPost(agent.userId, content, imageUrl, 'public', [], 'everyone', bgStyle, persona.city);
       console.log(`[ai-engager] @${agent.username} posted: ${content.substring(0, 50)}...`);
       // Human gap 10-30 min between posters
       await new Promise((r) => setTimeout(r, 600000 + Math.random() * 1200000));

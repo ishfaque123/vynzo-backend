@@ -845,3 +845,33 @@ export async function setAdminUserAvatar(req: Request, res: Response, next: Next
     next(err);
   }
 }
+
+// Admin: upload a reel video as another user (for AI engager accounts)
+// POST /api/admin/reels/upload (multipart: username, video, caption?)
+export async function adminUploadReel(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { username, caption } = req.body;
+    if (!username) throw new ApiError(400, 'NO_USERNAME', 'Username is required.');
+    if (!req.file) throw new ApiError(400, 'NO_VIDEO', 'Video file is required.');
+    const target = await prisma.user.findFirst({
+      where: { username: String(username).toLowerCase() },
+      select: { id: true, username: true },
+    });
+    if (!target) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+    const { uploadToR2 } = await import('../config/r2');
+    const videoUrl = await uploadToR2(req.file.buffer, req.file.mimetype || 'video/mp4', 'reels');
+
+    const reel = await prisma.reel.create({
+      data: {
+        userId: target.id,
+        videoUrl,
+        caption: caption ? String(caption).substring(0, 500) : null,
+      },
+      select: { id: true, videoUrl: true, caption: true },
+    });
+    sendSuccess(res, { reel });
+  } catch (err) {
+    next(err);
+  }
+}
