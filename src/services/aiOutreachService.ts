@@ -214,9 +214,10 @@ export async function runOutreachCycle() {
 export { OUTREACH_CYCLE_MS };
 
 /**
- * Makes all AI accounts follow each other (full mesh).
- * NOTE: The official @frianzo account follows NOBODY (user-ordered).
- * Any @frianzo -> AI follows created earlier are removed.
+ * Follow rules (user-ordered):
+ * - All AI accounts follow the official @frianzo account.
+ * - All AI accounts follow each other (full mesh).
+ * - The official @frianzo account follows NOBODY.
  * Idempotent — safe to run every boot.
  */
 export async function seedOfficialFollows() {
@@ -225,28 +226,41 @@ export async function seedOfficialFollows() {
       where: { username: 'frianzo' },
       select: { id: true },
     });
+    if (!official) {
+      console.log('[ai-outreach] @frianzo not found, skipping follow seeding');
+      return;
+    }
     const agents = await prisma.aIAgent.findMany({
       where: { isActive: true, userId: { not: null } },
       select: { userId: true, username: true },
     });
-    const aiUserIds = agents.map((a) => a.userId!).filter(Boolean);
-    const aiIdSet = new Set(aiUserIds);
+    const aiUserIds = agents.map((a) => a.userId!).filter((id) => id !== official.id);
 
-    // 1. @frianzo follows nobody — remove any @frianzo -> AI follows
-    if (official) {
-      const badFollows = await prisma.follow.findMany({
-        where: { followerId: official.id, followingId: { in: aiUserIds } },
-        select: { followerId: true, followingId: true },
-      });
-      for (const f of badFollows) {
-        await prisma.follow.delete({
-          where: { followerId_followingId: { followerId: f.followerId, followingId: f.followingId } },
-        }).catch(() => {});
-      }
-      if (badFollows.length > 0) console.log(`[ai-outreach] removed ${badFollows.length} @frianzo -> AI follow(s)`);
+    // 1. @frianzo follows NOBODY — remove any @frianzo -> AI follows
+    const badFollows = await prisma.follow.findMany({
+      where: { followerId: official.id, followingId: { in: aiUserIds } },
+      select: { followerId: true, followingId: true },
+    });
+    for (const f of badFollows) {
+      await prisma.follow.delete({
+        where: { followerId_followingId: { followerId: f.followerId, followingId: f.followingId } },
+      }).catch(() => {});
     }
+    if (badFollows.length > 0) console.log(`[ai-outreach] removed ${badFollows.length} @frianzo -> AI follow(s)`);
 
-    // 2. Every AI account follows every other AI account (full mesh)
+    // 2. Every AI account follows @frianzo
+    let toOfficial = 0;
+    for (const followerId of aiUserIds) {
+      const existing = await prisma.follow.findUnique({
+        where: { followerId_followingId: { followerId, followingId: official.id } },
+      });
+      if (existing) continue;
+      await prisma.follow.create({ data: { followerId, followingId: official.id } });
+      toOfficial++;
+    }
+    if (toOfficial > 0) console.log(`[ai-outreach] ${toOfficial} AI account(s) now follow @frianzo`);
+
+    // 3. Every AI account follows every other AI account (full mesh)
     let meshCount = 0;
     for (const followerId of aiUserIds) {
       for (const followingId of aiUserIds) {
