@@ -212,3 +212,39 @@ export async function runOutreachCycle() {
 }
 
 export { OUTREACH_CYCLE_MS };
+
+/**
+ * Makes the official @frianzo account follow all AI agent accounts
+ * (posters, commenters, outreach). Idempotent — safe to run every boot.
+ */
+export async function seedOfficialFollows() {
+  try {
+    const official = await prisma.user.findFirst({
+      where: { username: 'frianzo' },
+      select: { id: true },
+    });
+    if (!official) {
+      console.log('[ai-outreach] @frianzo not found, skipping official follows');
+      return;
+    }
+    const agents = await prisma.aIAgent.findMany({
+      where: { isActive: true, userId: { not: null } },
+      select: { userId: true, username: true },
+    });
+    let followed = 0;
+    for (const a of agents) {
+      if (!a.userId || a.userId === official.id) continue;
+      const existing = await prisma.follow.findUnique({
+        where: { followerId_followingId: { followerId: official.id, followingId: a.userId } },
+      });
+      if (existing) continue;
+      await prisma.follow.create({
+        data: { followerId: official.id, followingId: a.userId },
+      });
+      followed++;
+    }
+    if (followed > 0) console.log(`[ai-outreach] @frianzo now follows ${followed} AI account(s)`);
+  } catch (err) {
+    console.error('[ai-outreach] official follows failed:', (err as Error).message?.substring(0, 100));
+  }
+}

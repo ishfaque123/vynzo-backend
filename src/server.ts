@@ -8,7 +8,7 @@ import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS } from './services/aiPosterService';
-import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS } from './services/aiOutreachService';
+import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
 
 async function start() {
   try {
@@ -26,6 +26,9 @@ async function start() {
 
     // Seed the 4 AI outreach accounts (safe, idempotent)
     await seedOutreachAgents();
+
+    // Official @frianzo follows all AI accounts (safe, idempotent)
+    await seedOfficialFollows();
 
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);
