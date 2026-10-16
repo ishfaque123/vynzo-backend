@@ -211,8 +211,9 @@ async function callCloudflareAI(systemPrompt: string, userPrompt: string): Promi
 
 /**
  * Generates one original post for the agent, avoiding recent topics.
+ * 30% of posts naturally mention another AI account (like real users do).
  */
-export async function generatePosterContent(agent: PosterAgent): Promise<string | null> {
+export async function generatePosterContent(agent: PosterAgent): Promise<{ content: string; taggedUserIds: string[] } | null> {
   try {
     // Fetch recent posts to avoid repetition
     const recent = await prisma.post.findMany({
@@ -231,14 +232,41 @@ export async function generatePosterContent(agent: PosterAgent): Promise<string 
       ? `\nDo NOT repeat or closely resemble these recent posts:\n${recentTexts.map((t) => `- ${t}`).join('\n')}`
       : '';
 
-    const prompt = `Write ONE short social media post (under 250 characters) about: ${topic}.${avoid}\nReturn ONLY the post text, no quotes, no explanation.`;
+    // 30% chance: mention another AI account naturally (like real friends do)
+    let mentionInstruction = '';
+    let taggedUserIds: string[] = [];
+    if (Math.random() < 0.3) {
+      const others = await prisma.aIAgent.findMany({
+        where: { isActive: true, userId: { not: null }, username: { not: agent.username } },
+        select: { userId: true, username: true, name: true },
+      });
+      if (others.length) {
+        const pick = others[Math.floor(Math.random() * others.length)];
+        mentionInstruction = `\nNaturally mention @${pick.username} somewhere in the post (like friends mention each other — agree with them, joke with them, or react to their topic). Use the exact @${pick.username} spelling.`;
+        taggedUserIds = [pick.userId!];
+      }
+    }
+
+    const prompt = `Write ONE short social media post (under 250 characters) about: ${topic}.${avoid}${mentionInstruction}\nReturn ONLY the post text, no quotes, no explanation.`;
 
     let text = await callCloudflareAI(agent.systemPrompt, prompt);
     if (!text) return null;
     // Clean up: strip quotes, limit length
     text = text.replace(/^["'«»]+|["'«»]+$/g, '').trim().substring(0, 500);
     if (text.length < 10) return null;
-    return text;
+
+    // Verify the mention actually made it into the text; drop tag if not
+    if (taggedUserIds.length) {
+      const mentioned = await prisma.aIAgent.findFirst({
+        where: { userId: taggedUserIds[0] },
+        select: { username: true },
+      });
+      if (!mentioned || !text.toLowerCase().includes(`@${mentioned.username.toLowerCase()}`)) {
+        taggedUserIds = [];
+      }
+    }
+
+    return { content: text, taggedUserIds };
   } catch (err) {
     console.error(`[ai-poster] generate failed for @${agent.username}:`, (err as Error).message?.substring(0, 100));
     return null;
@@ -264,11 +292,11 @@ export async function runPosterCycle() {
       });
       if (lastPost && lastPost.createdAt > cutoff) continue; // posted recently, skip
 
-      const content = await generatePosterContent(agent);
-      if (!content) continue;
+      const generated = await generatePosterContent(agent);
+      if (!generated) continue;
 
-      await createPost(agent.userId, content, undefined, 'public');
-      console.log(`[ai-poster] @${agent.username} posted: ${content.substring(0, 60)}...`);
+      await createPost(agent.userId, generated.content, undefined, 'public', generated.taggedUserIds);
+      console.log(`[ai-poster] @${agent.username} posted: ${generated.content.substring(0, 60)}...`);
     } catch (err) {
       console.error(`[ai-poster] cycle failed for @${agent.username}:`, (err as Error).message?.substring(0, 100));
     }
