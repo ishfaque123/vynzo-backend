@@ -14,18 +14,12 @@ const CF_ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID ?? '';
 const CF_AI_TOKEN = process.env.CLOUDFLARE_AI_TOKEN ?? '';
 const MODEL = '@cf/meta/llama-3.1-8b-instruct';
 
-// Fast local pre-check: obvious spam / slur patterns (any language), so we
-// don't burn AI quota on the obvious stuff. Llama Guard handles the rest.
-// NOTE (user-ordered 2026-10-16): in comments, ONLY links count as spam —
-// normal text is NEVER spam, no matter the words.
+// Fast local pre-check: ONLY links count as spam (user-ordered 2026-10-16).
+// No action on profanity, abuse, or any other text — only URLs trigger.
+// Frianzo's own links are stripped before checking (never spam).
 const BLOCKED_PATTERNS: RegExp[] = [
   // spam links (Frianzo's own links are stripped before this check)
   /https?:\/\/\S+/i,
-  // severe profanity (EN + Roman Urdu) — mild words like idiot/stupid are ALLOWED
-  /\b(fuck|motherfucker|bitch|asshole|bastard|slut|whore|dick|pussy|cunt)\b/i,
-  /\b(bhenchod|behenchod|madarchod|chutiya|gandu|harami)\b/i,
-  // threats
-  /\b(kill you|i will kill|murder you)\b/i,
 ];
 
 
@@ -109,9 +103,11 @@ function severityFromReason(reason: string): Severity {
 }
 
 export async function checkCommentToxicity(content: string): Promise<ToxicityResult> {
+  // User-ordered 2026-10-16: ONLY links are spam. No AI check, no profanity check.
+  // Text like "fuck you" etc. gets NO action.
   const localReason = localCheck(content);
   if (localReason) return { toxic: true, reason: localReason, severity: severityFromReason(localReason) };
-  return aiCheck(content);
+  return { toxic: false };
 }
 
 // Removal is delayed 5-10 minutes (not instant) so it doesn't feel like instant censorship.
