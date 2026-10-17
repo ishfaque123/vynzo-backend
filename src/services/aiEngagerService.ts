@@ -508,3 +508,223 @@ export async function runEngagerCycle() {
     }
   }
 }
+
+// ============ VIEWER ACCOUNTS (user-ordered 2026-10-17) ============
+// 100 accounts that watch reels, like, and comment like real viewers.
+// Reels: 100% view, 75% like, 25% comment (85% emoji / 15% text)
+// Posts: 90% like, 35% comment
+// Comments are "interested" style — engagement-bait like real viewers.
+
+const VIEWER_EMOJI_COMMENTS = [
+  '🔥🔥🔥', '❤️❤️❤️', '👏👏👏', '😍😍', '💯💯', '🙌🙌🙌',
+  '👍👍', '🎉🎉', '😮😮😮', '👌👌', '💪💪', '🌟🌟🌟',
+  '😂😂😂', '🥺❤️', '🤩🤩', '👑👑', '💖💖💖', '🫶🫶',
+];
+
+const VIEWER_TEXT_COMMENTS = [
+  'Assalamualaikum everyone! Yr koy like to karo 🙏',
+  'Yr koy humein bhi support karo 🥺❤️',
+  'Bohat ala! Support karo sab ek dusre ko 💪',
+  'Nice! Follow karo, follow back karunga 🤝',
+  'Kamaal kar diya! 🔥 Like karo yr',
+  'Assalamualaikum! New here, support chahiye 🙏',
+  'Yr ye to zabardast hai! Sab like karo 👍',
+  'MashAllah bohat khoob! ❤️ Support please',
+  'Koy hai jo mujhe follow karega? 🥺',
+  'Bohat mehnat ki hai! Like to banta hai 💯',
+];
+
+async function getViewerAgents() {
+  const agents = await prisma.aIAgent.findMany({
+    where: { isActive: true, personality: { contains: '[ROLE: viewer]' }, userId: { not: null } },
+    select: { id: true, userId: true, username: true, name: true },
+  });
+  return agents;
+}
+
+export async function seedViewerAgents() {
+  const fs = await import('fs');
+  const path = await import('path');
+  const accountsFile = '/tmp/viewer_accounts.txt';
+  if (!fs.existsSync(accountsFile)) {
+    console.log('[ai-viewer] No viewer accounts file found, skipping seed');
+    return;
+  }
+  const lines = fs.readFileSync(accountsFile, 'utf-8').trim().split('\n');
+  let created = 0;
+  for (const line of lines) {
+    const [name, username, gender] = line.split('|');
+    if (!name || !username) continue;
+    try {
+      const existing = await prisma.aIAgent.findFirst({ where: { username } });
+      if (existing) continue;
+      let user = await prisma.user.findFirst({ where: { username }, select: { id: true } });
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            username,
+            displayName: name,
+            email: `${username}@viewer.frianzo.local`,
+            bio: gender === 'girl'
+              ? 'Frianzo lover 🌸 | Support karo sab ko ❤️'
+              : 'Frianzo fan 🇵🇰 | Like & follow back 🤝',
+            accountStatus: 'active',
+          },
+        });
+      }
+      await prisma.aIAgent.create({
+        data: {
+          username,
+          name,
+          userId: user.id,
+          gender,
+          personality: `[ROLE: viewer] Regular Frianzo viewer, watches reels, likes and comments like a real user`,
+          systemPrompt: `You are ${name} (@${username}) on Frianzo, a regular viewer who watches reels and engages like a real Pakistani user.`,
+          isActive: true,
+        },
+      });
+      created++;
+    } catch (e: any) {
+      console.error(`[ai-viewer] seed failed for ${username}:`, e.message?.substring(0, 80));
+    }
+  }
+  console.log(`[ai-viewer] Seeded ${created} viewer accounts`);
+}
+
+// Viewer reel cycle: watch 100%, like 75%, comment 25% (85% emoji / 15% text)
+// STAGGERED: only 5-10 random viewers per cycle, random delays
+export async function runViewerReelCycle() {
+  const agents = await getViewerAgents();
+  if (agents.length === 0) return;
+
+  // Only 5-10 random viewers act per cycle (not all 100)
+  const shuffled = agents.sort(() => Math.random() - 0.5);
+  const activeViewers = shuffled.slice(0, 5 + Math.floor(Math.random() * 6));
+
+  for (const viewer of activeViewers) {
+    if (!viewer.userId) continue;
+    try {
+      // Get recent reels (not own, not from AI agents)
+      const reels = await prisma.reel.findMany({
+        where: {
+          userId: { not: viewer.userId },
+          user: { accountStatus: 'active' },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { id: true, userId: true },
+      });
+
+      // Watch 2-4 reels per viewer
+      const toWatch = reels.sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 3));
+
+      for (const reel of toWatch) {
+        // 100% VIEW — record the view so the creator sees it
+        try {
+          await prisma.reelView.create({
+            data: { reelId: reel.id, viewerId: viewer.userId },
+          });
+        } catch {} // already viewed — fine
+
+        // 75% LIKE
+        if (Math.random() < 0.75) {
+          const existing = await prisma.reelLike.findFirst({
+            where: { reelId: reel.id, userId: viewer.userId },
+          });
+          if (!existing) {
+            await prisma.reelLike.create({ data: { reelId: reel.id, userId: viewer.userId } });
+          }
+        }
+
+        // 25% COMMENT (85% emoji / 15% text)
+        if (Math.random() < 0.25) {
+          const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: reel.userId } });
+          if (!isAIAuthor) {
+            const useEmoji = Math.random() < 0.85;
+            const pool = useEmoji ? VIEWER_EMOJI_COMMENTS : VIEWER_TEXT_COMMENTS;
+            const content = pool[Math.floor(Math.random() * pool.length)];
+            const existing = await prisma.reelComment.findFirst({
+              where: { reelId: reel.id, userId: viewer.userId },
+            });
+            if (!existing) {
+              await prisma.reelComment.create({
+                data: { reelId: reel.id, userId: viewer.userId, content },
+              });
+            }
+          }
+        }
+
+        // Human-like watch time: 8-25 seconds
+        await new Promise((r) => setTimeout(r, 8000 + Math.random() * 17000));
+      }
+      console.log(`[ai-viewer] @${viewer.username} watched ${toWatch.length} reels`);
+      // Random gap 3-10 min before next viewer acts
+      await new Promise((r) => setTimeout(r, 180000 + Math.random() * 420000));
+    } catch (e: any) {
+      console.error(`[ai-viewer] reel cycle failed for @${viewer.username}:`, e.message?.substring(0, 100));
+    }
+  }
+}
+
+// Viewer post cycle: like 90%, comment 35%
+export async function runViewerPostCycle() {
+  const agents = await getViewerAgents();
+  if (agents.length === 0) return;
+
+  const shuffled = agents.sort(() => Math.random() - 0.5);
+  const activeViewers = shuffled.slice(0, 5 + Math.floor(Math.random() * 6));
+
+  for (const viewer of activeViewers) {
+    if (!viewer.userId) continue;
+    try {
+      const posts = await prisma.post.findMany({
+        where: {
+          visibility: 'public',
+          userId: { not: viewer.userId },
+          user: { accountStatus: 'active' },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { id: true, userId: true },
+      });
+
+      const toEngage = posts.sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 3));
+
+      for (const post of toEngage) {
+        // 90% LIKE
+        if (Math.random() < 0.90) {
+          const existing = await prisma.like.findFirst({
+            where: { userId: viewer.userId, postId: post.id },
+          });
+          if (!existing) {
+            await prisma.like.create({ data: { userId: viewer.userId, postId: post.id } });
+          }
+        }
+
+        // 35% COMMENT (85% emoji / 15% text)
+        if (Math.random() < 0.35) {
+          const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: post.userId } });
+          if (!isAIAuthor) {
+            const useEmoji = Math.random() < 0.85;
+            const pool = useEmoji ? VIEWER_EMOJI_COMMENTS : VIEWER_TEXT_COMMENTS;
+            const content = pool[Math.floor(Math.random() * pool.length)];
+            const existing = await prisma.comment.findFirst({
+              where: { userId: viewer.userId, postId: post.id },
+            });
+            if (!existing) {
+              await prisma.comment.create({
+                data: { userId: viewer.userId, postId: post.id, content },
+              });
+            }
+          }
+        }
+
+        await new Promise((r) => setTimeout(r, 30000 + Math.random() * 120000));
+      }
+      console.log(`[ai-viewer] @${viewer.username} engaged with ${toEngage.length} posts`);
+      await new Promise((r) => setTimeout(r, 180000 + Math.random() * 420000));
+    } catch (e: any) {
+      console.error(`[ai-viewer] post cycle failed for @${viewer.username}:`, e.message?.substring(0, 100));
+    }
+  }
+}

@@ -8,7 +8,7 @@ import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
-import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle } from './services/aiEngagerService';
+import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle, seedViewerAgents, runViewerReelCycle, runViewerPostCycle } from './services/aiEngagerService';
 import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
 
 async function start() {
@@ -30,6 +30,9 @@ async function start() {
 
     // Seed the 10 AI engager accounts (safe, idempotent)
     await seedEngagerAgents();
+
+    // Seed the 100 AI viewer accounts (safe, idempotent)
+    await seedViewerAgents();
 
     // Official @frianzo follows all AI accounts (safe, idempotent)
     await seedOfficialFollows();
@@ -141,6 +144,28 @@ async function start() {
     }
     setTimeout(runEngagerReels, 45 * 60 * 1000);
     setInterval(runEngagerReels, 4 * 60 * 60 * 1000);
+
+    // AI viewers watch reels: 100% view, 75% like, 25% comment (every 2 hours)
+    async function runViewerReels() {
+      try {
+        await runViewerReelCycle();
+      } catch (err) {
+        console.error('AI viewer reel cycle failed:', err);
+      }
+    }
+    setTimeout(runViewerReels, 20 * 60 * 1000);
+    setInterval(runViewerReels, 2 * 60 * 60 * 1000);
+
+    // AI viewers engage posts: 90% like, 35% comment (every 2 hours)
+    async function runViewerPosts() {
+      try {
+        await runViewerPostCycle();
+      } catch (err) {
+        console.error('AI viewer post cycle failed:', err);
+      }
+    }
+    setTimeout(runViewerPosts, 35 * 60 * 1000);
+    setInterval(runViewerPosts, 2 * 60 * 60 * 1000);
 
     // AI engagers post daily stories like real users (every 8 hours)
     async function runEngagerStories() {
