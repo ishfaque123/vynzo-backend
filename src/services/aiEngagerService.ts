@@ -906,3 +906,52 @@ export async function runViewerPostCycle() {
     }
   }
 }
+
+// Viewer daily posts: each viewer posts once per day (user-ordered 2026-10-17)
+const VIEWER_POST_TOPICS = [
+  'morning chai', 'weather', 'cricket', 'food', 'family', 'friends',
+  'weekend plans', 'motivation', 'Pakistani drama', 'music', 'travel',
+  'shopping', 'Eid preparations', 'rain', 'traffic', 'office life',
+];
+
+async function generateViewerPostContent(name: string, username: string): Promise<string | null> {
+  const topic = VIEWER_POST_TOPICS[Math.floor(Math.random() * VIEWER_POST_TOPICS.length)];
+  const systemPrompt = `You are ${name} (@${username}), a regular Pakistani user on Frianzo. Write in simple Roman Urdu/English mix like a real person posts on social media. Keep it short (1-2 lines), natural, with 1 emoji max. Never sound like a bot.`;
+  const text = await callEngagerAI(systemPrompt, `Write a casual personal post about: ${topic}.\nJust the post text, nothing else.`);
+  return text;
+}
+
+export async function runViewerCreatePostCycle() {
+  const agents = await getViewerAgents();
+  if (agents.length === 0) return;
+
+  // 15-25 random viewers post per cycle (so all 100 post roughly once per day
+  // across multiple cycles)
+  const shuffled = agents.sort(() => Math.random() - 0.5);
+  const posters = shuffled.slice(0, 15 + Math.floor(Math.random() * 11));
+  console.log(`[ai-viewer] Create post cycle: ${posters.length} posters`);
+
+  for (const agent of posters) {
+    if (!agent.userId) continue;
+    try {
+      // Skip if posted in the last 20 hours
+      const lastPost = await prisma.post.findFirst({
+        where: { userId: agent.userId },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      if (lastPost && Date.now() - lastPost.createdAt.getTime() < 20 * 60 * 60 * 1000) continue;
+
+      const { createPost } = await import('./postService');
+      const bgStyle = BG_STYLES[Math.floor(Math.random() * BG_STYLES.length)];
+      const content = await generateViewerPostContent(agent.name || agent.username, agent.username);
+      if (!content) continue;
+      await createPost(agent.userId, content, undefined, 'public', [], 'everyone', bgStyle, undefined);
+      console.log(`[ai-viewer] @${agent.username} posted: ${content.substring(0, 50)}...`);
+      // Human gap 5-15 min between posters
+      await new Promise((r) => setTimeout(r, 300000 + Math.random() * 600000));
+    } catch (e: any) {
+      console.error(`[ai-viewer] post failed for @${agent.username}:`, e.message?.substring(0, 100));
+    }
+  }
+}

@@ -8,7 +8,7 @@ import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
-import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle, seedViewerAgents, seedViewerAvatars, runViewerReelCycle, runViewerPostCycle } from './services/aiEngagerService';
+import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle, seedViewerAgents, seedViewerAvatars, runViewerReelCycle, runViewerPostCycle, runViewerCreatePostCycle } from './services/aiEngagerService';
 import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
 
 async function start() {
@@ -169,6 +169,17 @@ async function start() {
     }
     setTimeout(runViewerPosts, 35 * 60 * 1000);
     setInterval(runViewerPosts, 2 * 60 * 60 * 1000);
+
+    // AI viewers create daily posts (every 6 hours, 15-25 posters per cycle)
+    async function runViewerCreates() {
+      try {
+        await runViewerCreatePostCycle();
+      } catch (err) {
+        console.error('AI viewer create post cycle failed:', err);
+      }
+    }
+    setTimeout(runViewerCreates, 50 * 60 * 1000);
+    setInterval(runViewerCreates, 6 * 60 * 60 * 1000);
 
     // AI engagers post daily stories like real users (every 8 hours)
     async function runEngagerStories() {
