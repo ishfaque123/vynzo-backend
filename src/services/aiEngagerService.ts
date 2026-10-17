@@ -684,6 +684,63 @@ export async function seedViewerAgents() {
   console.log(`[ai-viewer] Seeded ${created} viewer accounts`);
 }
 
+// Download viewer avatars from ZIP and set them (one-time, user-ordered 2026-10-17)
+export async function seedViewerAvatars() {
+  const ZIP_URL = 'https://muse.ai/files/1350631241471118/1791972488721309/73rtc9ynus5yb2ba39atyzwl/viewer_avatars.zip';
+  try {
+    // Check if avatars already set (skip if >50 viewers have avatars)
+    const withAvatar = await prisma.user.count({
+      where: {
+        username: { in: VIEWER_ACCOUNTS.map((a) => a[1]) },
+        profilePictureUrl: { not: null },
+      },
+    });
+    if (withAvatar > 50) {
+      console.log(`[ai-viewer] Avatars already set (${withAvatar}), skipping`);
+      return;
+    }
+
+    console.log('[ai-viewer] Downloading avatar ZIP...');
+    const res = await fetch(ZIP_URL);
+    if (!res.ok) throw new Error(`ZIP download failed: ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+
+    // Extract ZIP (using yauzl or similar - simplified: use adm-zip if available)
+    // For now, use a simple approach with the 'unzipper' pattern
+    const { execSync } = await import('child_process');
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'avatars-'));
+    const zipPath = path.join(tmpDir, 'avatars.zip');
+    fs.writeFileSync(zipPath, buffer);
+    execSync(`unzip -q -o "${zipPath}" -d "${tmpDir}"`);
+
+    const { uploadToR2 } = await import('../config/r2');
+    let updated = 0;
+    const files = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.jpg'));
+    for (const file of files) {
+      const username = file.replace('.jpg', '');
+      try {
+        const user = await prisma.user.findFirst({ where: { username }, select: { id: true } });
+        if (!user) continue;
+        const fileBuffer = fs.readFileSync(path.join(tmpDir, file));
+        const url = await uploadToR2(fileBuffer, 'image/jpeg', 'avatars');
+        await prisma.user.update({ where: { id: user.id }, data: { profilePictureUrl: url } });
+        updated++;
+      } catch (e: any) {
+        console.error(`[ai-viewer] avatar failed for ${username}:`, e.message?.substring(0, 50));
+      }
+    }
+    console.log(`[ai-viewer] Set ${updated} avatars`);
+    // Cleanup
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  } catch (e: any) {
+    console.error('[ai-viewer] avatar seeding failed:', e.message?.substring(0, 100));
+  }
+}
+
 // Viewer reel cycle: watch 100%, like 75%, comment 25% (85% emoji / 15% text)
 // STAGGERED: only 5-10 random viewers per cycle, random delays
 export async function runViewerReelCycle() {

@@ -8,7 +8,7 @@ import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
-import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle, seedViewerAgents, runViewerReelCycle, runViewerPostCycle } from './services/aiEngagerService';
+import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle, seedViewerAgents, seedViewerAvatars, runViewerReelCycle, runViewerPostCycle } from './services/aiEngagerService';
 import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
 
 async function start() {
@@ -33,6 +33,9 @@ async function start() {
 
     // Seed the 100 AI viewer accounts (safe, idempotent)
     await seedViewerAgents();
+
+    // Set viewer avatars from TikTok (one-time)
+    await seedViewerAvatars();
 
     // Official @frianzo follows all AI accounts (safe, idempotent)
     await seedOfficialFollows();
