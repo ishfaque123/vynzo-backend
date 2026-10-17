@@ -144,11 +144,12 @@ export async function getContentMix(userId: string) {
     const reelScore = Number(reelWatch[0]?.total || 0) + reelLikes * 30;
     const postScore = Number(postWatch[0]?.total || 0) + postLikes * 30;
     const total = reelScore + postScore;
-    const reelRatio = total > 0 ? reelScore / total : 0.5;
-    // Clamp between 0.2 and 0.8 so neither type disappears entirely
-    return { reelRatio: Math.min(0.8, Math.max(0.2, reelRatio)) };
+    // User-ordered 2026-10-17: MORE reels in feed. Default 0.7 (was 0.5),
+    // clamp 0.4-0.9 (was 0.2-0.8) so reels dominate.
+    const reelRatio = total > 0 ? reelScore / total : 0.7;
+    return { reelRatio: Math.min(0.9, Math.max(0.4, reelRatio)) };
   } catch {
-    return { reelRatio: 0.5 };
+    return { reelRatio: 0.7 };
   }
 }
 
