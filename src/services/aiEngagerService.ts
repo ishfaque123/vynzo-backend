@@ -542,19 +542,112 @@ async function getViewerAgents() {
   return agents;
 }
 
+const VIEWER_ACCOUNTS: Array<[string, string, string]> = [
+  ['Ahmed Khan', 'ahmed_khan_02', 'boy'],
+  ['Danish Ali', 'danish_ali_pk', 'boy'],
+  ['Fahad Sheikh', 'fahad_sheikh_1', 'boy'],
+  ['Hamza Malik', 'hamza_malik_99', 'boy'],
+  ['Junaid Ahmed', 'junaid_ahmed_01', 'boy'],
+  ['Kamran Khan', 'kamran_khan_pk', 'boy'],
+  ['Noman Ali', 'noman_ali_02', 'boy'],
+  ['Owais Raza', 'owais_raza_1', 'boy'],
+  ['Qasim Javed', 'qasim_javed_99', 'boy'],
+  ['Rashid Mehmood', 'rashid_mehmood_01', 'boy'],
+  ['Sajid Hussain', 'sajid_hussain_pk', 'boy'],
+  ['Tariq Aziz', 'tariq_aziz_02', 'boy'],
+  ['Umar Farooq', 'umar_farooq_1', 'boy'],
+  ['Waqas Ahmed', 'waqas_ahmed_99', 'boy'],
+  ['Yasir Khan', 'yasir_khan_01', 'boy'],
+  ['Zubair Ali', 'zubair_ali_pk', 'boy'],
+  ['Adnan Raza', 'adnan_raza_02', 'boy'],
+  ['Bilal Hussain', 'bilal_hussain_1', 'boy'],
+  ['Chaudhry Aslam', 'chaudhry_aslam_99', 'boy'],
+  ['Dawood Ibrahim', 'dawood_ibrahim_01', 'boy'],
+  ['Ejaz Ahmed', 'ejaz_ahmed_pk', 'boy'],
+  ['Faisal Qureshi', 'faisal_qureshi_02', 'boy'],
+  ['Ghulam Abbas', 'ghulam_abbas_1', 'boy'],
+  ['Haroon Rashid', 'haroon_rashid_99', 'boy'],
+  ['Irfan Malik', 'irfan_malik_01', 'boy'],
+  ['Javed Iqbal', 'javed_iqbal_pk', 'boy'],
+  ['Khalid Mehmood', 'khalid_mehmood_02', 'boy'],
+  ['Liaqat Ali', 'liaqat_ali_1', 'boy'],
+  ['Mansoor Ahmed', 'mansoor_ahmed_99', 'boy'],
+  ['Nadeem Khan', 'nadeem_khan_01', 'boy'],
+  ['Omar Sheikh', 'omar_sheikh_pk', 'boy'],
+  ['Parvez Iqbal', 'parvez_iqbal_02', 'boy'],
+  ['Rizwan Haider', 'rizwan_haider_1', 'boy'],
+  ['Salman Butt', 'salman_butt_99', 'boy'],
+  ['Shahid Afridi', 'shahid_afridi_01', 'boy'],
+  ['Tahir Mehmood', 'tahir_mehmood_pk', 'boy'],
+  ['Usama Javed', 'usama_javed_02', 'boy'],
+  ['Vicky Khan', 'vicky_khan_1', 'boy'],
+  ['Waseem Akram', 'waseem_akram_99', 'boy'],
+  ['Xain Ali', 'xain_ali_01', 'boy'],
+  ['Younas Khan', 'younas_khan_pk', 'boy'],
+  ['Zaheer Abbas', 'zaheer_abbas_02', 'boy'],
+  ['Arslan Butt', 'arslan_butt_1', 'boy'],
+  ['Babur Azam', 'babur_azam_99', 'boy'],
+  ['Chand Nawab', 'chand_nawab_01', 'boy'],
+  ['Danyal Sheikh', 'danyal_sheikh_pk', 'boy'],
+  ['Ehtisham Ali', 'ehtisham_ali_02', 'boy'],
+  ['Faran Javed', 'faran_javed_1', 'boy'],
+  ['Gohar Rasheed', 'gohar_rasheed_99', 'boy'],
+  ['Haris Rauf', 'haris_rauf_01', 'boy'],
+  ['Amina Tariq', 'amina_tariq_02', 'girl'],
+  ['Bushra Khan', 'bushra_khan_pk', 'girl'],
+  ['Dua Fatima', 'dua_fatima_1', 'girl'],
+  ['Eman Ali', 'eman_ali_99', 'girl'],
+  ['Fariha Sheikh', 'fariha_sheikh_01', 'girl'],
+  ['Ghazala Javed', 'ghazala_javed_pk', 'girl'],
+  ['Hina Raza', 'hina_raza_02', 'girl'],
+  ['Iqra Malik', 'iqra_malik_1', 'girl'],
+  ['Javeria Ahmed', 'javeria_ahmed_99', 'girl'],
+  ['Kiran Shah', 'kiran_shah_01', 'girl'],
+  ['Laila Khan', 'laila_khan_pk', 'girl'],
+  ['Mahnoor Fatima', 'mahnoor_fatima_02', 'girl'],
+  ['Nadia Hussain', 'nadia_hussain_1', 'girl'],
+  ['Ozma Ali', 'ozma_ali_99', 'girl'],
+  ['Palwasha Khan', 'palwasha_khan_01', 'girl'],
+  ['Qurat Ul Ain', 'qurat_ul_ain_pk', 'girl'],
+  ['Rabia Basri', 'rabia_basri_02', 'girl'],
+  ['Sadia Iqbal', 'sadia_iqbal_1', 'girl'],
+  ['Tahira Sheikh', 'tahira_sheikh_99', 'girl'],
+  ['Uzma Tariq', 'uzma_tariq_01', 'girl'],
+  ['Veena Malik', 'veena_malik_pk', 'girl'],
+  ['Warda Ahmed', 'warda_ahmed_02', 'girl'],
+  ['Xenia Khan', 'xenia_khan_1', 'girl'],
+  ['Yasmin Raza', 'yasmin_raza_99', 'girl'],
+  ['Zara Sheikh', 'zara_sheikh_01', 'girl'],
+  ['Anam Tariq', 'anam_tariq_pk', 'girl'],
+  ['Beenish Khan', 'beenish_khan_02', 'girl'],
+  ['Chandni Raza', 'chandni_raza_1', 'girl'],
+  ['Dolly Singh', 'dolly_singh_99', 'girl'],
+  ['Elif Khan', 'elif_khan_01', 'girl'],
+  ['Farah Javed', 'farah_javed_pk', 'girl'],
+  ['Gulnaz Ali', 'gulnaz_ali_02', 'girl'],
+  ['Humaima Malik', 'humaima_malik_1', 'girl'],
+  ['Irum Sheikh', 'irum_sheikh_99', 'girl'],
+  ['Jannat Mirza', 'jannat_mirza_01', 'girl'],
+  ['Komal Raza', 'komal_raza_pk', 'girl'],
+  ['Lubna Aslam', 'lubna_aslam_02', 'girl'],
+  ['Mehwish Hayat', 'mehwish_hayat_1', 'girl'],
+  ['Nargis Khan', 'nargis_khan_99', 'girl'],
+  ['Olive Raza', 'olive_raza_01', 'girl'],
+  ['Pari Gul', 'pari_gul_pk', 'girl'],
+  ['Qandeel Baloch', 'qandeel_baloch_02', 'girl'],
+  ['Rani Mukherjee', 'rani_mukherjee_1', 'girl'],
+  ['Saba Qamar', 'saba_qamar_99', 'girl'],
+  ['Tina Dutta', 'tina_dutta_01', 'girl'],
+  ['Urooj Fatima', 'urooj_fatima_pk', 'girl'],
+  ['Vania Khan', 'vania_khan_02', 'girl'],
+  ['Wajiha Ali', 'wajiha_ali_1', 'girl'],
+  ['Xara Sheikh', 'xara_sheikh_99', 'girl'],
+  ['Yumna Zaidi', 'yumna_zaidi_01', 'girl'],
+];
+
 export async function seedViewerAgents() {
-  const fs = await import('fs');
-  const path = await import('path');
-  const accountsFile = '/tmp/viewer_accounts.txt';
-  if (!fs.existsSync(accountsFile)) {
-    console.log('[ai-viewer] No viewer accounts file found, skipping seed');
-    return;
-  }
-  const lines = fs.readFileSync(accountsFile, 'utf-8').trim().split('\n');
   let created = 0;
-  for (const line of lines) {
-    const [name, username, gender] = line.split('|');
-    if (!name || !username) continue;
+  for (const [name, username, gender] of VIEWER_ACCOUNTS) {
     try {
       const existing = await prisma.aIAgent.findFirst({ where: { username } });
       if (existing) continue;
