@@ -221,8 +221,24 @@ async function generateEngagerPostContent(persona: EngagerPersona, topicOverride
 export async function runEngagerPostCycle() {
   const agents = await getEngagerAgents();
   if (agents.length === 0) return;
+
+  // PEAK TIME BOOST (user-ordered 2026-10-17): 7-10 PM PKT is when most users
+  // are online. Post more during peak (4-6 agents), less off-peak (1-2 agents).
+  const pktHour = (new Date().getUTCHours() + 5) % 24; // UTC+5 = PKT
+  const isPeakTime = pktHour >= 19 && pktHour < 22; // 7 PM - 10 PM PKT
+  const isDeadTime = pktHour >= 2 && pktHour < 6; // 2 AM - 6 AM PKT
+
   const shuffled = agents.sort(() => Math.random() - 0.5);
-  const posters = shuffled.slice(0, 2 + Math.floor(Math.random() * 3));
+  let posterCount: number;
+  if (isPeakTime) {
+    posterCount = 4 + Math.floor(Math.random() * 3); // 4-6 during peak
+  } else if (isDeadTime) {
+    posterCount = 1; // minimal at night
+  } else {
+    posterCount = 2 + Math.floor(Math.random() * 3); // 2-4 normal
+  }
+  const posters = shuffled.slice(0, posterCount);
+  console.log(`[ai-engager] Post cycle: ${posterCount} posters (PKT hour: ${pktHour}, peak: ${isPeakTime})`);
 
   for (const agent of posters) {
     if (!agent.userId) continue;
@@ -257,6 +273,97 @@ export async function runEngagerPostCycle() {
       await new Promise((r) => setTimeout(r, 600000 + Math.random() * 1200000));
     } catch (e: any) {
       console.error(`[ai-engager] post failed for @${agent.username}:`, e.message?.substring(0, 100));
+    }
+  }
+}
+
+// --- New user welcome: engagers follow + welcome new users ---
+// User-ordered 2026-10-17: when someone new joins, an engager follows them.
+export async function runNewUserWelcomeCycle() {
+  const agents = await getEngagerAgents();
+  if (agents.length === 0) return;
+
+  // Find users created in the last 2 hours who haven't been welcomed
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const agentUserIds = new Set(agents.map((a) => a.userId).filter(Boolean) as string[]);
+  const newUsers = await prisma.user.findMany({
+    where: {
+      createdAt: { gte: twoHoursAgo },
+      accountStatus: 'active',
+      id: { notIn: [...agentUserIds] }, // exclude AI agents
+    },
+    select: { id: true, username: true },
+    take: 10,
+  });
+
+  for (const newUser of newUsers) {
+    try {
+      // Check if already welcomed (any engager follows them)
+      const alreadyWelcomed = await prisma.follow.findFirst({
+        where: { followerId: { in: [...agentUserIds] }, followingId: newUser.id },
+      });
+      if (alreadyWelcomed) continue;
+
+      // Pick a random engager to welcome
+      const welcomer = agents[Math.floor(Math.random() * agents.length)];
+      if (!welcomer.userId) continue;
+
+      // Follow the new user
+      await prisma.follow.create({
+        data: { followerId: welcomer.userId, followingId: newUser.id },
+      }).catch(() => {}); // ignore if already follows
+
+      console.log(`[ai-engager] @${welcomer.username} welcomed new user @${newUser.username}`);
+      
+      // Small delay between welcomes
+      await new Promise((r) => setTimeout(r, 60000 + Math.random() * 120000));
+    } catch (e: any) {
+      console.error(`[ai-engager] welcome failed for @${newUser.username}:`, e.message?.substring(0, 100));
+    }
+  }
+}
+
+// --- Story cycle: engagers post daily stories (24h) like real users ---
+// User-ordered 2026-10-17: 10 accounts should post stories for more visibility.
+export async function runEngagerStoryCycle() {
+  const agents = await getEngagerAgents();
+  if (agents.length === 0) return;
+  const shuffled = agents.sort(() => Math.random() - 0.5);
+  // 3-5 random agents post stories per cycle
+  const posters = shuffled.slice(0, 3 + Math.floor(Math.random() * 3));
+
+  const STORY_BG_COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE'];
+  const STORY_TEMPLATES = [
+    'Good morning! ☀️ Aaj ka din kaisa guzar raha hai?',
+    'Chai time! ☕ Kaun kaun pi raha hai?',
+    'Weekend plans? 🎉',
+    'Aaj ka mood 😊',
+    'New day, new vibes ✨',
+    'Kya haal hain dosto? 👋',
+    'Friday vibes 🕌',
+    'Cricket dekh rahe ho? 🏏',
+  ];
+
+  for (const agent of posters) {
+    if (!agent.userId) continue;
+    try {
+      // Skip if posted a story in the last 20 hours
+      const lastStory = await prisma.status.findFirst({
+        where: { userId: agent.userId },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      if (lastStory && Date.now() - lastStory.createdAt.getTime() < 20 * 60 * 60 * 1000) continue;
+
+      const { createStatus } = await import('./statusService');
+      const text = STORY_TEMPLATES[Math.floor(Math.random() * STORY_TEMPLATES.length)];
+      const bgColor = STORY_BG_COLORS[Math.floor(Math.random() * STORY_BG_COLORS.length)];
+      await createStatus(agent.userId, { textContent: text, bgColor, visibility: 'everyone' });
+      console.log(`[ai-engager] @${agent.username} posted story: ${text.substring(0, 30)}...`);
+      // Human gap 5-15 min between story posters
+      await new Promise((r) => setTimeout(r, 300000 + Math.random() * 600000));
+    } catch (e: any) {
+      console.error(`[ai-engager] story failed for @${agent.username}:`, e.message?.substring(0, 100));
     }
   }
 }

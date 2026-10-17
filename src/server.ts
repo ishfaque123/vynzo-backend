@@ -8,7 +8,7 @@ import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
-import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle } from './services/aiEngagerService';
+import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle } from './services/aiEngagerService';
 import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
 
 async function start() {
@@ -141,6 +141,28 @@ async function start() {
     }
     setTimeout(runEngagerReels, 45 * 60 * 1000);
     setInterval(runEngagerReels, 4 * 60 * 60 * 1000);
+
+    // AI engagers post daily stories like real users (every 8 hours)
+    async function runEngagerStories() {
+      try {
+        await runEngagerStoryCycle();
+      } catch (err) {
+        console.error('AI engager story cycle failed:', err);
+      }
+    }
+    setTimeout(runEngagerStories, 60 * 60 * 1000);
+    setInterval(runEngagerStories, 8 * 60 * 60 * 1000);
+
+    // Welcome new users: engagers follow newcomers (every 30 min)
+    async function runWelcomeNewUsers() {
+      try {
+        await runNewUserWelcomeCycle();
+      } catch (err) {
+        console.error('AI engager welcome cycle failed:', err);
+      }
+    }
+    setTimeout(runWelcomeNewUsers, 15 * 60 * 1000);
+    setInterval(runWelcomeNewUsers, 30 * 60 * 1000);
 
     const MESSAGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
     async function runMessageCleanup() {
