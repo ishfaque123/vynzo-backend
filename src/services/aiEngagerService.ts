@@ -705,27 +705,55 @@ export async function seedViewerAvatars() {
     if (!res.ok) throw new Error(`ZIP download failed: ${res.status}`);
     const buffer = Buffer.from(await res.arrayBuffer());
 
-    // Extract ZIP (using yauzl or similar - simplified: use adm-zip if available)
-    // For now, use a simple approach with the 'unzipper' pattern
-    const { execSync } = await import('child_process');
+    // Extract ZIP using pure Node.js (no unzip binary needed)
     const fs = await import('fs');
     const os = await import('os');
     const path = await import('path');
+    const zlib = await import('zlib');
 
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'avatars-'));
-    const zipPath = path.join(tmpDir, 'avatars.zip');
-    fs.writeFileSync(zipPath, buffer);
-    execSync(`unzip -q -o "${zipPath}" -d "${tmpDir}"`);
+
+    // Minimal ZIP parser: read local file headers and extract deflated entries
+    let offset = 0;
+    const extracted: string[] = [];
+    while (offset < buffer.length - 4) {
+      // Local file header signature: 0x04034b50
+      if (buffer.readUInt32LE(offset) !== 0x04034b50) break;
+      const method = buffer.readUInt16LE(offset + 8);
+      const nameLen = buffer.readUInt16LE(offset + 26);
+      const extraLen = buffer.readUInt16LE(offset + 28);
+      const name = buffer.toString('utf-8', offset + 30, offset + 30 + nameLen);
+      const dataStart = offset + 30 + nameLen + extraLen;
+      // Find next header or central directory to determine data length
+      // For simplicity, read compressed size from header
+      const compSize = buffer.readUInt32LE(offset + 18);
+      const fileData = buffer.subarray(dataStart, dataStart + compSize);
+      let content: Buffer;
+      if (method === 0) {
+        content = fileData; // stored
+      } else if (method === 8) {
+        content = zlib.inflateRawSync(fileData); // deflated
+      } else {
+        offset = dataStart + compSize;
+        continue;
+      }
+      if (name.endsWith('.jpg') && !name.includes('/')) {
+        const outPath = path.join(tmpDir, path.basename(name));
+        fs.writeFileSync(outPath, content);
+        extracted.push(outPath);
+      }
+      offset = dataStart + compSize;
+    }
 
     const { uploadToR2 } = await import('../config/r2');
     let updated = 0;
-    const files = fs.readdirSync(tmpDir).filter((f) => f.endsWith('.jpg'));
-    for (const file of files) {
+    for (const filePath of extracted) {
+      const file = path.basename(filePath);
       const username = file.replace('.jpg', '');
       try {
         const user = await prisma.user.findFirst({ where: { username }, select: { id: true } });
         if (!user) continue;
-        const fileBuffer = fs.readFileSync(path.join(tmpDir, file));
+        const fileBuffer = fs.readFileSync(filePath);
         const url = await uploadToR2(fileBuffer, 'image/jpeg', 'avatars');
         await prisma.user.update({ where: { id: user.id }, data: { profilePictureUrl: url } });
         updated++;
