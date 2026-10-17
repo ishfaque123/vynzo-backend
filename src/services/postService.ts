@@ -255,9 +255,11 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     const verifiedBoost = (post.user as any)?.isVerified ? WEIGHTS.verifiedBonus / (1 + hoursOld / 24) : 0;
     const baseScore = recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost + verifiedBoost;
     // FIX 3 (2026-10-15): seen posts sink on first-page refresh (IG-style), plus a small
-    // jitter so refresh order varies slightly without breaking ranking quality.
+    // FIX 3 (2026-10-15, strengthened 2026-10-17): seen posts sink HARD on first-page
+    // refresh (IG-style). User complained 2026-10-17: "wahi old boring same posts".
+    // 0.05 penalty ensures seen posts almost never resurface on page 1.
     // Only applied on the first page so offset pagination stays stable.
-    const seenFactor = isFirstPage && seenPostIds.has(post.id) ? 0.25 : 1;
+    const seenFactor = isFirstPage && seenPostIds.has(post.id) ? 0.05 : 1;
     const jitter = isFirstPage ? 1 + (Math.random() - 0.5) * 0.08 : 1;
     return { post, hoursOld, score: baseScore * seenFactor * jitter };
   });
