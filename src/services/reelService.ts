@@ -362,7 +362,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
 
     // 4. Recency (0-15 points, decays over 7 days)
     const recency = Math.max(0, 1 - ageHours / 168); // 168h = 7 days
-    score += recency * 15;
+    score += recency * 30; // doubled 2026-10-17: new reels get more boost
 
     // 5. Location bonus
     if (currentUser && r.user) {
@@ -401,6 +401,16 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       if (Math.abs(a.score - b.score) > 0.01) return b.score - a.score;
       return new Date(b.reel.createdAt).getTime() - new Date(a.reel.createdAt).getTime();
     });
+
+    // HIDE SEEN REELS (user-ordered 2026-10-17): remove already-viewed reels
+    // from page 1 so refresh always shows fresh content.
+    if (safeOffset === 0 && viewedReelIds.length > 0) {
+      const unseen = scored.filter((x) => !viewedReelIds.includes(x.reel.id));
+      if (unseen.length >= safeLimit) {
+        scored.length = 0;
+        scored.push(...unseen);
+      }
+    }
 
     // NEW REEL DISCOVERY (user-ordered 2026-10-17): guarantee fresh reels surface.
     // Without this, old viral reels (affinity 50 + following 20 + engagement 20 = 90pts)

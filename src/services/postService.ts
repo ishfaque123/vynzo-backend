@@ -118,7 +118,7 @@ export async function sharePost(userId: string, originalPostId: string, content:
   return toPostDTO(post, userId);
 }
 
-const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, cityMatch: 70, followingBonus: 50, affinityPerPastLike: 15, affinityPerComment: 12, affinityPerWatchSec: 0.5, affinityCap: 100, recencyBase: 200, verifiedBonus: 60 };
+const WEIGHTS = { like: 3, comment: 5, share: 4, countryMatch: 40, cityMatch: 70, followingBonus: 50, affinityPerPastLike: 15, affinityPerComment: 12, affinityPerWatchSec: 0.5, affinityCap: 100, recencyBase: 400, verifiedBonus: 60 };
 
 /**
  * Adaptive home-feed content mix: how much of the mixed feed should be reels
@@ -269,6 +269,18 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   // FIX 4 (2026-10-15): exploration slot — guarantee at least 2 fresh (<3h) posts in the
   // top 5 on the first page, so brand-new posts always get a chance to be discovered.
   if (isFirstPage) {
+    // HIDE SEEN POSTS (user-ordered 2026-10-17): "jo post dekh liya wo top par
+    // dobara na aaye". Remove seen posts from page 1 entirely (keep them for
+    // deeper pages). Only if unseen posts exist to fill the page.
+    if (currentUserId && seenPostIds.size > 0) {
+      const unseen = scored.filter((x) => !seenPostIds.has(x.post.id));
+      // Only filter if we have enough unseen to fill the page
+      if (unseen.length >= safeLimit) {
+        scored.length = 0;
+        scored.push(...unseen);
+      }
+    }
+
     const freshInTop5 = scored.slice(0, 5).filter((x) => x.hoursOld < 3).length;
     const need = Math.max(0, 2 - freshInTop5);
     if (need > 0) {
