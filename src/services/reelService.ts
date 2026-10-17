@@ -309,6 +309,13 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     },
   });
 
+  // REAL USER BOOST: fetch AI user IDs once for the boost below
+  const aiUserIds = new Set(
+    (await prisma.aIAgent.findMany({ select: { userId: true } }))
+      .map((a) => a.userId)
+      .filter(Boolean) as string[]
+  );
+
   // Get view counts for candidates
   const reelIds = reels.map((r) => r.id);
   let viewCounts = new Map<string, number>();
@@ -375,6 +382,9 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
 
     // 7b. Verified creator boost (Blue Tick perk: better reach)
     if (r.user?.isVerified) score += 12;
+    // 7c. REAL USER BOOST (user-ordered 2026-10-17): real users' reels rank
+    // above AI-generated content.
+    if (r.userId && !aiUserIds.has(r.userId)) score += 50;
     // Interest boosts: take the MAX, not the sum (avoid +100 stacking)
     // Settings interest (+25), watched a lot (+35), explicit "Interested" (+40)
     if (r.category) {

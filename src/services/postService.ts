@@ -187,6 +187,15 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
 
   const candidatePosts = rawCandidatePosts.filter((p) => !p.user?.isPrivate || p.userId === currentUserId || followingIds.has(p.userId));
 
+  // REAL USER BOOST (user-ordered 2026-10-17): real users' posts get priority
+  // over AI-generated content in the feed.
+  const aiUserIds = new Set(
+    (await prisma.aIAgent.findMany({ select: { userId: true } }))
+      .map((a) => a.userId)
+      .filter(Boolean) as string[]
+  );
+  const REAL_USER_BOOST = 150;
+
   let currentUserCountry: string | null = null;
   let currentUserCity: string | null = null;
   const affinityMap = new Map<string, number>();
@@ -253,7 +262,9 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     // FIX 2 (2026-10-15): verified boost decays with age too — the Blue Tick reach perk
     // stays strong for fresh posts but no longer keeps month-old verified posts immortal.
     const verifiedBoost = (post.user as any)?.isVerified ? WEIGHTS.verifiedBonus / (1 + hoursOld / 24) : 0;
-    const baseScore = recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost + verifiedBoost;
+    // REAL USER BOOST: non-AI authors get +150 so real users' posts rank first
+    const realUserBoost = !aiUserIds.has(post.userId) ? REAL_USER_BOOST : 0;
+    const baseScore = recencyScore + engagementScore + locationBoost + followingBonus + affinityBoost + verifiedBoost + realUserBoost;
     // FIX 3 (2026-10-15): seen posts sink on first-page refresh (IG-style), plus a small
     // FIX 3 (2026-10-15, strengthened 2026-10-17): seen posts sink HARD on first-page
     // refresh (IG-style). User complained 2026-10-17: "wahi old boring same posts".
