@@ -2,12 +2,13 @@ import rateLimit from 'express-rate-limit';
 
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  // 1000 per 15 min per IP: mobile carriers share public IPs (CGNAT), so a
-  // low per-IP cap blocks innocent users. Brute-force protection stays on
-  // the dedicated authLimiter for sensitive endpoints.
-  max: 1000,
+  // BEST: Key by user ID for logged-in users, IP for guests.
+  // Mobile carriers share public IPs (CGNAT) - per-IP limits block innocent users.
+  // User-ID keying means each person gets their own limit, no matter the network.
+  max: 5000,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req: any) => req.user?.id ?? req.ip ?? 'unknown',
 });
 
 export const postCreateLimiter = rateLimit({
@@ -23,8 +24,8 @@ export const postCreateLimiter = rateLimit({
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, error: { code: 'TOO_MANY_REQUESTS', message: 'Too many attempts. Try again later.' } },
+  message: { success: false, error: { code: 'TOO_MANY_REQUESTS', message: 'Too many attempts. Please wait a minute and try again.' } },
 });
