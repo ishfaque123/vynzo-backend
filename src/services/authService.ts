@@ -6,6 +6,25 @@ import { getOrCreateDeviceSession, getDeviceSession, RequestMeta } from './devic
 import { createNotification } from './notificationService';
 import { ApiError } from '../middleware/errorHandler';
 
+// Generate a unique username from email for new signups.
+// This ensures every user has a username from the start, preventing null-author posts.
+async function generateUsernameFromEmail(email: string): Promise<string> {
+  const prefix = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '_').substring(0, 20) || 'user';
+  let username = prefix;
+  let suffix = 0;
+  while (true) {
+    const existing = await prisma.user.findUnique({ where: { username } });
+    if (!existing) return username;
+    suffix += 1;
+    username = `${prefix}${suffix}`;
+    if (suffix > 9999) {
+      // Fallback to random suffix
+      username = `${prefix}_${Date.now().toString(36)}`;
+      return username;
+    }
+  }
+}
+
 async function loginWithGoogleIdentity(
   googleId: string,
   email?: string,
@@ -34,7 +53,8 @@ async function loginWithGoogleIdentity(
 
   if (!user) {
     try {
-      user = await prisma.user.create({ data: { googleId, email: normalizedEmail || null } });
+      const autoUsername = normalizedEmail ? await generateUsernameFromEmail(normalizedEmail) : `user_${Date.now().toString(36)}`;
+      user = await prisma.user.create({ data: { googleId, email: normalizedEmail || null, username: autoUsername, displayName: autoUsername } });
       isNewUser = true;
     } catch (error) {
       if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
@@ -194,7 +214,8 @@ export async function loginWithEmail(email: string, deviceToken?: string, meta?:
 
   if (!user) {
     try {
-      user = await prisma.user.create({ data: { email: normalizedEmail } });
+      const autoUsername = await generateUsernameFromEmail(normalizedEmail);
+      user = await prisma.user.create({ data: { email: normalizedEmail, username: autoUsername, displayName: autoUsername } });
       isNewUser = true;
     } catch (error) {
       if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
