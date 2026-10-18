@@ -15,7 +15,8 @@ export async function uploadAvatarHandler(req: Request, res: Response, next: Nex
     });
     sendSuccess(res, { profilePictureUrl: user.profilePictureUrl });
 
-    createPost(req.user!.id, `${user.displayName} updated their profile picture`, url, 'public').catch(() => {});
+    const name = user.displayName || user.username || 'Someone';
+    createPost(req.user!.id, `${name} updated their profile picture`, url, 'public').catch(() => {});
   } catch (err) { next(err); }
 }
 
