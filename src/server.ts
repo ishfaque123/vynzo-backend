@@ -7,6 +7,7 @@ import { cleanupExpiredStatuses } from './services/statusService';
 import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
+import { ensureDisplayNames } from './services/displayNameService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
 import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle, seedViewerAgents, seedViewerAvatars, runViewerReelCycle, runViewerPostCycle, runViewerCreatePostCycle } from './services/aiEngagerService';
 import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
@@ -21,6 +22,9 @@ async function start() {
 
     // Ensure viral_post notification type exists (safe, idempotent)
     await ensureViralPostSchema();
+
+    // Fix null displayNames and "null..." posts (safe, idempotent)
+    await ensureDisplayNames();
 
     // Seed the 10 AI poster accounts (safe, idempotent)
     await seedPosterAgents();
