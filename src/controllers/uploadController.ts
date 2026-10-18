@@ -15,8 +15,11 @@ export async function uploadAvatarHandler(req: Request, res: Response, next: Nex
     });
     sendSuccess(res, { profilePictureUrl: user.profilePictureUrl });
 
-    const displayName = user.displayName || user.username || 'Someone';
-    createPost(req.user!.id, `${displayName} updated their profile picture`, url, 'public').catch(() => {});
+    const displayName = user.displayName || user.username;
+    // Only create the post if we have a name (skip "Someone" posts)
+    if (displayName) {
+      createPost(req.user!.id, `${displayName} updated their profile picture`, url, 'public').catch(() => {});
+    }
   } catch (err) { next(err); }
 }
 
