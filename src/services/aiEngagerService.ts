@@ -219,6 +219,8 @@ async function generateEngagerPostContent(persona: EngagerPersona, topicOverride
 
 // 2-4 random engagers create an original post per cycle (like real active users)
 export async function runEngagerPostCycle() {
+  // PAUSED by user 2026-10-18: AI posting disabled, likes/comments still active
+  if (process.env.AI_POSTING_PAUSED === 'true') return;
   const agents = await getEngagerAgents();
   if (agents.length === 0) return;
 
@@ -922,6 +924,8 @@ async function generateViewerPostContent(name: string, username: string): Promis
 }
 
 export async function runViewerCreatePostCycle() {
+  // PAUSED by user 2026-10-18: AI posting disabled, likes/comments still active
+  if (process.env.AI_POSTING_PAUSED === 'true') return;
   const agents = await getViewerAgents();
   if (agents.length === 0) return;
 
