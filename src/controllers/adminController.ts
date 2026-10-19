@@ -888,3 +888,59 @@ export async function adminUploadReel(req: Request, res: Response, next: NextFun
     next(err);
   }
 }
+
+/**
+ * Admin: Toggle monetization for a user (force activate/deactivate).
+ * POST /api/admin/users/:userId/monetization
+ * Body: { forced: boolean }
+ */
+export async function setAdminUserMonetization(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { userId } = req.params;
+    const { forced } = req.body;
+    if (typeof forced !== 'boolean') {
+      throw new ApiError(400, 'INVALID_INPUT', 'forced must be a boolean.');
+    }
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { monetizationForced: forced },
+      select: { id: true, username: true, monetizationForced: true },
+    });
+    sendSuccess(res, { user });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Admin: Add earnings to a user's wallet balance.
+ * POST /api/admin/users/:userId/earnings
+ * Body: { amount: number, note?: string }
+ */
+export async function addAdminUserEarnings(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { userId } = req.params;
+    const { amount, note } = req.body;
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount)) {
+      throw new ApiError(400, 'INVALID_INPUT', 'amount must be a number.');
+    }
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { walletBalance: { increment: numAmount } },
+      select: { id: true, username: true, walletBalance: true },
+    });
+    // Record the earning
+    await prisma.earning.create({
+      data: {
+        userId,
+        amount: numAmount,
+        type: 'admin_adjustment',
+        referenceId: note ? String(note).substring(0, 200) : null,
+      },
+    });
+    sendSuccess(res, { user });
+  } catch (err) {
+    next(err);
+  }
+}
