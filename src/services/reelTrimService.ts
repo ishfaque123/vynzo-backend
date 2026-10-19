@@ -152,3 +152,44 @@ export async function createTrimmedReel(
     await rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }
+
+/**
+ * Compress a video for reel upload (Facebook-style).
+ * - Max 720p resolution
+ * - H.264, CRF 28 (good quality, small size)
+ * - Fast preset for quick processing
+ * Returns the path to the compressed file, or the original path if compression isn't needed/failed.
+ */
+export async function compressVideoForUpload(inputPath: string): Promise<string> {
+  const { stat } = await import('fs/promises');
+  try {
+    const stats = await stat(inputPath);
+    // Only compress if larger than 15MB
+    if (stats.size < 15 * 1024 * 1024) {
+      return inputPath;
+    }
+  } catch {
+    return inputPath;
+  }
+
+  const outputPath = inputPath + '.compressed.mp4';
+  try {
+    const args = [
+      '-y',
+      '-i', inputPath,
+      '-vf', 'scale=-2:min(720\\,ih)',
+      '-c:v', 'libx264',
+      '-preset', 'fast',
+      '-crf', '28',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-movflags', '+faststart',
+      outputPath,
+    ];
+    await execFileAsync('ffmpeg', args, { maxBuffer: 8 * 1024 * 1024, timeout: 120000 });
+    return outputPath;
+  } catch (err) {
+    console.error('[reel] video compression failed, using original', err);
+    return inputPath;
+  }
+}
