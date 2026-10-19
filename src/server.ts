@@ -22,6 +22,20 @@ async function start() {
     // Ensure viral_post notification type exists (safe, idempotent)
     await ensureViralPostSchema();
 
+    // Ensure monetization_forced column exists (safe, idempotent)
+    try {
+      const exists = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
+        'SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+        'users', 'monetization_forced'
+      );
+      if (Number(exists[0]?.cnt || 0) === 0) {
+        await prisma.$executeRawUnsafe('ALTER TABLE `users` ADD COLUMN `monetization_forced` BOOLEAN NOT NULL DEFAULT FALSE');
+        console.log('[monetization] added column users.monetization_forced');
+      }
+    } catch (e) {
+      console.error('[monetization] ensure column failed', e);
+    }
+
     // Seed the 10 AI poster accounts (safe, idempotent)
     await seedPosterAgents();
 
