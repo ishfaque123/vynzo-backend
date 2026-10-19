@@ -12,7 +12,7 @@ import { uploadStreamToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
 import { env } from '../config/env';
 import { createWatermarkedReelDownload } from '../services/reelDownloadService';
-import { createTrimmedReel } from '../services/reelTrimService';
+import { createTrimmedReel, compressVideoForUpload } from '../services/reelTrimService';
 import { extractVideoFrameToR2 } from '../services/videoThumbnailService';
 import { detectVideoCategory, REEL_CATEGORIES } from '../services/videoCategoryService';
 
@@ -77,7 +77,17 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
           throw err;
         }
       } else {
-        videoUrl = await uploadStreamToR2(createReadStream(tempPath), videoFile.mimetype, 'reels', path.extname(videoFile.originalname).slice(1).toLowerCase() || 'mp4');
+        // Compress video before upload (Facebook-style: 720p max, smaller size, good quality)
+        const compressedPath = await compressVideoForUpload(tempPath);
+        const finalPath = compressedPath !== tempPath ? compressedPath : tempPath;
+        try {
+          videoUrl = await uploadStreamToR2(createReadStream(finalPath), 'video/mp4', 'reels', 'mp4');
+        } finally {
+          // Clean up compressed temp file if created
+          if (finalPath !== tempPath) {
+            await unlink(finalPath).catch(() => {});
+          }
+        }
       }
       sendSuccess(res, { reel: await createReel(req.user!.id, { videoUrl, caption, durationSec, thumbnailUrl, category}) }, 201);
     } catch (err) {
