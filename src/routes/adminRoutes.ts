@@ -8,6 +8,8 @@ import {
   updateAdminUserVerification,
   deleteAdminUser,
   clearAdminUserStrikes,
+  setAdminUserMonetization,
+  addAdminUserEarnings,
   listAdminPosts,
   deleteAdminPost,
   listAdminReports,
@@ -37,6 +39,8 @@ router.patch('/users/:userId/status', updateAdminUserStatus);
 router.patch('/users/:userId/verification', updateAdminUserVerification);
 router.delete('/users/:userId', deleteAdminUser);
 router.delete('/users/:userId/strikes', clearAdminUserStrikes);
+router.post('/users/:userId/monetization', setAdminUserMonetization);
+router.post('/users/:userId/earnings', addAdminUserEarnings);
 router.get('/posts', listAdminPosts);
 router.delete('/posts/:postId', deleteAdminPost);
 router.get('/reports', listAdminReports);
