@@ -901,12 +901,21 @@ export async function setAdminUserMonetization(req: Request, res: Response, next
     if (typeof forced !== 'boolean') {
       throw new ApiError(400, 'INVALID_INPUT', 'forced must be a boolean.');
     }
-    const user = await prisma.user.update({
-      where: { id: userId },
+    // Accept either user ID or username (with or without @)
+    const cleanId = userId.startsWith('@') ? userId.slice(1) : userId;
+    let user = await prisma.user.findUnique({ where: { id: userId } }).catch(() => null);
+    if (!user) {
+      user = await prisma.user.findUnique({ where: { username: cleanId } });
+    }
+    if (!user) {
+      throw new ApiError(404, 'USER_NOT_FOUND', 'User not found. Use User ID or username.');
+    }
+    const updated = await prisma.user.update({
+      where: { id: user.id },
       data: { monetizationForced: forced },
       select: { id: true, username: true, monetizationForced: true },
     });
-    sendSuccess(res, { user });
+    sendSuccess(res, { user: updated });
   } catch (err) {
     next(err);
   }
@@ -925,21 +934,30 @@ export async function addAdminUserEarnings(req: Request, res: Response, next: Ne
     if (isNaN(numAmount)) {
       throw new ApiError(400, 'INVALID_INPUT', 'amount must be a number.');
     }
-    const user = await prisma.user.update({
-      where: { id: userId },
+    // Accept either user ID or username (with or without @)
+    const cleanId = userId.startsWith('@') ? userId.slice(1) : userId;
+    let user = await prisma.user.findUnique({ where: { id: userId } }).catch(() => null);
+    if (!user) {
+      user = await prisma.user.findUnique({ where: { username: cleanId } });
+    }
+    if (!user) {
+      throw new ApiError(404, 'USER_NOT_FOUND', 'User not found. Use User ID or username.');
+    }
+    const updated = await prisma.user.update({
+      where: { id: user.id },
       data: { walletBalance: { increment: numAmount } },
       select: { id: true, username: true, walletBalance: true },
     });
     // Record the earning
     await prisma.earning.create({
       data: {
-        userId,
+        userId: user.id,
         amount: numAmount,
         type: 'admin_adjustment',
         referenceId: note ? String(note).substring(0, 200) : null,
       },
     });
-    sendSuccess(res, { user });
+    sendSuccess(res, { user: updated });
   } catch (err) {
     next(err);
   }
