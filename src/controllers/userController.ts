@@ -88,7 +88,7 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
-      select: { walletBalance: true },
+      select: { walletBalance: true, monetizationForced: true },
     });
     if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
 
@@ -129,7 +129,7 @@ export async function getMyDashboard(req: Request, res: Response, next: NextFunc
       allGoalsMet,
       newAchievement: newAchievement ? { key: newAchievement.key, name: newAchievement.name } : null,
       monetization: {
-        status: referrals >= requiredReferrals ? 'eligible' : 'locked',
+        status: (user.monetizationForced || referrals >= requiredReferrals) ? 'eligible' : 'locked',
         referrals,
         requiredReferrals,
         progress: Math.min(100, Math.round((referrals / requiredReferrals) * 100)),
