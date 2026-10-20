@@ -161,17 +161,8 @@ export async function createTrimmedReel(
  * Returns the path to the compressed file, or the original path if compression isn't needed/failed.
  */
 export async function compressVideoForUpload(inputPath: string): Promise<string> {
-  const { stat } = await import('fs/promises');
-  try {
-    const stats = await stat(inputPath);
-    // Only compress if larger than 15MB
-    if (stats.size < 15 * 1024 * 1024) {
-      return inputPath;
-    }
-  } catch {
-    return inputPath;
-  }
-
+  // EVERY video is compressed on upload (user-ordered 2026-10-20) — the old
+  // "only if larger than 15MB" rule let 5-14MB reels through untouched.
   const outputPath = inputPath + '.compressed.mp4';
   try {
     const args = [
@@ -187,6 +178,15 @@ export async function compressVideoForUpload(inputPath: string): Promise<string>
       outputPath,
     ];
     await execFileAsync('ffmpeg', args, { maxBuffer: 8 * 1024 * 1024, timeout: 120000 });
+    // Safety: compression must never make a file HEAVIER. A few clips are
+    // already smaller than the re-encode — keep the original for those and
+    // discard the larger compressed copy.
+    const { stat, unlink } = await import('fs/promises');
+    const [inStats, outStats] = await Promise.all([stat(inputPath), stat(outputPath)]);
+    if (outStats.size >= inStats.size) {
+      await unlink(outputPath).catch(() => {});
+      return inputPath;
+    }
     return outputPath;
   } catch (err) {
     console.error('[reel] video compression failed, using original', err);
