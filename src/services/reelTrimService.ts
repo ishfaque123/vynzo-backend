@@ -160,29 +160,54 @@ export async function createTrimmedReel(
  * - Fast preset for quick processing
  * Returns the path to the compressed file, or the original path if compression isn't needed/failed.
  */
+async function encodeCompressedVideo(inputPath: string, outputPath: string, crf: number): Promise<void> {
+  const args = [
+    '-y',
+    '-i', inputPath,
+    '-vf', 'scale=-2:min(720\\,ih)',
+    '-c:v', 'libx264',
+    '-preset', 'fast',
+    '-crf', String(crf),
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-movflags', '+faststart',
+    outputPath,
+  ];
+  await execFileAsync('ffmpeg', args, { maxBuffer: 8 * 1024 * 1024, timeout: 120000 });
+}
+
 export async function compressVideoForUpload(inputPath: string): Promise<string> {
   // EVERY video is compressed on upload (user-ordered 2026-10-20) — the old
   // "only if larger than 15MB" rule let 5-14MB reels through untouched.
   const outputPath = inputPath + '.compressed.mp4';
   try {
-    const args = [
-      '-y',
-      '-i', inputPath,
-      '-vf', 'scale=-2:min(720\\,ih)',
-      '-c:v', 'libx264',
-      '-preset', 'fast',
-      '-crf', '28',
-      '-c:a', 'aac',
-      '-b:a', '128k',
-      '-movflags', '+faststart',
-      outputPath,
-    ];
-    await execFileAsync('ffmpeg', args, { maxBuffer: 8 * 1024 * 1024, timeout: 120000 });
+    const { stat, unlink, rename } = await import('fs/promises');
+    const inStats = await stat(inputPath);
+    await encodeCompressedVideo(inputPath, outputPath, 28);
+    let outStats = await stat(outputPath);
+    // BIG-VIDEO SMART SQUEEZE (user-ordered 2026-10-20): a video that arrived
+    // over 10MB and is STILL over 10MB after the standard pass gets one
+    // stronger pass (CRF 32, still up to 720p) — as light as possible without
+    // visibly hurting quality on a phone screen.
+    if (inStats.size > 10 * 1024 * 1024 && outStats.size > 10 * 1024 * 1024) {
+      const secondPath = inputPath + '.compressed2.mp4';
+      try {
+        await encodeCompressedVideo(inputPath, secondPath, 32);
+        const secondStats = await stat(secondPath);
+        if (secondStats.size < outStats.size) {
+          await unlink(outputPath).catch(() => {});
+          await rename(secondPath, outputPath);
+          outStats = secondStats;
+        } else {
+          await unlink(secondPath).catch(() => {});
+        }
+      } catch {
+        // Second pass failed or timed out — the first-pass result stands.
+      }
+    }
     // Safety: compression must never make a file HEAVIER. A few clips are
     // already smaller than the re-encode — keep the original for those and
     // discard the larger compressed copy.
-    const { stat, unlink } = await import('fs/promises');
-    const [inStats, outStats] = await Promise.all([stat(inputPath), stat(outputPath)]);
     if (outStats.size >= inStats.size) {
       await unlink(outputPath).catch(() => {});
       return inputPath;
