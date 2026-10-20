@@ -5,6 +5,7 @@ import { createStatus, getStatusFeed, viewStatus, getStatusViewers, deleteStatus
 import { votePoll, answerQuestion } from '../services/stickerService';
 import { muteStories, unmuteStories, getMutedStories } from '../services/statusMuteService';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
+import { compressImageBuffer } from '../services/imageCompressService';
 import { extractVideoFrameToR2, getVideoDurationSec } from '../services/videoThumbnailService';
 import { writeFile, rm } from 'fs/promises';
 import os from 'os';
@@ -32,7 +33,8 @@ export async function createStatusHandler(req: Request, res: Response, next: Nex
     let mediaType: string | undefined;
     let thumbnailUrl: string | undefined;
     if (req.file) {
-      mediaUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'statuses');
+      const statusImg = await compressImageBuffer(req.file.buffer, req.file.mimetype);
+      mediaUrl = await uploadToR2(statusImg.buffer, statusImg.mimeType, 'statuses');
       mediaType = req.file.mimetype.startsWith('video') ? 'video' : 'image';
       if (mediaType === 'video') {
         // Server-side duration check (client also checks, but never trust it alone).
