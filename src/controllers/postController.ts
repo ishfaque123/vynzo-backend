@@ -41,9 +41,10 @@ export async function createPostHandler(req: Request, res: Response, next: NextF
 
 export async function getFeedHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    // FB-style small batches (was 20): the first screen loads fast on slow
-    // networks and the frontend paginates with offset on scroll.
-    const limit = 10;
+    // FB-style small batches (was 20, then 10): user-ordered 2026-10-20 —
+    // total first-screen cards (posts + injected reels) should be ~10, so
+    // posts batch is 5 and the frontend paginates with offset on scroll.
+    const limit = 5;
     const rawOffset = parseInt(String(req.query.offset ?? '0'), 10);
     const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
     const { posts, hasMore } = await getFeed(req.user?.id, limit, offset);
