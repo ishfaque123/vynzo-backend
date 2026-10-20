@@ -41,7 +41,9 @@ export async function createPostHandler(req: Request, res: Response, next: NextF
 
 export async function getFeedHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const limit = 20;
+    // FB-style small batches (was 20): the first screen loads fast on slow
+    // networks and the frontend paginates with offset on scroll.
+    const limit = 10;
     const rawOffset = parseInt(String(req.query.offset ?? '0'), 10);
     const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0;
     const { posts, hasMore } = await getFeed(req.user?.id, limit, offset);
