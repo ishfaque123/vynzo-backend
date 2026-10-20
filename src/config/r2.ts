@@ -23,6 +23,7 @@ export async function uploadToR2(buffer: Buffer, mimeType: string, folder: strin
       Key: key,
       Body: buffer,
       ContentType: mimeType,
+      CacheControl: 'public, max-age=31536000, immutable',
     })
   );
 
@@ -39,6 +40,7 @@ export async function uploadStreamToR2(stream: Readable, mimeType: string, folde
       Key: key,
       Body: stream,
       ContentType: mimeType,
+      CacheControl: 'public, max-age=31536000, immutable',
     })
   );
 
@@ -52,6 +54,7 @@ export async function uploadBufferToKey(buffer: Buffer, key: string, mimeType: s
       Key: key,
       Body: buffer,
       ContentType: mimeType,
+      CacheControl: 'public, max-age=31536000, immutable',
     })
   );
   return `${env.r2PublicUrl}/${key}`;
@@ -64,6 +67,7 @@ export async function uploadFileToKey(filePath: string, key: string, mimeType: s
       Key: key,
       Body: createReadStream(filePath),
       ContentType: mimeType,
+      CacheControl: 'public, max-age=31536000, immutable',
     })
   );
   return `${env.r2PublicUrl}/${key}`;
