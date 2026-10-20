@@ -28,6 +28,7 @@ import {
 } from '../controllers/adminController';
 import { upload } from '../middleware/upload';
 import { getMediaCensusHandler } from '../controllers/mediaCensusController';
+import { optimizeOneMediaHandler } from '../controllers/mediaOptimizeController';
 import { reelUpload } from '../middleware/reelUpload';
 
 const router = Router();
@@ -36,6 +37,7 @@ router.use(authMiddleware, adminMiddleware);
 
 router.get('/overview', getAdminOverview);
 router.get('/media/census', getMediaCensusHandler);
+router.get('/media/optimize-one', optimizeOneMediaHandler);
 router.get('/users', listAdminUsers);
 router.patch('/users/:userId/status', updateAdminUserStatus);
 router.patch('/users/:userId/verification', updateAdminUserVerification);
