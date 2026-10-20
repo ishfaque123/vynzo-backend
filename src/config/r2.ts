@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
+import { createReadStream } from 'fs';
 import { env } from './env';
 import { randomUUID } from 'crypto';
 
@@ -41,6 +42,30 @@ export async function uploadStreamToR2(stream: Readable, mimeType: string, folde
     })
   );
 
+  return `${env.r2PublicUrl}/${key}`;
+}
+
+export async function uploadBufferToKey(buffer: Buffer, key: string, mimeType: string) {
+  await r2Client.send(
+    new PutObjectCommand({
+      Bucket: env.r2BucketName,
+      Key: key,
+      Body: buffer,
+      ContentType: mimeType,
+    })
+  );
+  return `${env.r2PublicUrl}/${key}`;
+}
+
+export async function uploadFileToKey(filePath: string, key: string, mimeType: string) {
+  await r2Client.send(
+    new PutObjectCommand({
+      Bucket: env.r2BucketName,
+      Key: key,
+      Body: createReadStream(filePath),
+      ContentType: mimeType,
+    })
+  );
   return `${env.r2PublicUrl}/${key}`;
 }
 
