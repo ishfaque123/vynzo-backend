@@ -7,6 +7,7 @@ import {
 import { setReaction } from '../services/likeService';
 import { recordPostView } from '../services/postAnalyticsService';
 import { uploadToR2 } from '../config/r2';
+import { compressImageBuffer } from '../services/imageCompressService';
 import { z } from 'zod';
 import { ApiError } from '../middleware/errorHandler';
 
@@ -24,7 +25,10 @@ export async function createPostHandler(req: Request, res: Response, next: NextF
     const { content, visibility, taggedUserIds, commentAudience, backgroundStyle, location } = createPostSchema.parse(req.body);
     if (backgroundStyle && req.file) throw new ApiError(400, 'POST_BACKGROUND_WITH_IMAGE', 'Text post backgrounds cannot be used with a photo.');
     let imageUrl: string | undefined;
-    if (req.file) imageUrl = await uploadToR2(req.file.buffer, req.file.mimetype, 'posts');
+    if (req.file) {
+      const postImg = await compressImageBuffer(req.file.buffer, req.file.mimetype);
+      imageUrl = await uploadToR2(postImg.buffer, postImg.mimeType, 'posts');
+    }
     if (!content.trim() && !imageUrl) throw new ApiError(400, 'POST_CONTENT_REQUIRED', 'Post must contain text or an image.');
     let tagIds: string[] = [];
     if (taggedUserIds) {
