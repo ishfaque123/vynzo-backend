@@ -105,3 +105,104 @@ export async function getDbCensusHandler(_req: Request, res: Response, next: Nex
     next(err);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Temporary DB space-reclaim operation (owner-ordered 2026-10-21 for the
+// disk-full incident). Rebuilds every table of the CURRENT database with
+// OPTIMIZE TABLE, one at a time, which returns each file's unused/grown
+// space to the filesystem WITHOUT deleting a single row. Runs in the
+// background; progress is polled via the status handler.
+
+interface OptimizeState {
+  running: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+  totalTables: number;
+  doneCount: number;
+  current: string | null;
+  results: Array<{ table: string; ok: boolean; note: string }>;
+  error: string | null;
+}
+
+const optimizeState: OptimizeState = {
+  running: false,
+  startedAt: null,
+  finishedAt: null,
+  totalTables: 0,
+  doneCount: 0,
+  current: null,
+  results: [],
+  error: null,
+};
+
+async function allocatedFilesMb(): Promise<number> {
+  const rows = await prisma.$queryRawUnsafe<Array<{ mb: number }>>(
+    `SELECT CAST(COALESCE(SUM(total_extents * extent_size), 0) AS DOUBLE) / 1048576 AS mb FROM information_schema.files`,
+  );
+  return round1(rows[0]?.mb ?? 0);
+}
+
+async function runOptimizeAll(): Promise<void> {
+  try {
+    const rows = await prisma.$queryRawUnsafe<Array<{ table_name: string }>>(
+      `SELECT table_name AS table_name FROM information_schema.tables
+        WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'
+        ORDER BY (data_length + index_length) DESC`,
+    );
+    optimizeState.totalTables = rows.length;
+    for (const r of rows) {
+      const name = r.table_name;
+      optimizeState.current = name;
+      try {
+        const res = await prisma.$queryRawUnsafe<Array<{ Msg_text?: string }>>(
+          'OPTIMIZE TABLE `' + name.replace(/`/g, '') + '`',
+        );
+        const note = res.map((x) => x.Msg_text ?? '').join('; ').slice(0, 200);
+        optimizeState.results.push({ table: name, ok: true, note });
+      } catch (e) {
+        optimizeState.results.push({
+          table: name,
+          ok: false,
+          note: e instanceof Error ? e.message.slice(0, 200) : String(e),
+        });
+      }
+      optimizeState.doneCount += 1;
+    }
+  } catch (e) {
+    optimizeState.error = e instanceof Error ? e.message.slice(0, 300) : String(e);
+  } finally {
+    optimizeState.running = false;
+    optimizeState.current = null;
+    optimizeState.finishedAt = new Date().toISOString();
+  }
+}
+
+export async function startDbOptimizeHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    if (optimizeState.running) {
+      sendSuccess(res, { started: false, reason: 'already running' });
+      return;
+    }
+    optimizeState.running = true;
+    optimizeState.startedAt = new Date().toISOString();
+    optimizeState.finishedAt = null;
+    optimizeState.totalTables = 0;
+    optimizeState.doneCount = 0;
+    optimizeState.current = null;
+    optimizeState.results = [];
+    optimizeState.error = null;
+    void runOptimizeAll();
+    sendSuccess(res, { started: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getDbOptimizeStatusHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const filesAllocatedMb = await allocatedFilesMb();
+    sendSuccess(res, { ...optimizeState, filesAllocatedMb });
+  } catch (err) {
+    next(err);
+  }
+}
