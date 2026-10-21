@@ -28,7 +28,7 @@ import {
 } from '../controllers/adminController';
 import { upload } from '../middleware/upload';
 import { getMediaCensusHandler } from '../controllers/mediaCensusController';
-import { getDbCensusHandler, startDbOptimizeHandler, getDbOptimizeStatusHandler } from '../controllers/dbCensusController';
+import { getDbCensusHandler, startDbOptimizeHandler, getDbOptimizeStatusHandler, startDbCleanupHandler, getDbCleanupStatusHandler } from '../controllers/dbCensusController';
 import { optimizeOneMediaHandler, optimizeBatchStartHandler, optimizeBatchStatusHandler } from '../controllers/mediaOptimizeController';
 import { reelUpload } from '../middleware/reelUpload';
 
@@ -42,6 +42,9 @@ router.get('/db/census', getDbCensusHandler);
 router.post('/db/optimize', startDbOptimizeHandler);
 router.get('/db/optimize/start', startDbOptimizeHandler);
 router.get('/db/optimize/status', getDbOptimizeStatusHandler);
+router.post('/db/cleanup', startDbCleanupHandler);
+router.get('/db/cleanup/start', startDbCleanupHandler);
+router.get('/db/cleanup/status', getDbCleanupStatusHandler);
 router.get('/media/optimize-one', optimizeOneMediaHandler);
 router.get('/media/optimize-batch/start', optimizeBatchStartHandler);
 router.get('/media/optimize-batch/status', optimizeBatchStatusHandler);

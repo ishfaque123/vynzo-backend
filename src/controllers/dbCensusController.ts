@@ -206,3 +206,123 @@ export async function getDbOptimizeStatusHandler(_req: Request, res: Response, n
     next(err);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Temporary DB cleanup operation (owner-ordered 2026-10-21 for the disk-full
+// incident). Deletes ONLY stale counting/analytics rows in bounded batches,
+// then rebuilds those tables. Never touches content tables (posts, comments,
+// users, follows, likes, messages). Targets and cutoffs (verified against
+// the Prisma schema and the services that read them):
+//   usage_pings              pinged_at  older than 7 days
+//   post_views               created_at older than 30 days
+//   reel_views               created_at older than 30 days
+//   notifications            created_at older than 30 days
+//   email_verification_codes expires_at in the past (dead codes)
+
+interface CleanupTarget {
+  table: string;
+  condition: string;
+}
+
+const CLEANUP_TARGETS: CleanupTarget[] = [
+  { table: 'usage_pings', condition: 'pinged_at < NOW() - INTERVAL 7 DAY' },
+  { table: 'post_views', condition: 'created_at < NOW() - INTERVAL 30 DAY' },
+  { table: 'reel_views', condition: 'created_at < NOW() - INTERVAL 30 DAY' },
+  { table: 'notifications', condition: 'created_at < NOW() - INTERVAL 30 DAY' },
+  { table: 'email_verification_codes', condition: 'expires_at < NOW()' },
+];
+
+interface CleanupState {
+  running: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+  phase: string;
+  filesBeforeMb: number | null;
+  filesAfterMb: number | null;
+  perTable: Array<{ table: string; matched: number; deleted: number; optimized: boolean; note: string }>;
+  error: string | null;
+}
+
+const cleanupState: CleanupState = {
+  running: false,
+  startedAt: null,
+  finishedAt: null,
+  phase: 'idle',
+  filesBeforeMb: null,
+  filesAfterMb: null,
+  perTable: [],
+  error: null,
+};
+
+async function runCleanup(): Promise<void> {
+  try {
+    cleanupState.phase = 'measuring';
+    cleanupState.filesBeforeMb = await allocatedFilesMb();
+    for (const t of CLEANUP_TARGETS) {
+      const entry = { table: t.table, matched: 0, deleted: 0, optimized: false, note: '' };
+      cleanupState.perTable.push(entry);
+      try {
+        cleanupState.phase = 'counting:' + t.table;
+        const cnt = await prisma.$queryRawUnsafe<Array<{ c: number }>>(
+          'SELECT CAST(COUNT(*) AS DOUBLE) AS c FROM `' + t.table + '` WHERE ' + t.condition,
+        );
+        entry.matched = Math.round(Number(cnt[0]?.c ?? 0));
+        cleanupState.phase = 'deleting:' + t.table;
+        for (let i = 0; i < 300; i++) {
+          const affected = await prisma.$executeRawUnsafe(
+            'DELETE FROM `' + t.table + '` WHERE ' + t.condition + ' LIMIT 5000',
+          );
+          entry.deleted += Number(affected);
+          if (Number(affected) < 5000) break;
+        }
+        cleanupState.phase = 'optimizing:' + t.table;
+        try {
+          await prisma.$queryRawUnsafe('OPTIMIZE TABLE `' + t.table + '`');
+          entry.optimized = true;
+        } catch (e) {
+          entry.note = 'optimize: ' + (e instanceof Error ? e.message.slice(0, 150) : String(e));
+        }
+      } catch (e) {
+        entry.note = (e instanceof Error ? e.message.slice(0, 200) : String(e));
+      }
+    }
+    cleanupState.phase = 'measuring-after';
+    cleanupState.filesAfterMb = await allocatedFilesMb();
+    cleanupState.phase = 'done';
+  } catch (e) {
+    cleanupState.error = e instanceof Error ? e.message.slice(0, 300) : String(e);
+    cleanupState.phase = 'error';
+  } finally {
+    cleanupState.running = false;
+    cleanupState.finishedAt = new Date().toISOString();
+  }
+}
+
+export async function startDbCleanupHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    if (cleanupState.running) {
+      sendSuccess(res, { started: false, reason: 'already running' });
+      return;
+    }
+    cleanupState.running = true;
+    cleanupState.startedAt = new Date().toISOString();
+    cleanupState.finishedAt = null;
+    cleanupState.phase = 'starting';
+    cleanupState.filesBeforeMb = null;
+    cleanupState.filesAfterMb = null;
+    cleanupState.perTable = [];
+    cleanupState.error = null;
+    void runCleanup();
+    sendSuccess(res, { started: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getDbCleanupStatusHandler(_req: Request, res: Response, next: NextFunction) {
+  try {
+    sendSuccess(res, { ...cleanupState });
+  } catch (err) {
+    next(err);
+  }
+}
