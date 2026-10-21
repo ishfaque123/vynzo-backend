@@ -296,7 +296,9 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
   }
 
   // Fetch candidate reels (more than needed for ranking)
-  const candidateLimit = Math.min(safeOffset + safeLimit + 50, 150);
+  // Fixed pool for every page: the ranked list must be identical across
+  // page requests, otherwise offset slices overlap and the client runs dry.
+  const candidateLimit = 250;
   const reels = await prisma.reel.findMany({
     where,
     orderBy: { createdAt: 'desc' },
@@ -413,8 +415,9 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     });
 
     // HIDE SEEN REELS (user-ordered 2026-10-17): remove already-viewed reels
-    // from page 1 so refresh always shows fresh content.
-    if (safeOffset === 0 && viewedReelIds.length > 0) {
+    // so refresh always shows fresh content. Applied on EVERY page (not just
+    // page 1) so the paged list stays consistent across requests.
+    if (viewedReelIds.length > 0) {
       const unseen = scored.filter((x) => !viewedReelIds.includes(x.reel.id));
       if (unseen.length >= safeLimit) {
         scored.length = 0;
@@ -426,7 +429,9 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     // Without this, old viral reels (affinity 50 + following 20 + engagement 20 = 90pts)
     // bury brand-new reels (recency 15 max). Like the post feed's exploration slot,
     // ensure at least 3 fresh (<6h) reels appear in the top 10 so new creators get growth.
-    if (safeOffset === 0) {
+    // Runs on every page request (not just offset 0) together with the own-reel
+    // pin and the diversity pass below, so all pages slice ONE consistent list.
+    {
       const nowMs = Date.now();
       const isFresh = (s: typeof scored[number]) =>
         (nowMs - new Date(s.reel.createdAt).getTime()) / 3600000 < 6;
