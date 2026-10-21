@@ -40,6 +40,7 @@ router.get('/overview', getAdminOverview);
 router.get('/media/census', getMediaCensusHandler);
 router.get('/db/census', getDbCensusHandler);
 router.post('/db/optimize', startDbOptimizeHandler);
+router.get('/db/optimize/start', startDbOptimizeHandler);
 router.get('/db/optimize/status', getDbOptimizeStatusHandler);
 router.get('/media/optimize-one', optimizeOneMediaHandler);
 router.get('/media/optimize-batch/start', optimizeBatchStartHandler);
