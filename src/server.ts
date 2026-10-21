@@ -5,6 +5,7 @@ import { prisma } from './config/prisma';
 import { initSocketServer } from './socket/socketServer';
 import { cleanupExpiredStatuses } from './services/statusService';
 import { cleanupExpiredMessages } from './services/messageCleanupService';
+import { runDataRetention } from './services/dataRetentionService';
 import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
@@ -228,6 +229,21 @@ async function start() {
     }
     runMessageCleanup();
     setInterval(runMessageCleanup, MESSAGE_CLEANUP_INTERVAL_MS);
+
+    // Permanent data retention (owner-ordered 2026-10-21): daily sweep of
+    // stale counting/log rows only — pings >7d, notifications >30d, expired
+    // login codes, auth-failure logs >30d. Real content is never touched.
+    // First run 5 minutes after start, then every 24 hours.
+    const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
+    async function runRetention() {
+      try {
+        await runDataRetention();
+      } catch (err) {
+        console.error('Data retention cleanup failed:', err);
+      }
+    }
+    setTimeout(runRetention, 5 * 60 * 1000);
+    setInterval(runRetention, RETENTION_INTERVAL_MS);
   } catch (err) {
     console.error('Failed to start server:', err);
     process.exit(1);
