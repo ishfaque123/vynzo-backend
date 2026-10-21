@@ -301,6 +301,17 @@ export function initSocketServer(httpServer: HttpServer) {
         }
 
         await prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
+        // Rooms are joined at connection time, so a conversation created
+        // AFTER either side connected sits in no room at all and the live
+        // emit below would reach nobody (first-time chats looked dead until
+        // an app restart). Pull both users' currently connected sockets
+        // into the room first — this heals new conversations for clients
+        // that are already connected, no client update needed.
+        socket.join(`conversation:${conversationId}`);
+        io.in(`user:${userId}`).socketsJoin(`conversation:${conversationId}`);
+        if (otherParticipant) {
+          io.in(`user:${otherParticipant.userId}`).socketsJoin(`conversation:${conversationId}`);
+        }
         io.to(`conversation:${conversationId}`).emit('message:new', message);
 
         let delivered = false;
@@ -399,6 +410,12 @@ export function initSocketServer(httpServer: HttpServer) {
       if (!conversationId) return;
       if (!(await isParticipant(conversationId, userId))) return;
       socket.to(`conversation:${conversationId}`).emit('typing:stop', { conversationId, userId });
+    });
+
+    socket.on('conversation:join', async ({ conversationId }: { conversationId: string }) => {
+      if (!conversationId) return;
+      if (!(await isParticipant(conversationId, userId))) return;
+      socket.join(`conversation:${conversationId}`);
     });
 
     socket.on('conversation:read', async ({ conversationId }: { conversationId: string }) => {
