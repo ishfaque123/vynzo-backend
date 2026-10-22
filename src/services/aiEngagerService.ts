@@ -773,138 +773,170 @@ export async function seedViewerAvatars() {
 
 // Viewer reel cycle: watch 100%, like 75%, comment 25% (85% emoji / 15% text)
 // STAGGERED: only 5-10 random viewers per cycle, random delays
+
+// --- Natural-spread engagement targets (owner spec, 2026-10-22) ---
+// Every post/reel gets a hidden, FIXED target derived from its own id, so
+// the same item always has the same target without storing anything: most
+// items get little or nothing, some a medium count, a few a lot, and a rare
+// one the whole fleet (~100). Likes/views are delivered a few at a time per
+// cycle, spread over hours -- never all at once, and never on every item.
+function spread01(seed: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+function viewerLikeTarget(id: string, kind: 'post' | 'reel'): number {
+  const r = spread01(`${kind}-like:${id}`);
+  const s = spread01(`${kind}-like-n:${id}`);
+  if (r < 0.20) return 0;                              // 20%: nothing
+  if (r < 0.50) return 3 + Math.floor(s * 10);         // 30%: 3-12
+  if (r < 0.72) return 13 + Math.floor(s * 22);        // 22%: 13-34
+  if (r < 0.86) return 35 + Math.floor(s * 25);        // 14%: 35-59
+  if (r < 0.95) return 60 + Math.floor(s * 20);        //  9%: 60-79
+  if (r < 0.99) return 80 + Math.floor(s * 15);        //  4%: 80-94
+  return 95 + Math.floor(s * 6);                       //  1%: 95-100 (whole fleet)
+}
+
+function viewerViewTarget(reelId: string): number {
+  const r = spread01(`reel-view:${reelId}`);
+  const s = spread01(`reel-view-n:${reelId}`);
+  if (r < 0.08) return Math.floor(s * 3);              //  8%: 0-2
+  if (r < 0.40) return 5 + Math.floor(s * 21);         // 32%: 5-25
+  if (r < 0.68) return 26 + Math.floor(s * 25);        // 28%: 26-50
+  if (r < 0.86) return 51 + Math.floor(s * 25);        // 18%: 51-75
+  if (r < 0.96) return 76 + Math.floor(s * 17);        // 10%: 76-92
+  return 93 + Math.floor(s * 8);                       //  4%: 93-100
+}
+
+async function viewerCommentIfReal(viewer: { userId: string | null; username: string }, kind: 'post' | 'reel', itemId: string, authorId: string) {
+  // Occasional comment (emoji-heavy pool), real users' content only -- as before.
+  if (!viewer.userId) return;
+  const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: authorId } });
+  if (isAIAuthor) return;
+  const useEmoji = Math.random() < 0.85;
+  const pool = useEmoji ? VIEWER_EMOJI_COMMENTS : VIEWER_TEXT_COMMENTS;
+  const content = pool[Math.floor(Math.random() * pool.length)];
+  try {
+    if (kind === 'post') {
+      const existing = await prisma.comment.findFirst({ where: { userId: viewer.userId, postId: itemId } });
+      if (!existing) await prisma.comment.create({ data: { userId: viewer.userId, postId: itemId, content } });
+    } else {
+      const existing = await prisma.reelComment.findFirst({ where: { reelId: itemId, userId: viewer.userId } });
+      if (!existing) await prisma.reelComment.create({ data: { reelId: itemId, userId: viewer.userId, content } });
+    }
+  } catch { /* already commented / restricted -- fine */ }
+}
+
 export async function runViewerReelCycle() {
   const agents = await getViewerAgents();
   if (agents.length === 0) return;
+  const viewerIds = agents.map(a => a.userId).filter((x): x is string => !!x);
+  const since = new Date(Date.now() - 72 * 3600 * 1000);
 
-  // Only 5-10 random viewers act per cycle (not all 100)
-  const shuffled = agents.sort(() => Math.random() - 0.5);
-  const activeViewers = shuffled.slice(0, 5 + Math.floor(Math.random() * 6));
+  const reels = await prisma.reel.findMany({
+    where: { createdAt: { gte: since }, user: { accountStatus: 'active' } },
+    orderBy: { createdAt: 'desc' },
+    take: 40,
+    select: { id: true, userId: true },
+  });
 
-  for (const viewer of activeViewers) {
-    if (!viewer.userId) continue;
+  let likeBudget = 70;
+  let viewBudget = 160;
+
+  for (const reel of reels) {
+    if (likeBudget <= 0 && viewBudget <= 0) break;
     try {
-      // Get recent reels (not own, not from AI agents)
-      const reels = await prisma.reel.findMany({
-        where: {
-          userId: { not: viewer.userId },
-          user: { accountStatus: 'active' },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-        select: { id: true, userId: true },
-      });
-
-      // Watch 2-4 reels per viewer
-      const toWatch = reels.sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 3));
-
-      for (const reel of toWatch) {
-        // 100% VIEW — record the view so the creator sees it
-        try {
-          await prisma.reelView.create({
-            data: { reelId: reel.id, viewerId: viewer.userId },
-          });
-        } catch {} // already viewed — fine
-
-        // 75% LIKE
-        if (Math.random() < 0.75) {
-          const existing = await prisma.reelLike.findFirst({
-            where: { reelId: reel.id, userId: viewer.userId },
-          });
-          if (!existing) {
-            await prisma.reelLike.create({ data: { reelId: reel.id, userId: viewer.userId } });
+      // VIEWS toward this reel's hidden target
+      const viewTarget = viewerViewTarget(reel.id);
+      if (viewTarget > 0 && viewBudget > 0) {
+        const doneViews = await prisma.reelView.count({ where: { reelId: reel.id, viewerId: { in: viewerIds } } });
+        const remainingViews = viewTarget - doneViews;
+        if (remainingViews > 0) {
+          const chunk = Math.min(remainingViews, viewBudget, 2 + Math.floor(Math.random() * 7)); // 2-8 per cycle
+          const seenBy = new Set((await prisma.reelView.findMany({ where: { reelId: reel.id, viewerId: { in: viewerIds } }, select: { viewerId: true } })).map(v => v.viewerId));
+          const candidates = agents.filter(a => a.userId && a.userId !== reel.userId && !seenBy.has(a.userId)).sort(() => Math.random() - 0.5);
+          let n = 0;
+          for (const v of candidates) {
+            if (n >= chunk) break;
+            try { await prisma.reelView.create({ data: { reelId: reel.id, viewerId: v.userId! } }); n++; viewBudget--; } catch { /* already viewed */ }
+            await new Promise((r) => setTimeout(r, 1500 + Math.random() * 4000));
           }
+          if (n) console.log(`[ai-viewer] reel ${reel.id.slice(0, 8)} +${n} views (target ${viewTarget})`);
         }
-
-        // 25% COMMENT (85% emoji / 15% text)
-        if (Math.random() < 0.25) {
-          const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: reel.userId } });
-          if (!isAIAuthor) {
-            const useEmoji = Math.random() < 0.85;
-            const pool = useEmoji ? VIEWER_EMOJI_COMMENTS : VIEWER_TEXT_COMMENTS;
-            const content = pool[Math.floor(Math.random() * pool.length)];
-            const existing = await prisma.reelComment.findFirst({
-              where: { reelId: reel.id, userId: viewer.userId },
-            });
-            if (!existing) {
-              await prisma.reelComment.create({
-                data: { reelId: reel.id, userId: viewer.userId, content },
-              });
-            }
-          }
-        }
-
-        // Human-like watch time: 8-25 seconds
-        await new Promise((r) => setTimeout(r, 8000 + Math.random() * 17000));
       }
-      console.log(`[ai-viewer] @${viewer.username} watched ${toWatch.length} reels`);
-      // Random gap 3-10 min before next viewer acts
-      await new Promise((r) => setTimeout(r, 180000 + Math.random() * 420000));
+
+      // LIKES toward this reel's hidden target
+      const likeTarget = viewerLikeTarget(reel.id, 'reel');
+      if (likeTarget > 0 && likeBudget > 0) {
+        const doneLikes = await prisma.reelLike.count({ where: { reelId: reel.id, userId: { in: viewerIds } } });
+        const remainingLikes = likeTarget - doneLikes;
+        if (remainingLikes > 0) {
+          const chunk = Math.min(remainingLikes, likeBudget, 1 + Math.floor(Math.random() * 5)); // 1-5 per cycle
+          const likedBy = new Set((await prisma.reelLike.findMany({ where: { reelId: reel.id, userId: { in: viewerIds } }, select: { userId: true } })).map(l => l.userId));
+          const candidates = agents.filter(a => a.userId && a.userId !== reel.userId && !likedBy.has(a.userId)).sort(() => Math.random() - 0.5);
+          let n = 0;
+          for (const v of candidates) {
+            if (n >= chunk) break;
+            try {
+              await prisma.reelLike.create({ data: { reelId: reel.id, userId: v.userId! } });
+              n++; likeBudget--;
+              if (n === 1 && Math.random() < 0.15) await viewerCommentIfReal(v, 'reel', reel.id, reel.userId);
+            } catch { /* already liked */ }
+            await new Promise((r) => setTimeout(r, 2000 + Math.random() * 6000));
+          }
+          if (n) console.log(`[ai-viewer] reel ${reel.id.slice(0, 8)} +${n} likes (target ${likeTarget})`);
+        }
+      }
     } catch (e: any) {
-      console.error(`[ai-viewer] reel cycle failed for @${viewer.username}:`, e.message?.substring(0, 100));
+      console.error(`[ai-viewer] reel cycle failed for reel ${reel.id.slice(0, 8)}:`, e.message?.substring(0, 100));
     }
   }
 }
 
-// Viewer post cycle: like 90%, comment 35%
+// Viewer post cycle: deliver likes toward each post's hidden spread target
 export async function runViewerPostCycle() {
   const agents = await getViewerAgents();
   if (agents.length === 0) return;
+  const viewerIds = agents.map(a => a.userId).filter((x): x is string => !!x);
+  const since = new Date(Date.now() - 72 * 3600 * 1000);
 
-  const shuffled = agents.sort(() => Math.random() - 0.5);
-  const activeViewers = shuffled.slice(0, 5 + Math.floor(Math.random() * 6));
+  const posts = await prisma.post.findMany({
+    where: { visibility: 'public', createdAt: { gte: since }, user: { accountStatus: 'active' } },
+    orderBy: { createdAt: 'desc' },
+    take: 40,
+    select: { id: true, userId: true },
+  });
 
-  for (const viewer of activeViewers) {
-    if (!viewer.userId) continue;
+  let likeBudget = 70;
+
+  for (const post of posts) {
+    if (likeBudget <= 0) break;
+    const target = viewerLikeTarget(post.id, 'post');
+    if (!target) continue;
     try {
-      const posts = await prisma.post.findMany({
-        where: {
-          visibility: 'public',
-          userId: { not: viewer.userId },
-          user: { accountStatus: 'active' },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-        select: { id: true, userId: true },
-      });
-
-      const toEngage = posts.sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 3));
-
-      for (const post of toEngage) {
-        // 90% LIKE
-        if (Math.random() < 0.90) {
-          const existing = await prisma.like.findFirst({
-            where: { userId: viewer.userId, postId: post.id },
-          });
-          if (!existing) {
-            await prisma.like.create({ data: { userId: viewer.userId, postId: post.id } });
-          }
-        }
-
-        // 35% COMMENT (85% emoji / 15% text)
-        if (Math.random() < 0.35) {
-          const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: post.userId } });
-          if (!isAIAuthor) {
-            const useEmoji = Math.random() < 0.85;
-            const pool = useEmoji ? VIEWER_EMOJI_COMMENTS : VIEWER_TEXT_COMMENTS;
-            const content = pool[Math.floor(Math.random() * pool.length)];
-            const existing = await prisma.comment.findFirst({
-              where: { userId: viewer.userId, postId: post.id },
-            });
-            if (!existing) {
-              await prisma.comment.create({
-                data: { userId: viewer.userId, postId: post.id, content },
-              });
-            }
-          }
-        }
-
-        await new Promise((r) => setTimeout(r, 30000 + Math.random() * 120000));
+      const done = await prisma.like.count({ where: { postId: post.id, userId: { in: viewerIds } } });
+      const remaining = target - done;
+      if (remaining <= 0) continue;
+      const chunk = Math.min(remaining, likeBudget, 1 + Math.floor(Math.random() * 5)); // 1-5 per cycle
+      const likedBy = new Set((await prisma.like.findMany({ where: { postId: post.id, userId: { in: viewerIds } }, select: { userId: true } })).map(l => l.userId));
+      const candidates = agents.filter(a => a.userId && a.userId !== post.userId && !likedBy.has(a.userId)).sort(() => Math.random() - 0.5);
+      let n = 0;
+      for (const v of candidates) {
+        if (n >= chunk) break;
+        try {
+          await prisma.like.create({ data: { userId: v.userId!, postId: post.id } });
+          n++; likeBudget--;
+          if (n === 1 && Math.random() < 0.18) await viewerCommentIfReal(v, 'post', post.id, post.userId);
+        } catch { /* already liked */ }
+        await new Promise((r) => setTimeout(r, 2000 + Math.random() * 6000));
       }
-      console.log(`[ai-viewer] @${viewer.username} engaged with ${toEngage.length} posts`);
-      await new Promise((r) => setTimeout(r, 180000 + Math.random() * 420000));
+      if (n) console.log(`[ai-viewer] post ${post.id.slice(0, 8)} +${n} likes (target ${target})`);
     } catch (e: any) {
-      console.error(`[ai-viewer] post cycle failed for @${viewer.username}:`, e.message?.substring(0, 100));
+      console.error(`[ai-viewer] post cycle failed for post ${post.id.slice(0, 8)}:`, e.message?.substring(0, 100));
     }
   }
 }
