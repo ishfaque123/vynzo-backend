@@ -331,6 +331,14 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     } catch {}
   }
 
+  // Full seen set for THIS user. The viewHistory used for personalization
+  // above is capped at the last 200 views, which is too small to keep
+  // repeats out of a heavy viewer's feed, so fetch every viewed reel id.
+  const seenRows = reelIds.length
+    ? await prisma.reelView.findMany({ where: { viewerId: currentUserId }, select: { reelId: true } }).catch(() => [] as Array<{ reelId: string }>)
+    : [];
+  const seenReelIds = new Set<string>([...viewedReelIds, ...seenRows.map((v: { reelId: string }) => v.reelId)]);
+
   // Score each reel
   const now = Date.now();
 
@@ -406,24 +414,21 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     return { reel: r, score };
   });
 
-  // Sort by score (desc), then by recency for ties (For You only;
-  // Following tab stays chronological as fetched from the DB)
+  // Sort For You by POPULARITY first (owner-ordered 2026-10-22): the reels
+  // most people watch and like must come first. Popularity = total views +
+  // total likes (desc); the personalization score breaks ties, then the
+  // newest reel, then id so the order is fully deterministic.
+  // (Following tab stays chronological as fetched from the DB.)
   if (!isFollowingFeed) {
+    const popularityOf = (x: (typeof scored)[number]) => (viewCounts.get(x.reel.id) || 0) + x.reel._count.likes;
     scored.sort((a, b) => {
+      const byPopularity = popularityOf(b) - popularityOf(a);
+      if (byPopularity !== 0) return byPopularity;
       if (Math.abs(a.score - b.score) > 0.01) return b.score - a.score;
-      return new Date(b.reel.createdAt).getTime() - new Date(a.reel.createdAt).getTime();
+      const byDate = new Date(b.reel.createdAt).getTime() - new Date(a.reel.createdAt).getTime();
+      if (byDate !== 0) return byDate;
+      return b.reel.id < a.reel.id ? -1 : b.reel.id > a.reel.id ? 1 : 0;
     });
-
-    // HIDE SEEN REELS (user-ordered 2026-10-17): remove already-viewed reels
-    // so refresh always shows fresh content. Applied on EVERY page (not just
-    // page 1) so the paged list stays consistent across requests.
-    if (viewedReelIds.length > 0) {
-      const unseen = scored.filter((x) => !viewedReelIds.includes(x.reel.id));
-      if (unseen.length >= safeLimit) {
-        scored.length = 0;
-        scored.push(...unseen);
-      }
-    }
 
     // NEW REEL DISCOVERY (user-ordered 2026-10-17): guarantee fresh reels surface.
     // Without this, old viral reels (affinity 50 + following 20 + engagement 20 = 90pts)
@@ -496,6 +501,22 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       }
       scored.length = 0;
       scored.push(...diversified);
+    }
+
+    // NO REPEATS UNTIL EVERYTHING IS SEEN (owner-ordered 2026-10-22):
+    // stable-partition the ranked list — reels this user has already viewed
+    // move to the very end, keeping their ranked order among themselves, so
+    // no already-watched reel can resurface while unseen reels remain. The
+    // old rule only hid seen reels while at least a full page of unseen
+    // reels was left, so once a viewer had watched most of the catalog the
+    // same top reels came back on every load.
+    {
+      const unseen = scored.filter((x: (typeof scored)[number]) => !seenReelIds.has(x.reel.id));
+      const seen = scored.filter((x: (typeof scored)[number]) => seenReelIds.has(x.reel.id));
+      if (seen.length > 0 && unseen.length > 0) {
+        scored.length = 0;
+        scored.push(...unseen, ...seen);
+      }
     }
   }
 
