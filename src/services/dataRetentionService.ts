@@ -9,6 +9,9 @@ import { prisma } from '../config/prisma';
 //   - notifications older than 30 days
 //   - email_verification_codes whose expiry has passed
 //   - auth_failure_logs older than 30 days
+//   - device_sessions whose expiry has passed (added 2026-10-22 on the
+//     owner's order; an expired session is already unusable per
+//     getDeviceSession, and its account_sessions cascade-delete)
 //
 // It NEVER touches real content: posts, comments, reels, users, follows,
 // likes, messages, or view rows (post_views / reel_views are the source of
@@ -30,6 +33,7 @@ export interface RetentionResult {
   notifications: number;
   expiredCodes: number;
   authFailureLogs: number;
+  deviceSessions: number;
   totalDeleted: number;
   filesMb: number | null;
 }
@@ -85,12 +89,18 @@ export async function runDataRetention(): Promise<RetentionResult> {
     }),
   );
 
-  const totalDeleted = usagePings + notifications + expiredCodes + authFailureLogs;
+  const deviceSessions = await safeDelete('device_sessions', () =>
+    prisma.deviceSession.deleteMany({
+      where: { expiresAt: { lt: new Date(now) } },
+    }),
+  );
+
+  const totalDeleted = usagePings + notifications + expiredCodes + authFailureLogs + deviceSessions;
   const filesMb = await getTotalFilesMb();
 
   console.log(
     `[retention] deleted ${totalDeleted} stale rows ` +
-      `(pings=${usagePings}, notifications=${notifications}, expiredCodes=${expiredCodes}, authLogs=${authFailureLogs}); ` +
+      `(pings=${usagePings}, notifications=${notifications}, expiredCodes=${expiredCodes}, authLogs=${authFailureLogs}, deviceSessions=${deviceSessions}); ` +
       `db files=${filesMb === null ? 'unknown' : filesMb + ' MB'}`,
   );
 
@@ -100,5 +110,5 @@ export async function runDataRetention(): Promise<RetentionResult> {
     );
   }
 
-  return { usagePings, notifications, expiredCodes, authFailureLogs, totalDeleted, filesMb };
+  return { usagePings, notifications, expiredCodes, authFailureLogs, deviceSessions, totalDeleted, filesMb };
 }
