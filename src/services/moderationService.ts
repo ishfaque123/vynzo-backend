@@ -240,20 +240,24 @@ export async function ensureModerationSchema() {
     } catch (e: any) {
       console.error('[moderation] ai_agents table skipped:', e.message?.substring(0, 100));
     }
-    // Seed AI agents (links to existing @Fazeela and @mrbeast accounts)
-    try {
-      const { seedAIAgents } = await import('./aiAgentService');
-      await seedAIAgents();
-    } catch (e: any) {
-      console.error('[moderation] AI seed skipped:', e.message?.substring(0, 100));
-    }
+    // Seed AI agents — only when AI agents are enabled (default off).
+    // These are fake commenter accounts; see AI_AGENTS_ENABLED in server.ts.
+    if (process.env.AI_AGENTS_ENABLED === 'true') {
+      // Seed AI agents (links to existing @Fazeela and @mrbeast accounts)
+      try {
+        const { seedAIAgents } = await import('./aiAgentService');
+        await seedAIAgents();
+      } catch (e: any) {
+        console.error('[moderation] AI seed skipped:', e.message?.substring(0, 100));
+      }
 
-    // Seed additional commenter agents (idempotent upsert — Phase 1: @sameer)
-    try {
-      const { seedCommenterAgents } = await import('./aiAgentService');
-      await seedCommenterAgents();
-    } catch (e: any) {
-      console.error('[moderation] AI commenter seed skipped:', e.message?.substring(0, 100));
+      // Seed additional commenter agents (idempotent upsert — Phase 1: @sameer)
+      try {
+        const { seedCommenterAgents } = await import('./aiAgentService');
+        await seedCommenterAgents();
+      } catch (e: any) {
+        console.error('[moderation] AI commenter seed skipped:', e.message?.substring(0, 100));
+      }
     }
 
     console.log('[moderation] schema ensured and verified');

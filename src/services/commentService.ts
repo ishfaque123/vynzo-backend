@@ -103,6 +103,8 @@ export async function addComment(
   // Skip if this comment is from an AI agent (avoid loops)
   setImmediate(async () => {
     try {
+      // AI agents are disabled unless AI_AGENTS_ENABLED=true (see server.ts)
+      if (process.env.AI_AGENTS_ENABLED !== 'true') return;
       const { prisma } = await import('../config/prisma');
       const isAIAgent = await prisma.aIAgent.findFirst({ where: { userId } }).catch(() => null);
       if (isAIAgent) return; // AI doesn't reply to AI

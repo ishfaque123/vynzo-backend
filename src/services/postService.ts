@@ -96,7 +96,8 @@ export async function createPost(userId: string, content: string, imageUrl?: str
     setImmediate(() => { moderatePost(post.id).catch((err) => console.error('[moderation] background post check failed', err)); });
   }
   // AI agents comment on new public posts (background, human-like)
-  if (content?.trim() && visibility === 'public') {
+  // Only when AI agents are enabled (default off — see AI_AGENTS_ENABLED in server.ts)
+  if (content?.trim() && visibility === 'public' && process.env.AI_AGENTS_ENABLED === 'true') {
     setImmediate(async () => {
       try {
         const { triggerAIComments } = await import('./aiAgentService');

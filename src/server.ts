@@ -37,23 +37,34 @@ async function start() {
       console.error('[monetization] ensure column failed', e);
     }
 
-    // Seed the 10 AI poster accounts (safe, idempotent)
-    await seedPosterAgents();
+    // AI fake-engagement agents (poster / outreach / engager / viewer
+    // accounts) are DISABLED unless AI_AGENTS_ENABLED=true. They fabricate
+    // views, likes, comments, follows and posts, which Google treats as
+    // invalid traffic — they must stay off before AdMob ads are enabled.
+    const aiAgentsEnabled = process.env.AI_AGENTS_ENABLED === 'true';
+    if (!aiAgentsEnabled) {
+      console.log('[ai-agents] AI agents DISABLED — agent seeding and activity cycles skipped (set AI_AGENTS_ENABLED=true to enable).');
+    }
 
-    // Seed the 4 AI outreach accounts (safe, idempotent)
-    await seedOutreachAgents();
+    if (aiAgentsEnabled) {
+      // Seed the 10 AI poster accounts (safe, idempotent)
+      await seedPosterAgents();
 
-    // Seed the 10 AI engager accounts (safe, idempotent)
-    await seedEngagerAgents();
+      // Seed the 4 AI outreach accounts (safe, idempotent)
+      await seedOutreachAgents();
 
-    // Seed the 100 AI viewer accounts (safe, idempotent)
-    await seedViewerAgents();
+      // Seed the 10 AI engager accounts (safe, idempotent)
+      await seedEngagerAgents();
 
-    // Set viewer avatars from TikTok (one-time)
-    await seedViewerAvatars();
+      // Seed the 100 AI viewer accounts (safe, idempotent)
+      await seedViewerAgents();
 
-    // Official @frianzo follows all AI accounts (safe, idempotent)
-    await seedOfficialFollows();
+      // Set viewer avatars from TikTok (one-time)
+      await seedViewerAvatars();
+
+      // Official @frianzo follows all AI accounts (safe, idempotent)
+      await seedOfficialFollows();
+    }
 
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);
@@ -85,138 +96,140 @@ async function start() {
     runViralCheck();
     setInterval(runViralCheck, VIRAL_CHECK_INTERVAL_MS);
 
-    // AI poster accounts: ~1 original post/day each, staggered
-    async function runPoster() {
-      try {
-        await runPosterCycle();
-      } catch (err) {
-        console.error('AI poster cycle failed:', err);
+    if (aiAgentsEnabled) {
+      // AI poster accounts: ~1 original post/day each, staggered
+      async function runPoster() {
+        try {
+          await runPosterCycle();
+        } catch (err) {
+          console.error('AI poster cycle failed:', err);
+        }
       }
-    }
-    // Small delay so startup isn't blocked, then every 4 hours
-    setTimeout(runPoster, 2 * 60 * 1000);
-    setInterval(runPoster, POSTER_CYCLE_MS);
+      // Small delay so startup isn't blocked, then every 4 hours
+      setTimeout(runPoster, 2 * 60 * 1000);
+      setInterval(runPoster, POSTER_CYCLE_MS);
 
-    // AI agents like posts too (like real active users)
-    async function runLikes() {
-      try {
-        await runLikeCycle();
-      } catch (err) {
-        console.error('AI like cycle failed:', err);
+      // AI agents like posts too (like real active users)
+      async function runLikes() {
+        try {
+          await runLikeCycle();
+        } catch (err) {
+          console.error('AI like cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runLikes, 10 * 60 * 1000);
-    setInterval(runLikes, LIKE_CYCLE_MS);
+      setTimeout(runLikes, 10 * 60 * 1000);
+      setInterval(runLikes, LIKE_CYCLE_MS);
 
-    // AI outreach accounts: one-time friendly follow invite per user, daily
-    async function runOutreach() {
-      try {
-        await runOutreachCycle();
-      } catch (err) {
-        console.error('AI outreach cycle failed:', err);
+      // AI outreach accounts: one-time friendly follow invite per user, daily
+      async function runOutreach() {
+        try {
+          await runOutreachCycle();
+        } catch (err) {
+          console.error('AI outreach cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runOutreach, 5 * 60 * 1000);
-    setInterval(runOutreach, OUTREACH_CYCLE_MS);
+      setTimeout(runOutreach, 5 * 60 * 1000);
+      setInterval(runOutreach, OUTREACH_CYCLE_MS);
 
-    // AI engager accounts: like, follow, comment like real users (every 3 hours)
-    async function runEngagers() {
-      try {
-        await runEngagerCycle();
-      } catch (err) {
-        console.error('AI engager cycle failed:', err);
+      // AI engager accounts: like, follow, comment like real users (every 3 hours)
+      async function runEngagers() {
+        try {
+          await runEngagerCycle();
+        } catch (err) {
+          console.error('AI engager cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runEngagers, 15 * 60 * 1000);
-    setInterval(runEngagers, 3 * 60 * 60 * 1000);
+      setTimeout(runEngagers, 15 * 60 * 1000);
+      setInterval(runEngagers, 3 * 60 * 60 * 1000);
 
-    // AI engagers follow back anyone who follows them (every hour)
-    async function runFollowBacks() {
-      try {
-        await runFollowBackCycle();
-      } catch (err) {
-        console.error('AI follow-back cycle failed:', err);
+      // AI engagers follow back anyone who follows them (every hour)
+      async function runFollowBacks() {
+        try {
+          await runFollowBackCycle();
+        } catch (err) {
+          console.error('AI follow-back cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runFollowBacks, 20 * 60 * 1000);
-    setInterval(runFollowBacks, 60 * 60 * 1000);
+      setTimeout(runFollowBacks, 20 * 60 * 1000);
+      setInterval(runFollowBacks, 60 * 60 * 1000);
 
-    // AI engagers post original content like real users (every 6 hours)
-    async function runEngagerPosts() {
-      try {
-        await runEngagerPostCycle();
-      } catch (err) {
-        console.error('AI engager post cycle failed:', err);
+      // AI engagers post original content like real users (every 6 hours)
+      async function runEngagerPosts() {
+        try {
+          await runEngagerPostCycle();
+        } catch (err) {
+          console.error('AI engager post cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runEngagerPosts, 30 * 60 * 1000);
-    setInterval(runEngagerPosts, 6 * 60 * 60 * 1000);
+      setTimeout(runEngagerPosts, 30 * 60 * 1000);
+      setInterval(runEngagerPosts, 6 * 60 * 60 * 1000);
 
-    // AI engagers watch reels + like/comment like real viewers (every 4 hours)
-    async function runEngagerReels() {
-      try {
-        await runEngagerReelCycle();
-      } catch (err) {
-        console.error('AI engager reel cycle failed:', err);
+      // AI engagers watch reels + like/comment like real viewers (every 4 hours)
+      async function runEngagerReels() {
+        try {
+          await runEngagerReelCycle();
+        } catch (err) {
+          console.error('AI engager reel cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runEngagerReels, 45 * 60 * 1000);
-    setInterval(runEngagerReels, 4 * 60 * 60 * 1000);
+      setTimeout(runEngagerReels, 45 * 60 * 1000);
+      setInterval(runEngagerReels, 4 * 60 * 60 * 1000);
 
-    // AI viewers watch reels: 100% view, 75% like, 25% comment (every 2 hours)
-    async function runViewerReels() {
-      try {
-        await runViewerReelCycle();
-      } catch (err) {
-        console.error('AI viewer reel cycle failed:', err);
+      // AI viewers watch reels: 100% view, 75% like, 25% comment (every 2 hours)
+      async function runViewerReels() {
+        try {
+          await runViewerReelCycle();
+        } catch (err) {
+          console.error('AI viewer reel cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runViewerReels, 20 * 60 * 1000);
-    setInterval(runViewerReels, 2 * 60 * 60 * 1000);
+      setTimeout(runViewerReels, 20 * 60 * 1000);
+      setInterval(runViewerReels, 2 * 60 * 60 * 1000);
 
-    // AI viewers engage posts: 90% like, 35% comment (every 2 hours)
-    async function runViewerPosts() {
-      try {
-        await runViewerPostCycle();
-      } catch (err) {
-        console.error('AI viewer post cycle failed:', err);
+      // AI viewers engage posts: 90% like, 35% comment (every 2 hours)
+      async function runViewerPosts() {
+        try {
+          await runViewerPostCycle();
+        } catch (err) {
+          console.error('AI viewer post cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runViewerPosts, 35 * 60 * 1000);
-    setInterval(runViewerPosts, 2 * 60 * 60 * 1000);
+      setTimeout(runViewerPosts, 35 * 60 * 1000);
+      setInterval(runViewerPosts, 2 * 60 * 60 * 1000);
 
-    // AI viewers create daily posts (every 6 hours, 15-25 posters per cycle)
-    async function runViewerCreates() {
-      try {
-        await runViewerCreatePostCycle();
-      } catch (err) {
-        console.error('AI viewer create post cycle failed:', err);
+      // AI viewers create daily posts (every 6 hours, 15-25 posters per cycle)
+      async function runViewerCreates() {
+        try {
+          await runViewerCreatePostCycle();
+        } catch (err) {
+          console.error('AI viewer create post cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runViewerCreates, 50 * 60 * 1000);
-    setInterval(runViewerCreates, 6 * 60 * 60 * 1000);
+      setTimeout(runViewerCreates, 50 * 60 * 1000);
+      setInterval(runViewerCreates, 6 * 60 * 60 * 1000);
 
-    // AI engagers post daily stories like real users (every 8 hours)
-    async function runEngagerStories() {
-      try {
-        await runEngagerStoryCycle();
-      } catch (err) {
-        console.error('AI engager story cycle failed:', err);
+      // AI engagers post daily stories like real users (every 8 hours)
+      async function runEngagerStories() {
+        try {
+          await runEngagerStoryCycle();
+        } catch (err) {
+          console.error('AI engager story cycle failed:', err);
+        }
       }
-    }
-    setTimeout(runEngagerStories, 60 * 60 * 1000);
-    setInterval(runEngagerStories, 8 * 60 * 60 * 1000);
+      setTimeout(runEngagerStories, 60 * 60 * 1000);
+      setInterval(runEngagerStories, 8 * 60 * 60 * 1000);
 
-    // Welcome new users: engagers follow newcomers (every 30 min)
-    async function runWelcomeNewUsers() {
-      try {
-        await runNewUserWelcomeCycle();
-      } catch (err) {
-        console.error('AI engager welcome cycle failed:', err);
+      // Welcome new users: engagers follow newcomers (every 30 min)
+      async function runWelcomeNewUsers() {
+        try {
+          await runNewUserWelcomeCycle();
+        } catch (err) {
+          console.error('AI engager welcome cycle failed:', err);
+        }
       }
+      setTimeout(runWelcomeNewUsers, 15 * 60 * 1000);
+      setInterval(runWelcomeNewUsers, 30 * 60 * 1000);
     }
-    setTimeout(runWelcomeNewUsers, 15 * 60 * 1000);
-    setInterval(runWelcomeNewUsers, 30 * 60 * 1000);
 
     const MESSAGE_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // daily
     async function runMessageCleanup() {
