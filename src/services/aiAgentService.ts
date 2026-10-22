@@ -373,40 +373,16 @@ export function triggerAIComments(postId: string, postContent: string, authorNam
   });
 }
 
-// Trigger AI replies to new comments (background, non-blocking)
+// Trigger AI replies to new comments — DISABLED by owner order (2026-10-22).
+// Agents must ONLY post their own top-level comments, never reply inside a
+// user's comment thread: jumping into other people's conversations (e.g.
+// when a member mentions another member) is the clearest tell that an
+// account is a bot. The previous implementation picked a random agent to
+// reply under any real user's comment (25% chance, 100% when an agent was
+// @tagged). It is removed entirely; the call site in commentService stays
+// but now lands on this no-op. Restore from git history only on a fresh
+// owner order.
 export function triggerAIReplies(commentId: string, commentContent: string, commenterName: string, commenterId: string, postId: string) {
-  setImmediate(async () => {
-    try {
-      const agents = await getActiveAgents('commenter');
-      if (!agents.length) return;
-
-      // Don't reply to own comments (avoid loops)
-      const available = agents.filter(a => a.userId !== commenterId);
-      if (!available.length) return;
-
-      // 25% chance to reply (looks natural, not every comment gets a reply)
-      // BUT always reply if tagged (@fazeela mentioned)
-      const isTagged = agents.some((a) => new RegExp(`@${a.username}\\b`, 'i').test(commentContent));
-      if (!isTagged && Math.random() > 0.25) return;
-
-      const agent = available[Math.floor(Math.random() * available.length)];
-      if (!agent.userId) return;
-
-      const replyText = await generateAIReply(agent, commentContent, commenterName);
-      if (!replyText) return;
-
-      // Human-like delay: 15-30 seconds for replies
-      await new Promise((r) => setTimeout(r, 15000 + Math.random() * 15000));
-
-      try {
-        const { addComment } = await import('./commentService');
-        await addComment(agent.userId, postId, replyText, commentId);
-      } catch (e: any) {
-        if (e.code === 'COMMENTS_DISABLED' || e.code === 'COMMENTS_RESTRICTED') return;
-        console.error('[ai-agent] reply failed:', e.message?.substring(0, 100));
-      }
-    } catch (err) {
-      console.error('[ai-agent] reply trigger failed:', (err as Error).message?.substring(0, 100));
-    }
-  });
+  void commentId; void commentContent; void commenterName; void commenterId; void postId;
+  return;
 }
