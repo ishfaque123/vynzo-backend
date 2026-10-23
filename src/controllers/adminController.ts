@@ -922,6 +922,38 @@ export async function setAdminUserMonetization(req: Request, res: Response, next
 }
 
 /**
+ * Admin: Toggle AI video generation access for a user (force grant/revoke).
+ * POST /api/admin/users/:userId/video-gen
+ * Body: { forced: boolean }
+ */
+export async function setAdminUserVideoGen(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { userId } = req.params;
+    const { forced } = req.body;
+    if (typeof forced !== 'boolean') {
+      throw new ApiError(400, 'INVALID_INPUT', 'forced must be a boolean.');
+    }
+    // Accept either user ID or username (with or without @)
+    const cleanId = userId.startsWith('@') ? userId.slice(1) : userId;
+    let user = await prisma.user.findUnique({ where: { id: userId } }).catch(() => null);
+    if (!user) {
+      user = await prisma.user.findUnique({ where: { username: cleanId } });
+    }
+    if (!user) {
+      throw new ApiError(404, 'USER_NOT_FOUND', 'User not found. Use User ID or username.');
+    }
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { videoGenForced: forced },
+      select: { id: true, username: true, videoGenForced: true },
+    });
+    sendSuccess(res, { user: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * Admin: Add earnings to a user's wallet balance.
  * POST /api/admin/users/:userId/earnings
  * Body: { amount: number, note?: string }

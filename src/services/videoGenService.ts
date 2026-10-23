@@ -117,15 +117,28 @@ export function isVideoGenEnabled(): boolean {
 export const VIDEO_GEN_REFERRAL_THRESHOLD = 25;
 
 /**
- * Check if a user has unlocked AI video generation via referrals.
+ * Check if a user has unlocked AI video generation, either via referrals
+ * or an admin force-grant (videoGenForced).
  * (user-ordered 2026-10-16): 25 completed referrals = free access,
  * instead of a premium paywall.
  */
 export async function hasVideoGenAccess(userId: string): Promise<{ hasAccess: boolean; referralCount: number; needed: number }> {
   const { prisma } = await import('../config/prisma');
+  let videoGenForced = false;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { videoGenForced: true },
+    });
+    videoGenForced = user?.videoGenForced === true;
+  } catch {
+    // The video_gen_forced column may not exist yet if the startup ensure
+    // step has not run; referral-based access must keep working regardless.
+    videoGenForced = false;
+  }
   const referralCount = await prisma.referral.count({ where: { referrerId: userId } });
   return {
-    hasAccess: referralCount >= VIDEO_GEN_REFERRAL_THRESHOLD,
+    hasAccess: videoGenForced || referralCount >= VIDEO_GEN_REFERRAL_THRESHOLD,
     referralCount,
     needed: Math.max(0, VIDEO_GEN_REFERRAL_THRESHOLD - referralCount),
   };

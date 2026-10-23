@@ -124,6 +124,7 @@ model User {
   isPrivate              Boolean           @default(false) @map("is_private")
   walletBalance          Float             @default(0) @map("wallet_balance")
   monetizationForced   Boolean           @default(false) @map("monetization_forced")
+  videoGenForced       Boolean           @default(false) @map("video_gen_forced")
   usernameChangedAt      DateTime?         @map("username_changed_at")
   displayNameChangedAt   DateTime?         @map("display_name_changed_at")
   dobChangedAt           DateTime?         @map("dob_changed_at")

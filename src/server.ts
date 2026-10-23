@@ -37,6 +37,20 @@ async function start() {
       console.error('[monetization] ensure column failed', e);
     }
 
+    // Ensure video_gen_forced column exists (safe, idempotent)
+    try {
+      const exists = await prisma.$queryRawUnsafe<Array<{ cnt: bigint }>>(
+        'SELECT COUNT(*) as cnt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+        'users', 'video_gen_forced'
+      );
+      if (Number(exists[0]?.cnt || 0) === 0) {
+        await prisma.$executeRawUnsafe('ALTER TABLE `users` ADD COLUMN `video_gen_forced` BOOLEAN NOT NULL DEFAULT FALSE');
+        console.log('[video-gen] added column users.video_gen_forced');
+      }
+    } catch (e) {
+      console.error('[video-gen] ensure column failed', e);
+    }
+
     // AI fake-engagement agents (poster / outreach / engager / viewer
     // accounts) are DISABLED unless AI_AGENTS_ENABLED=true. They fabricate
     // views, likes, comments, follows and posts, which Google treats as
