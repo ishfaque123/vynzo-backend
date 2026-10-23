@@ -298,7 +298,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
   // Fetch candidate reels (more than needed for ranking)
   // Fixed pool for every page: the ranked list must be identical across
   // page requests, otherwise offset slices overlap and the client runs dry.
-  const candidateLimit = 250;
+  const candidateLimit = 1000;
   const reels = await prisma.reel.findMany({
     where,
     orderBy: { createdAt: 'desc' },
