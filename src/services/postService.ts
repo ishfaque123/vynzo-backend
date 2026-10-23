@@ -176,18 +176,35 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     ? new Set((await prisma.follow.findMany({ where: { followerId: currentUserId }, select: { followingId: true } })).map((f) => f.followingId))
     : new Set<string>();
 
-  const rawCandidatePosts = await prisma.post.findMany({
-    where: {
-      visibility: 'public',
-      ...(hiddenIds.length ? { id: { notIn: hiddenIds } } : {}),
-      ...(blockedIds.size ? { userId: { notIn: [...blockedIds] } } : {}),
-    },
+  // FIX (2026-10-23): private-account exclusion now lives IN the query
+  // (author-relation filter) instead of an in-memory filter applied AFTER
+  // `take: poolSize`. The old filter silently shrank the candidate pool by an
+  // unbounded amount, and hasMore — judged against that shrunken pool — could
+  // be false on page 1 while many eligible posts existed ("You're all caught
+  // up" after ~5 posts). Semantics are identical to the old in-memory filter
+  // (!author.isPrivate || author is the viewer || viewer follows author):
+  // User.followers is the Follow back-relation keyed on followingId, so
+  // `followers: { some: { followerId: viewer } }` matches exactly the authors
+  // in followingIds. For anonymous viewers only the not-private branch
+  // applies, exactly as before.
+  const privacyOr: any[] = [{ user: { isPrivate: false } }];
+  if (currentUserId) {
+    privacyOr.push({ userId: currentUserId });
+    privacyOr.push({ user: { followers: { some: { followerId: currentUserId } } } });
+  }
+  const candidateWhere: any = {
+    visibility: 'public',
+    ...(hiddenIds.length ? { id: { notIn: hiddenIds } } : {}),
+    ...(blockedIds.size ? { userId: { notIn: [...blockedIds] } } : {}),
+    OR: privacyOr,
+  };
+
+  const candidatePosts = await prisma.post.findMany({
+    where: candidateWhere,
     take: poolSize,
     orderBy: { createdAt: 'desc' },
     include: includeShape,
   });
-
-  const candidatePosts = rawCandidatePosts.filter((p) => !p.user?.isPrivate || p.userId === currentUserId || followingIds.has(p.userId));
 
   // REAL USER BOOST (user-ordered 2026-10-17): real users' posts get priority
   // over AI-generated content in the feed.
@@ -343,7 +360,16 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     scored.push(...diversified);
   }
   const pageSlice = scored.slice(safeOffset, safeOffset + safeLimit).map((s) => s.post);
-  const hasMore = scored.length > safeOffset + safeLimit;
+  let hasMore = scored.length > safeOffset + safeLimit;
+  if (!hasMore) {
+    // FIX (2026-10-23): corpus-true hasMore. The pool is only a window over
+    // the eligible corpus (and page-1 seen-removal above can shrink `scored`
+    // further), so a short scored list does NOT prove the feed is exhausted.
+    // One bounded count over the same eligibility filter decides truthfully:
+    // more pages exist iff eligible posts remain beyond this page's end.
+    const eligibleTotal = await prisma.post.count({ where: candidateWhere });
+    hasMore = eligibleTotal > safeOffset + safeLimit;
+  }
   const shareCodeMap = await getShareCodeMap('post', pageSlice.map((p) => p.id));
   const posts = await Promise.all(pageSlice.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
   return { posts, hasMore };
