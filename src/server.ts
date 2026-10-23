@@ -11,6 +11,7 @@ import { ensureViralPostSchema, checkViralPosts } from './services/viralPostServ
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
 import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle, seedViewerAgents, seedViewerAvatars, runViewerReelCycle, runViewerPostCycle, runViewerCreatePostCycle } from './services/aiEngagerService';
 import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
+import { ensureDisappearingDefaultMigration } from './services/messageService';
 
 async function start() {
   try {
@@ -50,6 +51,12 @@ async function start() {
     } catch (e) {
       console.error('[video-gen] ensure column failed', e);
     }
+
+    // One-time migration (owner decision 2026-10-23): existing conversations
+    // with no disappearing timer get the new 1-hour default. Guarded by a
+    // persistent marker row — runs exactly once, never re-flips chats a user
+    // later turns OFF. Existing messages are not touched.
+    await ensureDisappearingDefaultMigration();
 
     // AI fake-engagement agents (poster / outreach / engager / viewer
     // accounts) are DISABLED unless AI_AGENTS_ENABLED=true. They fabricate

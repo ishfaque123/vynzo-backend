@@ -41,6 +41,10 @@ export async function getOrCreateConversation(userId: string, otherUserId: strin
   return prisma.conversation.create({
     data: {
       isGroup: false,
+      // Owner decision (2026-10-23): disappearing messages are ON by
+      // default at 1 hour for every conversation. Either participant can
+      // still change the duration or turn it off per chat.
+      disappearingDuration: 3600,
       participants: { create: [{ userId }, { userId: otherUserId }] },
     },
     include: { participants: true },
@@ -212,4 +216,54 @@ export async function setDisappearingDuration(userId: string, conversationId: st
     select: { id: true, disappearingDuration: true },
   });
   return updated;
+}
+
+const DISAPPEARING_DEFAULT_MIGRATION_KEY = 'disappearing_default_1h_v1';
+
+/**
+ * One-time migration (owner decision 2026-10-23): every existing
+ * conversation that never had a disappearing timer set (NULL) gets the new
+ * 1-hour default. Conversations with an explicitly chosen duration
+ * (24h / 7d / 90d) are untouched. Message rows are never modified — existing
+ * messages keep expiresAt = null, so all history survives; only messages
+ * sent after the flip get the 1-hour expiry stamp at send time.
+ *
+ * Runs exactly once, guarded by a persistent marker row in `app_migrations`:
+ * the claim is an INSERT IGNORE on the marker's primary key, and only the
+ * boot that actually inserts the row runs the UPDATE. The marker is claimed
+ * BEFORE the UPDATE on purpose — turning a chat OFF also writes NULL, so any
+ * scheme that could re-run the UPDATE on a later boot would wrongly re-flip
+ * chats users deliberately turned off. With claim-first ordering the flip can
+ * never run twice; the only failure window is a crash between claim and
+ * UPDATE skipping the flip entirely (recover by deleting the marker row and
+ * restarting — the failure is logged below if the UPDATE itself errors).
+ * Safe under concurrent boots: CREATE TABLE IF NOT EXISTS is idempotent and
+ * the duplicate-key claim lets exactly one boot through.
+ */
+export async function ensureDisappearingDefaultMigration() {
+  try {
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS \`app_migrations\` (
+      \`migration_key\` VARCHAR(100) NOT NULL PRIMARY KEY,
+      \`applied_at\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+    )`);
+
+    const claimed = await prisma.$executeRawUnsafe(
+      'INSERT IGNORE INTO `app_migrations` (`migration_key`) VALUES (?)',
+      DISAPPEARING_DEFAULT_MIGRATION_KEY
+    );
+    if (claimed === 0) {
+      console.log('[disappearing] default-1h migration already applied, skipping');
+      return;
+    }
+
+    const result = await prisma.conversation.updateMany({
+      where: { disappearingDuration: null },
+      data: { disappearingDuration: 3600 },
+    });
+    console.log(
+      `[disappearing] default-1h migration applied: set disappearing_duration=3600 on ${result.count} existing conversation(s)`
+    );
+  } catch (e) {
+    console.error('[disappearing] default-1h migration failed', e);
+  }
 }
