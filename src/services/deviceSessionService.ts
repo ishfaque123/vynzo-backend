@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import geoip from 'geoip-lite';
 import { prisma } from '../config/prisma';
 
 const DEVICE_SESSION_DAYS = 30;
@@ -15,6 +14,31 @@ function generateToken(): string {
 export interface RequestMeta {
   userAgent?: string;
   ipAddress?: string;
+  city?: string;
+  country?: string;
+}
+
+// Cloudflare sends these visitor-location headers when the site sits
+// behind it (the app already trusts the proxy, and userController reads
+// cf-ipcountry the same way for profile country). They only ever feed the
+// device list's display label — both DB fields are optional — so when the
+// headers are missing the location simply stays unknown, exactly like a
+// failed geo lookup did before. (This replaced geoip-lite: a ~115 MB
+// in-memory database loaded at startup for this one label.)
+function parseCountryHeader(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const code = raw.trim().toUpperCase();
+  // Cloudflare uses XX for "unknown" and T1 for Tor — neither is a place.
+  if (!/^[A-Z]{2}$/.test(code) || code === 'XX' || code === 'T1') return undefined;
+  return code;
+}
+
+function parseCityHeader(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  let city = raw.trim();
+  try { city = decodeURIComponent(city); } catch { /* keep the raw value */ }
+  city = city.trim().slice(0, 100);
+  return city || undefined;
 }
 
 // Pulls the real client IP + browser string off an Express request so callers
@@ -23,14 +47,13 @@ export function extractRequestMeta(req: { headers: any; ip?: string; socket?: an
   const userAgent = (req.headers['user-agent'] as string) || undefined;
   const forwarded = req.headers['x-forwarded-for'] as string | undefined;
   const ipAddress = forwarded ? forwarded.split(',')[0].trim() : req.ip || req.socket?.remoteAddress || undefined;
-  return { userAgent, ipAddress };
+  const country = parseCountryHeader(req.headers['cf-ipcountry']);
+  const city = parseCityHeader(req.headers['cf-ipcity']);
+  return { userAgent, ipAddress, city, country };
 }
 
-function lookupLocation(ip?: string): { city: string | null; country: string | null } {
-  if (!ip) return { city: null, country: null };
-  const clean = ip.replace('::ffff:', '').split(',')[0].trim();
-  const geo = geoip.lookup(clean);
-  return { city: geo?.city || null, country: geo?.country || null };
+function lookupLocation(meta?: RequestMeta): { city: string | null; country: string | null } {
+  return { city: meta?.city ?? null, country: meta?.country ?? null };
 }
 
 export async function getOrCreateDeviceSession(rawToken?: string, meta?: RequestMeta) {
@@ -44,7 +67,7 @@ export async function getOrCreateDeviceSession(rawToken?: string, meta?: Request
     });
 
     if (existing && existing.expiresAt > now) {
-      const { city, country } = lookupLocation(meta?.ipAddress);
+      const { city, country } = lookupLocation(meta);
       const updated = await prisma.deviceSession.update({
         where: { id: existing.id },
         data: {
@@ -69,7 +92,7 @@ export async function getOrCreateDeviceSession(rawToken?: string, meta?: Request
   const expiresAt = new Date(
     now.getTime() + DEVICE_SESSION_DAYS * 24 * 60 * 60 * 1000,
   );
-  const { city, country } = lookupLocation(meta?.ipAddress);
+  const { city, country } = lookupLocation(meta);
 
   const session = await prisma.deviceSession.create({
     data: {

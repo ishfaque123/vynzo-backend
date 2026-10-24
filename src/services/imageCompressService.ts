@@ -1,6 +1,6 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -52,5 +52,53 @@ export async function compressImageBuffer(
     return { buffer, mimeType };
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * File-based twin of compressImageBuffer for uploads that already live on
+ * disk (multer diskStorage): same ffmpeg settings, same fail-safe rules,
+ * but the image bytes never pass through RAM as a Buffer. The caller gets
+ * the path to use (the original file, or a compressed temp file) and MUST
+ * call cleanup() once it has finished streaming/reading that path —
+ * cleanup only ever removes the temp dir this function created, never the
+ * original upload.
+ */
+export async function compressImageFile(
+  filePath: string,
+  mimeType: string,
+): Promise<{ filePath: string; mimeType: string; cleanup: () => Promise<void> }> {
+  const original = { filePath, mimeType, cleanup: async () => {} };
+  if (!COMPRESSIBLE.has(mimeType)) return original;
+  let dir: string | null = null;
+  try {
+    dir = await mkdtemp(join(tmpdir(), 'fri-img-'));
+    const outPath = join(dir, 'out.jpg');
+    await execFileAsync(
+      'ffmpeg',
+      [
+        '-y',
+        '-i', filePath,
+        '-vf', "scale='min(1600,iw)':'min(1600,ih)':force_original_aspect_ratio=decrease",
+        '-q:v', '6',
+        outPath,
+      ],
+      { timeout: 30000, maxBuffer: 8 * 1024 * 1024 },
+    );
+    const [inStat, outStat] = await Promise.all([stat(filePath), stat(outPath)]);
+    if (outStat.size > 0 && outStat.size < inStat.size) {
+      const tempDir = dir;
+      return {
+        filePath: outPath,
+        mimeType: 'image/jpeg',
+        cleanup: async () => { await rm(tempDir, { recursive: true, force: true }).catch(() => {}); },
+      };
+    }
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+    return original;
+  } catch (err) {
+    console.error('[image] compression failed, using original', err);
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+    return original;
   }
 }

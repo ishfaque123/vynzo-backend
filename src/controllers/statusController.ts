@@ -4,12 +4,11 @@ import { ApiError } from '../middleware/errorHandler';
 import { createStatus, getStatusFeed, viewStatus, getStatusViewers, deleteStatus, toggleStatusLike } from '../services/statusService';
 import { votePoll, answerQuestion } from '../services/stickerService';
 import { muteStories, unmuteStories, getMutedStories } from '../services/statusMuteService';
-import { uploadToR2, deleteFromR2 } from '../config/r2';
-import { compressImageBuffer } from '../services/imageCompressService';
+import { uploadStreamToR2, deleteFromR2 } from '../config/r2';
+import { compressImageFile } from '../services/imageCompressService';
 import { extractVideoFrameToR2, getVideoDurationSec } from '../services/videoThumbnailService';
-import { writeFile, rm } from 'fs/promises';
-import os from 'os';
-import path from 'path';
+import { createReadStream } from 'fs';
+import { rm } from 'fs/promises';
 import { z } from 'zod';
 
 const stickerSchema = z.object({
@@ -33,29 +32,38 @@ export async function createStatusHandler(req: Request, res: Response, next: Nex
     let mediaType: string | undefined;
     let thumbnailUrl: string | undefined;
     if (req.file) {
-      const statusImg = await compressImageBuffer(req.file.buffer, req.file.mimetype);
-      mediaUrl = await uploadToR2(statusImg.buffer, statusImg.mimeType, 'statuses');
-      mediaType = req.file.mimetype.startsWith('video') ? 'video' : 'image';
-      if (mediaType === 'video') {
-        // Server-side duration check (client also checks, but never trust it alone).
-        // Auto-generate thumbnail from a video frame (Instagram/FB pattern) —
-        // clients always get a poster, never a bare <video> placeholder.
-        const tmpPath = path.join(os.tmpdir(), `frianzo-status-${Date.now()}.mp4`);
+      // The upload now lives on disk (see statusUpload): compress and
+      // stream it from the file instead of holding the whole file in RAM.
+      const uploadedPath = req.file.path;
+      try {
+        const statusImg = await compressImageFile(uploadedPath, req.file.mimetype);
         try {
-          await writeFile(tmpPath, req.file.buffer);
-          const durationSec = await getVideoDurationSec(tmpPath);
-          if (durationSec !== null && durationSec > 60) {
-            // Clean up the already-uploaded media before rejecting.
-            if (mediaUrl) await deleteFromR2(mediaUrl).catch(() => {});
-            throw new ApiError(400, 'VIDEO_TOO_LONG', 'Status videos must be 60 seconds or shorter.');
-          }
-          thumbnailUrl = await extractVideoFrameToR2(tmpPath, 0.5, 'status-thumbnails');
-        } catch (err) {
-          if (err instanceof ApiError) throw err;
-          console.error('[status] thumbnail extraction failed', err);
+          const ext = (statusImg.mimeType.split('/')[1] || 'jpg').split(';')[0];
+          mediaUrl = await uploadStreamToR2(createReadStream(statusImg.filePath), statusImg.mimeType, 'statuses', ext);
         } finally {
-          await rm(tmpPath, { force: true }).catch(() => {});
+          await statusImg.cleanup();
         }
+        mediaType = req.file.mimetype.startsWith('video') ? 'video' : 'image';
+        if (mediaType === 'video') {
+          // Server-side duration check (client also checks, but never trust it alone).
+          // Auto-generate thumbnail from a video frame (Instagram/FB pattern) —
+          // clients always get a poster, never a bare <video> placeholder.
+          // The file is already on disk, so probe it in place (no copy).
+          try {
+            const durationSec = await getVideoDurationSec(uploadedPath);
+            if (durationSec !== null && durationSec > 60) {
+              // Clean up the already-uploaded media before rejecting.
+              if (mediaUrl) await deleteFromR2(mediaUrl).catch(() => {});
+              throw new ApiError(400, 'VIDEO_TOO_LONG', 'Status videos must be 60 seconds or shorter.');
+            }
+            thumbnailUrl = await extractVideoFrameToR2(uploadedPath, 0.5, 'status-thumbnails');
+          } catch (err) {
+            if (err instanceof ApiError) throw err;
+            console.error('[status] thumbnail extraction failed', err);
+          }
+        }
+      } finally {
+        await rm(uploadedPath, { force: true }).catch(() => {});
       }
     }
     const status = await createStatus(req.user!.id, { mediaUrl, mediaType, thumbnailUrl, textContent, bgColor, visibility, stickers });
