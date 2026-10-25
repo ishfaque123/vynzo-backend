@@ -140,14 +140,6 @@ export async function completeProfile(userId: string, data: any) {
     },
   });
 
-  // Welcome DM for new users (user-ordered 2026-10-16)
-  setImmediate(async () => {
-    try {
-      const { sendWelcomeDM } = await import('./aiOutreachService');
-      await sendWelcomeDM(userId);
-    } catch {}
-  });
-
   return updated;
 }
 
