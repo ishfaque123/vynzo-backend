@@ -340,3 +340,72 @@ export async function seedOfficialFollows() {
     console.error('[ai-outreach] official follows failed:', (err as Error).message?.substring(0, 100));
   }
 }
+
+/**
+ * Official auto-follow (NOT AI-gated, NOT AI activity):
+ * every real user follows the official @frienzo account.
+ * This is ONLY the @frienzo follow — it does NOT seed AI accounts,
+ * does NOT build the AI mesh, and does NOT run any activity cycle.
+ * Idempotent — safe to call repeatedly, never throws.
+ */
+export async function followOfficialForUser(userId: string) {
+  try {
+    const official = await prisma.user.findFirst({
+      where: { username: 'frienzo' },
+      select: { id: true },
+    });
+    if (!official || official.id === userId) return;
+    const existing = await prisma.follow.findUnique({
+      where: { followerId_followingId: { followerId: userId, followingId: official.id } },
+    });
+    if (existing) return;
+    await prisma.follow.create({ data: { followerId: userId, followingId: official.id } }).catch(() => {});
+  } catch (err) {
+    console.error('[auto-follow] follow @frienzo failed:', (err as Error).message?.substring(0, 100));
+  }
+}
+
+/**
+ * Backfill for the @frienzo follow ONLY (NOT AI-gated):
+ * adds the missing user -> @frienzo follows for active accounts that
+ * signed up while the AI-gated seeding was off. No AI mesh, no removals.
+ * Idempotent — safe to run every boot; converges to a no-op.
+ */
+export async function backfillOfficialFollows() {
+  try {
+    const official = await prisma.user.findFirst({
+      where: { username: 'frienzo' },
+      select: { id: true },
+    });
+    if (!official) {
+      console.log('[auto-follow] @frienzo not found, skipping backfill');
+      return;
+    }
+    let added = 0;
+    const BATCH = 200;
+    let cursor: string | undefined = undefined;
+    while (true) {
+      const users: { id: string }[] = await prisma.user.findMany({
+        where: { accountStatus: 'active', id: { not: official.id } },
+        select: { id: true },
+        take: BATCH,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        orderBy: { id: 'asc' },
+      });
+      if (!users.length) break;
+      for (const u of users) {
+        const existing = await prisma.follow.findUnique({
+          where: { followerId_followingId: { followerId: u.id, followingId: official.id } },
+        });
+        if (existing) continue;
+        await prisma.follow.create({ data: { followerId: u.id, followingId: official.id } }).catch(() => {});
+        added++;
+      }
+      cursor = users[users.length - 1].id;
+      if (users.length < BATCH) break;
+    }
+    if (added > 0) console.log(`[auto-follow] backfill: ${added} account(s) now follow @frienzo`);
+  } catch (err) {
+    console.error('[auto-follow] backfill failed:', (err as Error).message?.substring(0, 100));
+  }
+}

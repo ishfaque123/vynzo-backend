@@ -10,7 +10,7 @@ import { ensureModerationSchema } from './services/moderationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
 import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle, seedViewerAgents, seedViewerAvatars, runViewerReelCycle, runViewerPostCycle, runViewerCreatePostCycle } from './services/aiEngagerService';
-import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows } from './services/aiOutreachService';
+import { seedOutreachAgents, runOutreachCycle, OUTREACH_CYCLE_MS, seedOfficialFollows, backfillOfficialFollows } from './services/aiOutreachService';
 import { ensureDisappearingDefaultMigration } from './services/messageService';
 
 async function start() {
@@ -86,6 +86,11 @@ async function start() {
       // Official @frianzo follows all AI accounts (safe, idempotent)
       await seedOfficialFollows();
     }
+
+    // Official auto-follow backfill (NOT AI-gated): every active account
+    // follows @frienzo. Bots stay off — this is only the @frienzo follow:
+    // no AI seeding, no AI mesh, no activity cycles. Idempotent.
+    await backfillOfficialFollows();
 
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);

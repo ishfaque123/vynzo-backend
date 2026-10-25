@@ -140,6 +140,13 @@ export async function completeProfile(userId: string, data: any) {
     },
   });
 
+  // Auto-follow: every new user follows the official @frienzo account.
+  // (NOT AI-gated — bots stay off. Never fails profile setup.)
+  try {
+    const { followOfficialForUser } = await import('./aiOutreachService');
+    await followOfficialForUser(userId);
+  } catch {}
+
   return updated;
 }
 
