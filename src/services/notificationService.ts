@@ -245,13 +245,15 @@ async function sendPushForNotification(params: NotificationParams) {
   if (!(await isPushEnabled(params.userId, params.type))) return;
   let name = 'Someone';
   let username: string | null = null;
+  let avatarUrl: string | null = null;
   if (params.actorId) {
     const actor = await prisma.user.findUnique({
       where: { id: params.actorId },
-      select: { displayName: true, username: true },
+      select: { displayName: true, username: true, profilePictureUrl: true },
     });
     name = actor?.displayName || actor?.username || name;
     username = actor?.username ?? null;
+    avatarUrl = actor?.profilePictureUrl ?? null;
   }
 
   const grouped = GROUPED_TYPES.has(params.type);
@@ -284,7 +286,17 @@ async function sendPushForNotification(params: NotificationParams) {
   else if (params.reelId) url = `/reels?id=${params.reelId}`;
   else if (params.postId) url = `/post/${params.postId}`;
   const tag = grouped ? `${params.type}:${params.postId ?? ''}:${params.commentId ?? ''}:${params.reelId ?? ''}` : undefined;
-  await sendPushToUser(params.userId, { title: 'Frianzo', body, url, tag });
+  await sendPushToUser(params.userId, {
+    title: 'Frianzo',
+    body,
+    url,
+    tag,
+    avatarUrl: avatarUrl ?? undefined,
+    type: params.type,
+    postId: params.postId ?? undefined,
+    commentId: params.commentId ?? undefined,
+    reelId: params.reelId ?? undefined,
+  });
 }
 
 export async function createNotification(params: NotificationParams) {

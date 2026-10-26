@@ -14,8 +14,8 @@ interface AuthedSocket extends Socket {
 }
 
 // Phone push for a new chat message. Never includes the message text.
-async function pushNewMessage(
-  message: { conversationId: string; mediaType: string | null; sender?: { displayName?: string | null; username?: string | null } | null },
+export async function pushNewMessage(
+  message: { conversationId: string; mediaType: string | null; sender?: { displayName?: string | null; username?: string | null; profilePictureUrl?: string | null } | null },
   recipient: { userId: string; lastReadAt: Date | null },
   senderId: string
 ) {
@@ -32,10 +32,22 @@ async function pushNewMessage(
     body,
     url: `/messages/${message.conversationId}`,
     tag: `chat:${message.conversationId}`,
+    avatarUrl: message.sender?.profilePictureUrl ?? undefined,
+    type: 'message',
+    conversationId: message.conversationId,
   });
 }
 
 const onlineUsers = new Map<string, Set<string>>();
+
+// REST handlers (notification quick reply) need to emit into chat rooms too.
+// Stored at init; null until initSocketServer runs (server startup).
+let ioInstance: IOServer | null = null;
+
+/** Best-effort emit into a conversation room (no-op if socket not started). */
+export function emitToConversation(conversationId: string, event: string, payload: unknown) {
+  ioInstance?.to(`conversation:${conversationId}`).emit(event, payload);
+}
 
 // Simple per-socket rate limiter for high-frequency events.
 const socketRateLimits = new Map<string, number[]>();
@@ -82,6 +94,7 @@ export function initSocketServer(httpServer: HttpServer) {
   const io = new IOServer(httpServer, {
     cors: { origin: env.frontendUrl, credentials: true },
   });
+  ioInstance = io;
 
   io.use(async (socket: AuthedSocket, next) => {
     try {

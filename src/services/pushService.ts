@@ -36,7 +36,19 @@ export async function removePushToken(userId: string, token: string) {
 
 export async function sendPushToUser(
   userId: string,
-  payload: { title: string; body: string; url?: string; tag?: string }
+  payload: {
+    title: string;
+    body: string;
+    url?: string;
+    tag?: string;
+    // Rich-notification fields (all optional, all strings for FCM data).
+    avatarUrl?: string;
+    type?: string;
+    conversationId?: string;
+    postId?: string;
+    commentId?: string;
+    reelId?: string;
+  }
 ) {
   const a = getAuth();
   if (!a || !projectId) {
@@ -69,10 +81,28 @@ export async function sendPushToUser(
         body: JSON.stringify({
           message: {
             token,
-            notification: { title: payload.title, body: payload.body },
-            data: { url: payload.url ?? '/notifications', badge: String(badge) },
-            android: { priority: 'HIGH', notification: { channel_id: 'frianzo_default', ...(payload.tag ? { tag: payload.tag } : {}) } },
-            apns: { payload: { aps: { badge } } },
+            // Data-only message: the app builds the notification itself
+            // (sender photo + inline Reply action). A notification payload
+            // would make Android show the system notification instead, and
+            // onMessageReceived would never run in background — so no
+            // photo, no Reply button. Title/body/url/badge also travel in
+            // data, so the CURRENT app build (which reads data fallbacks)
+            // keeps showing plain notifications until it updates.
+            data: {
+              title: payload.title,
+              body: payload.body,
+              url: payload.url ?? '/notifications',
+              badge: String(badge),
+              ...(payload.tag ? { tag: payload.tag } : {}),
+              ...(payload.avatarUrl ? { avatarUrl: payload.avatarUrl } : {}),
+              ...(payload.type ? { type: payload.type } : {}),
+              ...(payload.conversationId ? { conversationId: payload.conversationId } : {}),
+              ...(payload.postId ? { postId: payload.postId } : {}),
+              ...(payload.commentId ? { commentId: payload.commentId } : {}),
+              ...(payload.reelId ? { reelId: payload.reelId } : {}),
+            },
+            android: { priority: 'HIGH' },
+            apns: { payload: { aps: { alert: { title: payload.title, body: payload.body }, badge } } },
           },
         }),
       });

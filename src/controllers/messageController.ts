@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
-import { getOrCreateConversation, listConversations, getMessages, deleteConversation, setDisappearingDuration } from '../services/messageService';
-import { isUserOnline } from '../socket/socketServer';
+import { prisma } from '../config/prisma';
+import { getOrCreateConversation, listConversations, getMessages, deleteConversation, setDisappearingDuration, sendTextMessage } from '../services/messageService';
+import { isUserOnline, emitToConversation, pushNewMessage } from '../socket/socketServer';
 
 export async function listConversationsHandler(req: Request, res: Response, next: NextFunction) {
   try {
@@ -46,6 +47,25 @@ export async function deleteConversationHandler(req: Request, res: Response, nex
     const { id } = req.params;
     const result = await deleteConversation(req.user!.id, id);
     sendSuccess(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function sendMessageHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    const { content } = req.body as { content?: string };
+    const { message, otherParticipant } = await sendTextMessage(req.user!.id, id, content ?? '');
+    if (otherParticipant) {
+      // Same delivery tail as the socket path: live emit + push.
+      if (isUserOnline(otherParticipant.userId)) {
+        await prisma.conversationParticipant.update({ where: { id: otherParticipant.id }, data: { lastDeliveredAt: new Date() } });
+      }
+      emitToConversation(id, 'message:new', message);
+      pushNewMessage(message, otherParticipant, req.user!.id).catch((err) => console.error('[push] chat push failed', err));
+    }
+    sendSuccess(res, message);
   } catch (err) {
     next(err);
   }

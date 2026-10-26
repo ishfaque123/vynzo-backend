@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { isEitherBlocked } from './blockService';
+import { ensureRestrictColumn, moderateChatMessage } from './moderationService';
 
 const userSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, lastActiveAt: true, publicKey: true, showOnlineStatus: true, isVerified: true } as const;
 
@@ -266,4 +267,160 @@ export async function ensureDisappearingDefaultMigration() {
   } catch (e) {
     console.error('[disappearing] default-1h migration failed', e);
   }
+}
+
+// ---------------------------------------------------------------------------
+// REST send path (notification quick reply). The chat UI sends via Socket.IO;
+// this mirrors the socket message:send guards for TEXT-ONLY sends so a
+// notification reply cannot bypass what the socket path blocks. Live emit +
+// push to the other participant happen in the controller (it already owns
+// the socket imports), keeping this service socket-free.
+// ---------------------------------------------------------------------------
+
+// Simple per-user rate limiter for the REST send path (mirrors the socket
+// limiter: 20 sends per 10s). Quick replies need a user tap each, but the
+// endpoint is also directly callable with a session cookie.
+const restRateLimits = new Map<string, number[]>();
+function checkRestRateLimit(userId: string, max = 20, windowMs = 10000): boolean {
+  const now = Date.now();
+  let times = restRateLimits.get(userId);
+  if (!times) {
+    times = [];
+    restRateLimits.set(userId, times);
+  }
+  while (times.length && now - times[0] > windowMs) times.shift();
+  if (times.length >= max) return false;
+  times.push(now);
+  return true;
+}
+
+export async function sendTextMessage(userId: string, conversationId: string, content: string) {
+  if (!checkRestRateLimit(userId)) {
+    throw new ApiError(429, 'RATE_LIMITED', 'Too many messages. Please wait a moment.');
+  }
+  await ensureRestrictColumn();
+  const meRow = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { messageRestrictedUntil: true, accountStatus: true },
+  });
+  if (meRow?.accountStatus !== 'active') {
+    throw new ApiError(403, 'ACCOUNT_SUSPENDED', 'Your account is suspended.');
+  }
+  if (meRow?.messageRestrictedUntil && meRow.messageRestrictedUntil > new Date()) {
+    throw new ApiError(403, 'MESSAGING_RESTRICTED', 'Messaging is temporarily restricted.');
+  }
+  const trimmed = (content || '').trim();
+  if (!trimmed) {
+    throw new ApiError(400, 'EMPTY_MESSAGE', 'Message is empty.');
+  }
+  if (!conversationId) {
+    throw new ApiError(400, 'MISSING_CONVERSATION', 'Conversation is required.');
+  }
+
+  // Link-spam protection (same rule as the socket path): repeated external
+  // links in 10 minutes temporarily restrict messaging.
+  const URL_RE = /https?:\/\/[^\s]+|www\.[^\s]+/gi;
+  const OWN_DOMAINS = ['frianzo.online', 'www.frianzo.online'];
+  const OWN_APP_LINK = 'play.google.com/store/apps/details?id=com.frianzo.app';
+  const isOwnLink = (url: string) => {
+    const lower = url.toLowerCase();
+    return OWN_DOMAINS.some((d) => lower.includes(d)) || lower.includes(OWN_APP_LINK);
+  };
+  const externalLinksIn = (text: string) => {
+    const all = (text || '').match(URL_RE) || [];
+    return all.filter((l) => !isOwnLink(l));
+  };
+  if (externalLinksIn(trimmed).length > 0) {
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const recent = await prisma.message.findMany({
+      where: { senderId: userId, createdAt: { gte: tenMinAgo } },
+      select: { content: true },
+      take: 50,
+      orderBy: { createdAt: 'desc' },
+    });
+    let linkCount = 0;
+    const seenLinks = new Map<string, number>();
+    for (const m of recent) {
+      const links = externalLinksIn(m.content || '');
+      for (const l of links) {
+        linkCount++;
+        const key = l.toLowerCase().replace(/\/$/, '');
+        seenLinks.set(key, (seenLinks.get(key) || 0) + 1);
+      }
+    }
+    const sameLinkMax = Math.max(0, ...seenLinks.values());
+    if (linkCount >= 4 || sameLinkMax >= 2) {
+      const until = new Date(Date.now() + 60 * 60 * 1000);
+      await prisma.user.update({ where: { id: userId }, data: { messageRestrictedUntil: until } });
+      throw new ApiError(403, 'LINK_SPAM_RESTRICTED', 'Messaging is temporarily restricted due to link sharing.');
+    }
+  }
+
+  const isParticipantRow = await prisma.conversationParticipant.findUnique({
+    where: { conversationId_userId: { conversationId, userId } },
+  });
+  if (!isParticipantRow) {
+    throw new ApiError(403, 'NOT_A_PARTICIPANT', 'You are not a participant of this conversation.');
+  }
+
+  const otherParticipant = await prisma.conversationParticipant.findFirst({
+    where: { conversationId, userId: { not: userId } },
+  });
+  if (otherParticipant) {
+    const blocked = await isEitherBlocked(userId, otherParticipant.userId);
+    if (blocked) {
+      throw new ApiError(403, 'BLOCKED', 'Messaging is not available with this user.');
+    }
+    const target = await prisma.user.findUnique({
+      where: { id: otherParticipant.userId },
+      select: { messagePermission: true },
+    });
+    if (target?.messagePermission === 'none') {
+      throw new ApiError(403, 'MESSAGES_DISABLED', 'This user does not accept messages.');
+    }
+    if (target?.messagePermission === 'followers') {
+      const isFollower = await prisma.follow.findUnique({
+        where: { followerId_followingId: { followerId: userId, followingId: otherParticipant.userId } },
+      });
+      if (!isFollower) {
+        throw new ApiError(403, 'MESSAGES_RESTRICTED', 'Only followers can message this user.');
+      }
+    }
+  }
+
+  // Disappearing messages: if the conversation has a timer, set expiry.
+  const conv = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { disappearingDuration: true },
+  });
+  const expiresAt = conv?.disappearingDuration
+    ? new Date(Date.now() + conv.disappearingDuration * 1000)
+    : null;
+
+  const message = await prisma.message.create({
+    data: {
+      conversationId,
+      senderId: userId,
+      content: trimmed,
+      mediaUrl: null,
+      mediaType: null,
+      voiceDuration: null,
+      replyToId: null,
+      isForwarded: false,
+      expiresAt,
+    },
+    include: {
+      sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } },
+      replyTo: { include: { sender: { select: { id: true, username: true, displayName: true, profilePictureUrl: true } } } },
+      reactions: { select: { userId: true, emoji: true } },
+    },
+  });
+
+  // Background abuse check on text content (delayed action handled inside).
+  if (message.content?.trim()) {
+    setImmediate(() => { moderateChatMessage(message.id).catch((err) => console.error('[moderation] background chat check failed', err)); });
+  }
+
+  await prisma.conversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });
+  return { message, otherParticipant };
 }
