@@ -63,6 +63,28 @@ export async function addComment(
     if (!isFollower) throw new ApiError(403, 'COMMENTS_RESTRICTED', 'Only followers can comment on this post.');
   }
 
+  // Spam control: block exact-duplicate comments and rapid-fire posting.
+  // Duplicate: same user, same post, identical text within 5 minutes.
+  // (Text-only check: image-only comments have empty text and are exempt,
+  // so two different images are never blocked as duplicates.)
+  if (content) {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const duplicate = await prisma.comment.findFirst({
+      where: { userId, postId, content, createdAt: { gte: fiveMinutesAgo } },
+      select: { id: true },
+    });
+    if (duplicate) throw new ApiError(400, 'DUPLICATE_COMMENT', 'You already posted this comment. Please write something new.');
+  }
+  // Rapid-fire: at least 5 seconds between two comments by the same user.
+  const lastComment = await prisma.comment.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  });
+  if (lastComment && Date.now() - lastComment.createdAt.getTime() < 5000) {
+    throw new ApiError(429, 'COMMENT_TOO_FAST', 'You are commenting too fast. Please wait a few seconds.');
+  }
+
   const comment = await prisma.comment.create({
     data: {
       userId,
