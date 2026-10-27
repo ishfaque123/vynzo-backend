@@ -2,8 +2,10 @@ import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { toggleFollow } from './followService';
 
-const REFERRAL_EARNING_USD = 0.1;
-const REFERRAL_FREE_COUNT = 25;
+// Referrals are the monetization gate only (25 referrals unlock earning).
+// Referral claims themselves no longer pay (owner order 2026-10-27):
+// earning comes only from views for monetized users (see viewsEarningService).
+// Previously earned referral credit stays untouched.
 
 function extractReferralUsername(raw: string): string | null {
   const value = raw.trim();
@@ -174,21 +176,9 @@ export async function claimReferral(
       await ensureFollow(official.id);
     }
 
-    // Earn $0.10 per referral AFTER the first 25 (eligibility threshold)
-    const totalReferrals = await prisma.referral.count({ where: { referrerId: referrer.id } });
-    let earned = 0;
-    if (totalReferrals > REFERRAL_FREE_COUNT) {
-      earned = REFERRAL_EARNING_USD;
-      await prisma.$transaction([
-        prisma.earning.create({
-          data: { userId: referrer.id, amount: earned, type: 'referral', referenceId: result.id },
-        }),
-        prisma.user.update({
-          where: { id: referrer.id },
-          data: { walletBalance: { increment: earned } },
-        }),
-      ]);
-    }
+    // No referral payout: the referrer earns nothing for this claim.
+    // (Earning now comes only from views for monetized users.)
+    const earned = 0;
 
     return { accepted: true, referralId: result.id, referrerUsername: referrer.username, earned };
   } catch (err: any) {

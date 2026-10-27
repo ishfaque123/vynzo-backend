@@ -1,6 +1,19 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 
+// Minimum wallet balance required before a withdrawal can be paid out
+// (owner order 2026-10-27). There is no automated withdrawal endpoint yet;
+// payouts are made manually against the user's saved method, so this limit
+// is exposed via getEarnings (for the app to gate the withdraw UI) and via
+// assertWithdrawableBalance for the payout step.
+export const MIN_WITHDRAWAL_USD = 100;
+
+export function assertWithdrawableBalance(balance: number): void {
+  if (balance < MIN_WITHDRAWAL_USD) {
+    throw new ApiError(400, 'WITHDRAWAL_MINIMUM_NOT_REACHED', `Minimum withdrawal is $${MIN_WITHDRAWAL_USD}.`);
+  }
+}
+
 // Allowed payout methods per country
 export const PAYOUT_METHODS: Record<string, { code: string; label: string; fields: { accountNumber: string; extra?: string } }[]> = {
   PK: [
@@ -120,6 +133,8 @@ export async function getEarnings(userId: string, limit = 20) {
     take: Math.min(50, Math.max(1, limit)),
   });
   const total = await prisma.earning.aggregate({ where: { userId }, _sum: { amount: true } });
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { walletBalance: true } });
+  const walletBalance = user?.walletBalance ?? 0;
   return {
     earnings: earnings.map((e) => ({
       id: e.id,
@@ -128,5 +143,8 @@ export async function getEarnings(userId: string, limit = 20) {
       createdAt: e.createdAt,
     })),
     total: total._sum.amount ?? 0,
+    walletBalance,
+    withdrawalMinimum: MIN_WITHDRAWAL_USD,
+    canWithdraw: walletBalance >= MIN_WITHDRAWAL_USD,
   };
 }

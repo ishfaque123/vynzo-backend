@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
+import { accrueViewsEarnings } from './viewsEarningService';
 
 let viewTableReady = false;
 
@@ -35,7 +36,7 @@ export async function reportReel(userId: string, reelId: string, reason: string,
 }
 
 export async function recordReelView(userId: string, reelId: string, watchSec = 0) {
-  const reel = await prisma.reel.findUnique({ where: { id: reelId }, select: { id: true, durationSec: true } });
+  const reel = await prisma.reel.findUnique({ where: { id: reelId }, select: { id: true, userId: true, durationSec: true } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   await ensureViewTable();
   // Ensure new columns exist
@@ -51,6 +52,13 @@ export async function recordReelView(userId: string, reelId: string, watchSec = 
     reelId, userId, Math.floor(watchSec), completed ? 1 : 0
   );
   const rows = await prisma.$queryRawUnsafe<Array<{ viewCount: bigint }>>(`SELECT COUNT(*) AS viewCount FROM reel_views WHERE reel_id = ?`, reelId);
+  // Views-only earning: accrue for the reel owner. Accrual must never break
+  // view recording, so failures are swallowed here.
+  if (reel.userId !== userId) {
+    try {
+      await accrueViewsEarnings(reel.userId);
+    } catch {}
+  }
   return { viewed: true, viewCount: Number(rows[0]?.viewCount ?? 0) };
 }
 
