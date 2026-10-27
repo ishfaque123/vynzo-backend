@@ -7,6 +7,7 @@ import { cleanupExpiredStatuses } from './services/statusService';
 import { cleanupExpiredMessages } from './services/messageCleanupService';
 import { runDataRetention } from './services/dataRetentionService';
 import { ensureModerationSchema } from './services/moderationService';
+import { ensureMonetizationRequestSchema } from './services/monetizationService';
 import { ensureViralPostSchema, checkViralPosts } from './services/viralPostService';
 import { seedPosterAgents, runPosterCycle, POSTER_CYCLE_MS, runLikeCycle, LIKE_CYCLE_MS } from './services/aiPosterService';
 import { seedEngagerAgents, runEngagerCycle, runFollowBackCycle, runEngagerPostCycle, runEngagerReelCycle, runEngagerStoryCycle, runNewUserWelcomeCycle, seedViewerAgents, seedViewerAvatars, runViewerReelCycle, runViewerPostCycle, runViewerCreatePostCycle } from './services/aiEngagerService';
@@ -20,6 +21,9 @@ async function start() {
 
     // Ensure moderation tables/columns exist (safe, idempotent)
     await ensureModerationSchema();
+
+    // Ensure monetization_requests table exists (safe, idempotent)
+    await ensureMonetizationRequestSchema();
 
     // Ensure viral_post notification type exists (safe, idempotent)
     await ensureViralPostSchema();

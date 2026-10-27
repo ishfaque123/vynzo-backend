@@ -1,8 +1,9 @@
 import { prisma } from '../config/prisma';
 
-// Views-only earning (owner order 2026-10-27):
-// - A user is monetized once they have 25 referrals (or an admin forces it
-//   via monetizationForced). Referrals themselves pay nothing.
+// Views-only earning (owner order 2026-10-27, apply flow 2026-10-27):
+// - A user is monetized ONLY by admin approval (monetizationForced).
+//   25 referrals + BlueTick are the APPLY eligibility, not auto-ON
+//   (see monetizationService). Referrals themselves pay nothing.
 // - Monetized users earn $0.06 per 1,000 qualifying views on their posts
 //   and reels. A qualifying view is one unique viewer on the owner's
 //   content, excluding the owner's own views. Post views are unique per
@@ -16,7 +17,6 @@ import { prisma } from '../config/prisma';
 //   lock, two simultaneous views could both see the same unpaid balance
 //   and pay it twice.
 
-export const MONETIZATION_REFERRAL_THRESHOLD = 25;
 export const VIEWS_EARNING_USD_PER_1000 = 0.06;
 export const VIEWS_PER_PAYOUT = 1000;
 // Bound one call so a huge backlog cannot create an unbounded transaction;
@@ -24,14 +24,14 @@ export const VIEWS_PER_PAYOUT = 1000;
 const MAX_PAYOUTS_PER_CALL = 100;
 
 export async function isMonetized(userId: string): Promise<boolean> {
+  // Approval-only: monetization is ON only when an admin approved the
+  // user's application (monetizationForced). Referral count and BlueTick
+  // gate the application, not the earning itself.
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { monetizationForced: true },
   });
-  if (!user) return false;
-  if (user.monetizationForced) return true;
-  const referralCount = await prisma.referral.count({ where: { referrerId: userId } });
-  return referralCount >= MONETIZATION_REFERRAL_THRESHOLD;
+  return user?.monetizationForced ?? false;
 }
 
 export async function accrueViewsEarnings(ownerId: string): Promise<{ credited: number; totalViews: number }> {
