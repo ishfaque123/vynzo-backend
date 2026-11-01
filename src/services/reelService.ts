@@ -172,7 +172,7 @@ export async function createReel(userId: string, data: { videoUrl: string; capti
   });
 }
 
-export async function getReelFeed(currentUserId: string, limit = 10, offset = 0, feed: 'foryou' | 'following' = 'foryou') {
+export async function getReelFeed(currentUserId: string, limit = 10, offset = 0, feed: 'foryou' | 'following' = 'foryou', excludeIds: string[] = []) {
   const blockedRows = await prisma.block.findMany({ where: { OR: [{ blockerId: currentUserId }, { blockedId: currentUserId }] } });
   const blockedIds = new Set<string>();
   for (const b of blockedRows) blockedIds.add(b.blockerId === currentUserId ? b.blockedId : b.blockerId);
@@ -301,7 +301,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
   const candidateLimit = 1000;
   const reels = await prisma.reel.findMany({
     where,
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: candidateLimit,
     include: {
       user: { select: { id: true, city: true, country: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true } },
@@ -520,9 +520,18 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     }
   }
 
-  // Apply pagination on ranked results
-  const paged = scored.slice(safeOffset, safeOffset + safeLimit);
-  const total = scored.length;
+  // Apply pagination on ranked results.
+  // REPEAT FIX: when the client passes the ids it already shows in this
+  // session (loadMore), remove them BEFORE slicing and always slice from
+  // the top. Offset-slicing a list that is re-ranked on every request
+  // (popularity/views/likes change with every view) re-serves reels that
+  // moved down the ranking into the new offset window; excluding shown
+  // ids makes a page advance regardless of re-ranking. Without exclude
+  // ids (first page) the old offset behaviour is kept unchanged.
+  const excludeSet = new Set(excludeIds.filter((id) => typeof id === 'string' && id.length > 0));
+  const pageable = excludeSet.size ? scored.filter((s) => !excludeSet.has(s.reel.id)) : scored;
+  const paged = excludeSet.size ? pageable.slice(0, safeLimit) : pageable.slice(safeOffset, safeOffset + safeLimit);
+  const total = pageable.length;
 
   const authorIds = [...new Set(paged.map((s) => s.reel.userId))];
   const followStatusRows = authorIds.length
@@ -558,7 +567,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     const author = r.user ? { id: r.user.id, username: (r.user as any).username || '', displayName: ((r.user as any).displayName || '').trim(), profilePictureUrl: (r.user as any).profilePictureUrl || null, isVerified: !!(r.user as any).isVerified } : null;
     return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, category: (r as any).category || null, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
   });
-  return { reels: reelsWithStatus, hasMore: safeOffset + paged.length < total };
+  return { reels: reelsWithStatus, hasMore: excludeSet.size ? paged.length < total : safeOffset + paged.length < total };
 }
 
 export async function toggleReelLike(userId: string, reelId: string) {

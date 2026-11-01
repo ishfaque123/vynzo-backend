@@ -100,7 +100,7 @@ export async function createReelHandler(req: Request, res: Response, next: NextF
     }
   } catch (err) { next(err); }
 }
-export async function getReelFeedHandler(req: Request, res: Response, next: NextFunction) { try { const rawOffset = parseInt(String(req.query.offset ?? '0'), 10); const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0; const feed = req.query.feed === 'following' ? 'following' : 'foryou'; sendSuccess(res, await getReelFeed(req.user!.id, 10, offset, feed)); } catch (err) { next(err); } }
+export async function getReelFeedHandler(req: Request, res: Response, next: NextFunction) { try { const rawOffset = parseInt(String(req.query.offset ?? '0'), 10); const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0; const feed = req.query.feed === 'following' ? 'following' : 'foryou'; const excludeIds = String(req.query.exclude ?? '').split(',').map((s) => s.trim()).filter((s) => /^[A-Za-z0-9-]+$/.test(s)).slice(0, 400); sendSuccess(res, await getReelFeed(req.user!.id, 10, offset, feed, excludeIds)); } catch (err) { next(err); } }
 export async function toggleReelLikeHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await toggleReelLike(req.user!.id, req.params.id)); } catch (err) { next(err); } }
 export async function toggleReelFavoriteHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await toggleReelFavorite(req.user!.id, req.params.id)); } catch (err) { next(err); } }
 export async function getMyFavoriteReelsHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, { reels: await getMyFavoriteReels(req.user!.id) }); } catch (err) { next(err); } }
