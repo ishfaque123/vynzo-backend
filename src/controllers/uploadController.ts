@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
-import { uploadToR2 } from '../config/r2';
-import { compressImageBuffer } from '../services/imageCompressService';
+import { uploadToR2, uploadBufferToKey } from '../config/r2';
+import { compressImageBuffer, compressThumbnailBuffer, avatarThumbKeyForUrl } from '../services/imageCompressService';
+import { env } from '../config/env';
 import { prisma } from '../config/prisma';
 import { createPost } from '../services/postService';
 
@@ -11,6 +12,15 @@ export async function uploadAvatarHandler(req: Request, res: Response, next: Nex
     if (!req.file) throw new ApiError(400, 'NO_FILE', 'No image uploaded.');
     const avatarImg = await compressImageBuffer(req.file.buffer, req.file.mimetype);
     const url = await uploadToR2(avatarImg.buffer, avatarImg.mimeType, 'avatars');
+    // Best-effort thumbnail: a ~96px JPEG under the full avatar's key
+    // (avatars/<uuid>-thumb.jpg). Never fails the avatar upload itself.
+    try {
+      const thumb = await compressThumbnailBuffer(req.file.buffer, req.file.mimetype);
+      const thumbKey = thumb ? avatarThumbKeyForUrl(url, env.r2PublicUrl) : null;
+      if (thumb && thumbKey) await uploadBufferToKey(thumb, thumbKey, 'image/jpeg');
+    } catch (err) {
+      console.error('[avatar] thumbnail upload failed, keeping full avatar only', err);
+    }
     const user = await prisma.user.update({
       where: { id: req.user!.id },
       data: { profilePictureUrl: url },

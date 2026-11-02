@@ -54,3 +54,58 @@ export async function compressImageBuffer(
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
+
+/**
+ * Avatar thumbnail (2026-11-02): a ~96px JPEG for the 24-40px avatar
+ * circles in feed/comments/reels. The full 1600px avatar (~300-600KB) is
+ * far too large for a 40px circle; a 96px JPEG is typically ~3-8KB.
+ *
+ * Best-effort by design: returns null on any failure (non-photo input,
+ * ffmpeg error, empty output) and the caller must keep the full avatar
+ * working without a thumbnail — an upload can never break because of it.
+ * The thumbnail is stored under the full avatar's R2 key with "-thumb"
+ * inserted before the extension, so no DB column is needed to find it:
+ *   avatars/<uuid>.jpg  ->  avatars/<uuid>-thumb.jpg
+ */
+export async function compressThumbnailBuffer(
+  buffer: Buffer,
+  mimeType: string,
+): Promise<Buffer | null> {
+  if (!COMPRESSIBLE.has(mimeType)) return null;
+  let dir: string | null = null;
+  try {
+    dir = await mkdtemp(join(tmpdir(), 'fri-thumb-'));
+    const inPath = join(dir, 'in');
+    const outPath = join(dir, 'thumb.jpg');
+    await writeFile(inPath, buffer);
+    await execFileAsync(
+      'ffmpeg',
+      [
+        '-y',
+        '-i', inPath,
+        '-vf', "scale='min(96,iw)':'min(96,ih)':force_original_aspect_ratio=decrease",
+        '-q:v', '7',
+        outPath,
+      ],
+      { timeout: 30000, maxBuffer: 8 * 1024 * 1024 },
+    );
+    const out = await readFile(outPath);
+    if (out.length > 0) return out;
+    return null;
+  } catch (err) {
+    console.error('[image] thumbnail failed, keeping full avatar only', err);
+    return null;
+  } finally {
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Derive the thumbnail R2 key from a full avatar URL, or null if it is not one of our R2 avatar URLs. */
+export function avatarThumbKeyForUrl(fullUrl: string, r2PublicUrl: string): string | null {
+  const prefix = `${r2PublicUrl}/`;
+  if (!fullUrl.startsWith(prefix)) return null;
+  const key = fullUrl.slice(prefix.length);
+  const dot = key.lastIndexOf('.');
+  if (dot <= 0) return null;
+  return `${key.slice(0, dot)}-thumb${key.slice(dot)}`;
+}
