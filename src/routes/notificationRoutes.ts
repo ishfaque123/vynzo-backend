@@ -3,6 +3,7 @@ import { registerPushTokenHandler, removePushTokenHandler } from '../controllers
 import { authMiddleware } from '../middleware/authMiddleware';
 import {
   getNotificationsHandler,
+  markNotificationReadHandler,
   markAllReadHandler,
   getUnreadCountHandler,
   deleteNotificationsHandler,
@@ -17,6 +18,7 @@ router.get('/unread-count', authMiddleware, getUnreadCountHandler);
 router.get('/preferences', authMiddleware, getPreferencesHandler);
 router.put('/preferences', authMiddleware, setPreferenceHandler);
 router.post('/read-all', authMiddleware, markAllReadHandler);
+router.post('/:id/read', authMiddleware, markNotificationReadHandler);
 router.post('/push-token', authMiddleware, registerPushTokenHandler);
 router.delete('/push-token', authMiddleware, removePushTokenHandler);
 router.delete('/all', authMiddleware, deleteAllNotificationsHandler);

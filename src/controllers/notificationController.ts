@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import {
   getNotifications,
+  markNotificationRead,
   markAllRead,
   getUnreadCount,
   deleteNotifications,
@@ -14,6 +15,19 @@ export async function getNotificationsHandler(req: Request, res: Response, next:
   try {
     const notifications = await getNotifications(req.user!.id);
     sendSuccess(res, { notifications });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function markNotificationReadHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const notificationId = req.params.id;
+    if (typeof notificationId !== 'string' || !notificationId) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_INPUT', message: 'Notification id is required.' } });
+    }
+    const result = await markNotificationRead(req.user!.id, notificationId);
+    sendSuccess(res, result);
   } catch (err) {
     next(err);
   }

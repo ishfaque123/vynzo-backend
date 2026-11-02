@@ -123,6 +123,14 @@ export async function getNotifications(userId: string) {
   }));
 }
 
+export async function markNotificationRead(userId: string, notificationId: string) {
+  const result = await prisma.notification.updateMany({
+    where: { userId, id: notificationId, read: false },
+    data: { read: true },
+  });
+  return { success: true, updated: result.count };
+}
+
 export async function markAllRead(userId: string) {
   await prisma.notification.updateMany({ where: { userId, read: false }, data: { read: true } });
   return { success: true };
