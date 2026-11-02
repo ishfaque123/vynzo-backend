@@ -143,7 +143,18 @@ export async function googleNativeLogin(req: Request, res: Response, next: NextF
       meta,
     );
 
+    // Google native login previously returned { token } but set NO auth
+    // cookie and stripped the user, so the cookie-only native app's
+    // follow-up GET /api/auth/me ran unauthenticated and bounced straight
+    // back to the login screen. Mirror verifyEmailCode exactly: clear stale
+    // cookies, set vynzo_auth_token + vynzo_device, and return the user.
+    // The token is still returned as a fallback for clients that can store it.
+    clearAuthCookies(res);
+    res.cookie(AUTH_COOKIE_NAME, result.token, COOKIE_OPTIONS);
+    res.cookie('vynzo_device', result.deviceToken, DEVICE_COOKIE_OPTIONS);
+
     return sendSuccess(res, {
+      user: toPrivateProfile(result.user),
       token: result.token,
       deviceToken: result.deviceToken,
       isNewUser: result.isNewUser,
