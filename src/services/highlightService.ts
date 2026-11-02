@@ -2,10 +2,15 @@ import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 
 function toHighlightDTO(h: any) {
+  // If no cover was stored, serve the current first item instead of a
+  // blank cover. A stored (but dead) cover is handled client-side by
+  // falling back to the first item, then to a placeholder — never by
+  // deleting the highlight.
+  const firstItemUrl = (h.items || []).find((i: any) => i?.mediaUrl)?.mediaUrl;
   return {
     id: h.id,
     title: h.title,
-    coverUrl: h.coverUrl,
+    coverUrl: h.coverUrl || firstItemUrl || null,
     createdAt: h.createdAt,
     itemCount: h._count?.items ?? h.items?.length ?? 0,
     items: (h.items || []).map((i: any) => ({
