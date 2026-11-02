@@ -331,6 +331,29 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     } catch {}
   }
 
+  // CREATOR-VIEW EXCLUSION (2026-11-02, C3): reel_views is unique on
+  // (reel_id, viewer_id), so a creator previewing their own reel adds at
+  // most one row. Fetch rows where the viewer is any candidate author,
+  // then keep only rows where the viewer IS that reel's author, so a
+  // creator's own activation never counts against discovery eligibility.
+  const reelAuthor = new Map(reels.map((r) => [r.id, r.userId]));
+  const candidateAuthors = [...new Set(reels.map((r) => r.userId))];
+  const creatorViewed = new Set<string>();
+  if (reelIds.length && candidateAuthors.length) {
+    try {
+      const rows = await prisma.reelView.findMany({
+        where: { reelId: { in: reelIds }, viewerId: { in: candidateAuthors } },
+        select: { reelId: true, viewerId: true },
+      }).catch(() => [] as Array<{ reelId: string; viewerId: string }>);
+      for (const row of rows) {
+        if (reelAuthor.get(row.reelId) === row.viewerId) creatorViewed.add(row.reelId);
+      }
+    } catch {}
+  }
+  // Popularity EXCLUDING the creator's own view (views + likes).
+  const popularityExclCreatorOf = (x: { reel: { id: string; _count: { likes: number } } }) =>
+    Math.max(0, (viewCounts.get(x.reel.id) || 0) - (creatorViewed.has(x.reel.id) ? 1 : 0)) + x.reel._count.likes;
+
   // Full seen set for THIS user. The viewHistory used for personalization
   // above is capped at the last 200 views, which is too small to keep
   // repeats out of a heavy viewer's feed, so fetch every viewed reel id.
@@ -414,16 +437,23 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     return { reel: r, score };
   });
 
-  // Sort For You by POPULARITY first (owner-ordered 2026-10-22): the reels
-  // most people watch and like must come first. Popularity = total views +
-  // total likes (desc); the personalization score breaks ties, then the
-  // newest reel, then id so the order is fully deterministic.
+  // Sort For You by BLENDED score (owner-ordered 2026-11-02, C1 fix):
+  // this REPLACES the 2026-10-22 popularity-first rule. Personalisation
+  // score is now primary: blended = score + a capped popularity bonus
+  // (0-50, log scale: ~26 at 10 views+likes, 50 at 100+). A viral reel
+  // still gets up to +50, but it can no longer outrank a reel the user
+  // personally likes/follows by hundreds of points. Score range is
+  // roughly -50..+242 (affinity 50, following 20, engagement 20, recency
+  // 30, location 15, own 5, verified 12, real-user 50, interest 40).
+  // Ties break by score, then newest, then id (deterministic).
   // (Following tab stays chronological as fetched from the DB.)
   if (!isFollowingFeed) {
     const popularityOf = (x: (typeof scored)[number]) => (viewCounts.get(x.reel.id) || 0) + x.reel._count.likes;
+    const blendedOf = (x: (typeof scored)[number]) =>
+      x.score + Math.min(50, 25 * Math.log10(1 + popularityOf(x)));
     scored.sort((a, b) => {
-      const byPopularity = popularityOf(b) - popularityOf(a);
-      if (byPopularity !== 0) return byPopularity;
+      const byBlended = blendedOf(b) - blendedOf(a);
+      if (Math.abs(byBlended) > 0.01) return byBlended;
       if (Math.abs(a.score - b.score) > 0.01) return b.score - a.score;
       const byDate = new Date(b.reel.createdAt).getTime() - new Date(a.reel.createdAt).getTime();
       if (byDate !== 0) return byDate;
@@ -520,55 +550,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       }
     }
 
-    // NEW-CREATOR DISCOVERY SLOTS ON EVERY PAGE (owner-ordered 2026-11-02):
-    // the top-10 guarantee above only helps page 1. Cold reels (under 48h
-    // old, zero views and zero likes) sit at the very bottom of the
-    // popularity order, so without this they are never served at all.
-    // Interleave them through the UNSEEN section only: 1 discovery reel
-    // after every 4 regular reels (~2 per 10), in their scored order,
-    // avoiding two same-creator reels back-to-back where possible.
-    // This runs on the single consistent ranked list, BEFORE pagination,
-    // so both paging modes get slots: the exclude path slices from the
-    // top of the exclude-filtered list, and the offset path slices the
-    // same list by offset. Already-shown ids are still filtered out
-    // below, so a discovery reel is never repeated in a session.
-    // Seen reels, the following tab, posts, swipe and repeat logic are
-    // untouched by this block.
-    {
-      const nowMs = Date.now();
-      const popularityOf = (x: (typeof scored)[number]) => (viewCounts.get(x.reel.id) || 0) + x.reel._count.likes;
-      const isDiscovery = (x: (typeof scored)[number]) =>
-        !seenReelIds.has(x.reel.id) &&
-        (nowMs - new Date(x.reel.createdAt).getTime()) / 3600000 < 48 &&
-        popularityOf(x) === 0;
-      const unseenPart = scored.filter((x) => !seenReelIds.has(x.reel.id));
-      const seenPart = scored.filter((x) => seenReelIds.has(x.reel.id));
-      const discovery = unseenPart.filter(isDiscovery);
-      if (discovery.length > 0 && unseenPart.length > discovery.length) {
-        const discoverySet = new Set(discovery.map((x) => x.reel.id));
-        const regular = unseenPart.filter((x) => !discoverySet.has(x.reel.id));
-        const merged: typeof scored = [];
-        const remaining = [...discovery];
-        let regularSinceDiscovery = 0;
-        for (const item of regular) {
-          merged.push(item);
-          regularSinceDiscovery += 1;
-          if (regularSinceDiscovery >= 4 && remaining.length > 0) {
-            const lastCreator = merged[merged.length - 1].reel.userId;
-            let pickIdx = remaining.findIndex((x) => x.reel.userId !== lastCreator);
-            if (pickIdx === -1) pickIdx = 0;
-            merged.push(remaining[pickIdx]);
-            remaining.splice(pickIdx, 1);
-            regularSinceDiscovery = 0;
-          }
-        }
-        // Any discovery reels left over (more cold reels than regular
-        // reels) go at the end of the unseen section, ahead of seen reels.
-        merged.push(...remaining);
-        scored.length = 0;
-        scored.push(...merged, ...seenPart);
-      }
-    }
+    // (Discovery interleave moved AFTER the final pass — see below, C2 fix.)
 
     // ADVANCED ANTI-BOREDOM — FINAL PASS (owner-ordered 2026-11-02, reels
     // only; posts follow later). The earlier diversity pass above runs
@@ -644,6 +626,51 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       }
       scored.length = 0;
       scored.push(...diversifiedUnseen, ...diversify(seenPart));
+    }
+    // NEW-CREATOR DISCOVERY SLOTS — AFTER THE FINAL PASS (C2 fix,
+    // 2026-11-02): previously this ran BEFORE the final anti-boredom
+    // pass, which re-picked the unseen section in ranked order and let
+    // cold reels drift to the end, undoing the ~2-per-10 spacing.
+    // Running it last, on the diversified unseen section only, means
+    // the spacing survives to pagination. Seen reels stay last.
+    // Eligibility (C3 fix): <48h, unseen, and LOW popularity EXCLUDING
+    // the creator's own view (views-excl-creator + likes <= 5) — NOT
+    // exactly zero. One activation (including the creator previewing
+    // their own reel) therefore no longer kills discovery forever.
+    // Interleave: 1 discovery reel after every 4 regular reels
+    // (~2 per 10), in scored order, avoiding same-creator back-to-back
+    // where possible; leftovers go at the end of the unseen section.
+    {
+      const nowMs = Date.now();
+      const isDiscovery = (x: (typeof scored)[number]) =>
+        !seenReelIds.has(x.reel.id) &&
+        (nowMs - new Date(x.reel.createdAt).getTime()) / 3600000 < 48 &&
+        popularityExclCreatorOf(x) <= 5;
+      const unseenPart = scored.filter((x) => !seenReelIds.has(x.reel.id));
+      const seenPart = scored.filter((x) => seenReelIds.has(x.reel.id));
+      const discovery = unseenPart.filter(isDiscovery);
+      if (discovery.length > 0 && unseenPart.length > discovery.length) {
+        const discoverySet = new Set(discovery.map((x) => x.reel.id));
+        const regular = unseenPart.filter((x) => !discoverySet.has(x.reel.id));
+        const merged: typeof scored = [];
+        const remaining = [...discovery];
+        let regularSinceDiscovery = 0;
+        for (const item of regular) {
+          merged.push(item);
+          regularSinceDiscovery += 1;
+          if (regularSinceDiscovery >= 4 && remaining.length > 0) {
+            const lastCreator = merged[merged.length - 1].reel.userId;
+            let pickIdx = remaining.findIndex((x) => x.reel.userId !== lastCreator);
+            if (pickIdx === -1) pickIdx = 0;
+            merged.push(remaining[pickIdx]);
+            remaining.splice(pickIdx, 1);
+            regularSinceDiscovery = 0;
+          }
+        }
+        merged.push(...remaining);
+        scored.length = 0;
+        scored.push(...merged, ...seenPart);
+      }
     }
   }
 
