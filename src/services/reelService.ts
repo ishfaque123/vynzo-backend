@@ -11,10 +11,23 @@ import { getShareEventCounts } from './shareService';
 
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true };
 
+// Same private-account rule as getReelById: a private author's reels are
+// visible only to the author themselves and to viewers who follow them
+// (following or mutual friends). Callers must check block first, so a
+// blocked viewer gets BLOCKED, not PRIVATE_ACCOUNT.
+async function assertReelAuthorVisibleTo(viewerId: string, authorId: string) {
+  if (viewerId === authorId) return;
+  const author = await prisma.user.findUnique({ where: { id: authorId }, select: { isPrivate: true } });
+  if (!author?.isPrivate) return;
+  const status = await getFriendStatus(viewerId, authorId);
+  if (status !== 'following' && status !== 'friends') throw new ApiError(403, 'PRIVATE_ACCOUNT', 'This account is private.');
+}
+
 export async function addReelComment(userId: string, reelId: string, content: string, parentCommentId?: string) {
   const reel = await prisma.reel.findUnique({ where: { id: reelId } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   if (await isEitherBlocked(userId, reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot comment on this reel.');
+  await assertReelAuthorVisibleTo(userId, reel.userId);
   const trimmed = content.trim();
   if (!trimmed) throw new ApiError(400, 'EMPTY_COMMENT', 'Comment cannot be empty.');
   if (parentCommentId) {
@@ -55,6 +68,12 @@ function decodeReelCommentCursor(cursor?: string) {
 }
 
 export async function getReelComments(reelId: string, currentUserId: string, cursor?: string, limit = REEL_COMMENT_PAGE_SIZE) {
+  // C2: previously this never looked up the reel, so a blocked viewer or a
+  // stranger of a private account could read any reel's comments by id.
+  const reel = await prisma.reel.findUnique({ where: { id: reelId }, select: { userId: true } });
+  if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
+  if (await isEitherBlocked(currentUserId, reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot view comments on this reel.');
+  await assertReelAuthorVisibleTo(currentUserId, reel.userId);
   const safeLimit = Math.min(Math.max(limit, 1), REEL_COMMENT_PAGE_SIZE);
   const decodedCursor = decodeReelCommentCursor(cursor);
   if (cursor && !decodedCursor) throw new ApiError(400, 'INVALID_CURSOR', 'Invalid comment pagination cursor.');
@@ -129,6 +148,10 @@ export async function toggleReelCommentReaction(userId: string, commentId: strin
   const comment = await prisma.reelComment.findUnique({ where: { id: commentId }, include: { reel: true } });
   if (!comment) throw new ApiError(404, 'COMMENT_NOT_FOUND', 'Comment not found.');
   if (await isEitherBlocked(userId, comment.reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot react to this comment.');
+  // C2: previously only the reel owner was checked — a user blocked by the
+  // comment author could still react to that author's comment.
+  if (await isEitherBlocked(userId, comment.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot react to this comment.');
+  await assertReelAuthorVisibleTo(userId, comment.reel.userId);
   return prisma.$transaction(async (tx) => {
     const existing = await tx.reelCommentReaction.findUnique({ where: { userId_commentId: { userId, commentId } } });
     if (existing) {
@@ -300,17 +323,26 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
   // Fixed pool for every page: the ranked list must be identical across
   // page requests, otherwise offset slices overlap and the client runs dry.
   const candidateLimit = 1000;
-  const reels = await prisma.reel.findMany({
+  let reels = await prisma.reel.findMany({
     where,
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: candidateLimit,
     include: {
-      user: { select: { id: true, city: true, country: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true } },
+      user: { select: { id: true, city: true, country: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true, isPrivate: true } },
       _count: { select: { likes: true, comments: true } },
       likes: { where: { userId: currentUserId }, select: { id: true } },
       favorites: { where: { userId: currentUserId }, select: { id: true } },
     },
   });
+
+  // C1: private authors' reels must not leak into For You for strangers.
+  // Same rule as getReelById: the author's own reels stay, and a viewer
+  // who follows the author (following or friends both imply following)
+  // keeps seeing them. Following tab is unaffected in practice — it only
+  // contains followed creators — but the same filter is safe there.
+  // isPrivate is only used here for filtering; the author object sent to
+  // the client below is built explicitly and never includes it.
+  reels = reels.filter((r) => r.userId === currentUserId || !r.user?.isPrivate || followingSet.has(r.userId));
 
   // REAL USER BOOST: fetch AI user IDs once for the boost below
   const aiUserIds = new Set(
@@ -719,7 +751,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     const isMine = r.userId === currentUserId;
     const iFollow = followingSet2.has(r.userId);
     const theyFollow = followerSet.has(r.userId);
-    const friendStatus = isMine ? 'self' : iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follower' : 'none';
+    const friendStatus = isMine ? 'self' : iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follow_back' : 'none';
     const author = r.user ? { id: r.user.id, username: (r.user as any).username || '', displayName: ((r.user as any).displayName || '').trim(), profilePictureUrl: (r.user as any).profilePictureUrl || null, isVerified: !!(r.user as any).isVerified } : null;
     return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, category: (r as any).category || null, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, shareCount: shareCountMap.get(r.id) ?? 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
   });
@@ -743,6 +775,7 @@ async function toggleReelLikeCore(userId: string, reelId: string) {
   const reel = await prisma.reel.findUnique({ where: { id: reelId } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   if (await isEitherBlocked(userId, reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot like this reel.');
+  await assertReelAuthorVisibleTo(userId, reel.userId);
   return prisma.$transaction(async (tx) => {
     const existing = await tx.reelLike.findUnique({ where: { reelId_userId: { reelId, userId } } });
     if (existing) await tx.reelLike.delete({ where: { id: existing.id } });
@@ -756,6 +789,7 @@ export async function toggleReelFavorite(userId: string, reelId: string) {
   const reel = await prisma.reel.findUnique({ where: { id: reelId } });
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   if (await isEitherBlocked(userId, reel.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot favorite this reel.');
+  await assertReelAuthorVisibleTo(userId, reel.userId);
   return prisma.$transaction(async (tx) => {
     const existing = await tx.reelFavorite.findUnique({ where: { reelId_userId: { reelId, userId } } });
     if (existing) {
@@ -771,8 +805,19 @@ export async function getMyFavoriteReels(userId: string) {
   const blockedRows = await prisma.block.findMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] }, select: { blockerId: true, blockedId: true } });
   const blockedIds = new Set<string>();
   for (const b of blockedRows) blockedIds.add(b.blockerId === userId ? b.blockedId : b.blockerId);
-  const favorites = await prisma.reelFavorite.findMany({ where: { userId, reel: blockedIds.size ? { userId: { notIn: [...blockedIds] } } : {} }, orderBy: { createdAt: 'desc' }, include: { reel: { include: { user: { select: authorSelect }, _count: { select: { likes: true, comments: true } }, likes: { where: { userId }, select: { id: true } } } } } });
-  const reels = await Promise.all(favorites.filter((f) => f.reel).map(async (f) => ({
+  const favorites = await prisma.reelFavorite.findMany({ where: { userId, reel: blockedIds.size ? { userId: { notIn: [...blockedIds] } } : {} }, orderBy: { createdAt: 'desc' }, include: { reel: { include: { user: { select: { ...authorSelect, isPrivate: true } }, _count: { select: { likes: true, comments: true } }, likes: { where: { userId }, select: { id: true } } } } } });
+  // C1: a favourited private author's reel must disappear from this list
+  // once the viewer no longer follows them (e.g. unfollowed after saving),
+  // instead of staying viewable via favorites. Following check is one
+  // query for all favourite authors; isPrivate is stripped before return.
+  const favouriteAuthorIds = [...new Set(favorites.filter((f) => f.reel).map((f) => f.reel.userId))];
+  const followingRows = favouriteAuthorIds.length
+    ? await prisma.follow.findMany({ where: { followerId: userId, followingId: { in: favouriteAuthorIds } }, select: { followingId: true } }).catch(() => [] as Array<{ followingId: string }>)
+    : [];
+  const followingFavs = new Set(followingRows.map((f) => f.followingId));
+  const reels = await Promise.all(favorites.filter((f) => f.reel && (f.reel.userId === userId || !(f.reel.user as any)?.isPrivate || followingFavs.has(f.reel.userId))).map(async (f) => {
+    const { isPrivate: _isPrivate, ...author } = f.reel.user as any;
+    return {
     id: f.reel.id,
     videoUrl: f.reel.videoUrl,
     caption: f.reel.caption,
@@ -784,9 +829,9 @@ export async function getMyFavoriteReels(userId: string) {
     liked: f.reel.likes.length > 0,
     favorited: true,
     isMine: f.reel.userId === userId,
-    author: f.reel.user,
     friendStatus: await getFriendStatus(userId, f.reel.userId),
-  })));
+    author,
+  }; }));
   return reels;
 }
 
