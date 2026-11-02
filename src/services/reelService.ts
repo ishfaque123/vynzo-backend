@@ -569,6 +569,82 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
         scored.push(...merged, ...seenPart);
       }
     }
+
+    // ADVANCED ANTI-BOREDOM — FINAL PASS (owner-ordered 2026-11-02, reels
+    // only; posts follow later). The earlier diversity pass above runs
+    // BEFORE the seen-partition and the discovery interleave, so both of
+    // those later passes can undo it (a discovery reel can land next to
+    // the same creator, seen reels keep their own order). This final pass
+    // therefore runs LAST, on the single ranked list, before pagination,
+    // so both paging modes (exclude and offset) see the same diversified
+    // order. It never re-sorts by score and never moves a seen reel ahead
+    // of an unseen one: the unseen and seen sections are diversified
+    // separately and re-joined in that order. Popularity-first order is
+    // kept as the base — this pass only re-orders greedily within it.
+    // Rules, in order of preference for each next pick:
+    //   (a) not the same creator as the previous reel;
+    //   (b) not a third reel of the same category in a row;
+    //   (c) at most 2 reels from one creator in any sliding window of 10
+    //       (rotates unseen creators in instead of one creator dominating
+    //       a page). Each rule is relaxed in turn if no remaining reel
+    //       satisfies it, so the pass can never stall or drop a reel.
+    // Freshness window: after diversifying, every window of 10 unseen
+    // reels is checked for at least one unseen reel under 48h old; if a
+    // window has none and a later unseen fresh reel exists, the two are
+    // swapped (only when the swap keeps creators different from both
+    // neighbours). This stops old viral reels dominating every page
+    // forever, without resorting the whole list and without touching
+    // the popularity-first base order. Following tab is untouched: it
+    // stays chronological because this whole block is For You only.
+    {
+      const diversify = (section: typeof scored) => {
+        const out: typeof scored = [];
+        const remaining = [...section];
+        while (remaining.length > 0) {
+          const last = out[out.length - 1];
+          const lastCreator = last ? last.reel.userId : null;
+          const lastCat = last ? (last.reel as any).category : null;
+          const secondLastCat = out.length > 1 ? (out[out.length - 2].reel as any).category : null;
+          const windowCreators = out.slice(-9).map((x) => x.reel.userId);
+          const passes = (x: (typeof scored)[number], strict: boolean) => {
+            if (lastCreator && x.reel.userId === lastCreator) return false;
+            const cat = (x.reel as any).category;
+            if (cat && cat === lastCat && cat === secondLastCat) return false;
+            if (strict && windowCreators.filter((c) => c === x.reel.userId).length >= 2) return false;
+            return true;
+          };
+          let pickIdx = remaining.findIndex((x) => passes(x, true));
+          if (pickIdx === -1) pickIdx = remaining.findIndex((x) => passes(x, false));
+          if (pickIdx === -1) pickIdx = 0;
+          out.push(remaining[pickIdx]);
+          remaining.splice(pickIdx, 1);
+        }
+        return out;
+      };
+      const unseenPart = scored.filter((x) => !seenReelIds.has(x.reel.id));
+      const seenPart = scored.filter((x) => seenReelIds.has(x.reel.id));
+      const diversifiedUnseen = diversify(unseenPart);
+      // Freshness window guarantee, unseen section only.
+      const nowMs = Date.now();
+      const isFreshUnseen = (x: (typeof scored)[number]) =>
+        (nowMs - new Date(x.reel.createdAt).getTime()) / 3600000 < 48;
+      for (let start = 0; start < diversifiedUnseen.length; start += 10) {
+        const window = diversifiedUnseen.slice(start, start + 10);
+        if (window.some(isFreshUnseen)) continue;
+        const laterIdx = diversifiedUnseen.findIndex((x, i) => i >= start + 10 && isFreshUnseen(x));
+        if (laterIdx === -1) continue;
+        const swapIdx = start + window.length - 1;
+        const fresh = diversifiedUnseen[laterIdx];
+        const beforeSwap = diversifiedUnseen[swapIdx - 1];
+        const afterSwap = diversifiedUnseen[swapIdx + 1];
+        if (beforeSwap && beforeSwap.reel.userId === fresh.reel.userId) continue;
+        if (afterSwap && afterSwap.reel.userId === fresh.reel.userId) continue;
+        diversifiedUnseen[swapIdx] = fresh;
+        diversifiedUnseen[laterIdx] = window[window.length - 1];
+      }
+      scored.length = 0;
+      scored.push(...diversifiedUnseen, ...diversify(seenPart));
+    }
   }
 
   // Apply pagination on ranked results.
