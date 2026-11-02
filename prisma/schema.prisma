@@ -393,6 +393,23 @@ model ShareLink {
   @@map("share_links")
 }
 
+// One row per external share tap (copy link, WhatsApp, Facebook, Messenger,
+// SMS, Frianzo DM) from the share sheet. Reposts are NOT recorded here — they
+// are already counted via Post.reposts, so shareCount = reposts + these rows
+// with no double-counting. Counts are share actions (tile taps), not proof
+// the user completed the send in the external app.
+model ShareEvent {
+  id         String   @id @default(uuid())
+  targetType String   @map("target_type") // 'post' | 'reel'
+  targetId   String   @map("target_id")
+  channel    String
+  userId     String?  @map("user_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([targetType, targetId])
+  @@map("share_events")
+}
+
 model Conversation {
   id        String   @id @default(uuid())
   isGroup   Boolean  @default(false) @map("is_group")

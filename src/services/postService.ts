@@ -32,6 +32,10 @@ export async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?
   const reactionCounts: Record<string, number> = {};
   for (const like of post.likes || []) reactionCounts[like.type] = (reactionCounts[like.type] || 0) + 1;
 
+  // shareCount = in-app reposts + external share taps (ShareEvent rows).
+  // Reposts never create a ShareEvent, so the two parts cannot double-count.
+  const externalShares = await prisma.shareEvent.count({ where: { targetType: 'post', targetId: post.id } }).catch(() => 0);
+
   return {
     id: post.id,
     content: post.content,
@@ -45,7 +49,7 @@ export async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?
     isPinned: !!post.pinnedAt,
     likeCount: post._count?.likes ?? 0,
     commentCount: post._count?.comments ?? 0,
-    shareCount: post._count?.reposts ?? 0,
+    shareCount: (post._count?.reposts ?? 0) + externalShares,
     reactionCounts,
     myReaction: myLike ? myLike.type : null,
     author: toAuthorDTO(post.user),

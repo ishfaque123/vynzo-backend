@@ -7,6 +7,7 @@ import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
 import { awardAchievement } from './achievementService';
 import { moderateReel } from './moderationService';
+import { getShareEventCounts } from './shareService';
 
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true };
 
@@ -712,6 +713,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       }).catch(() => [] as Array<{ targetId: string; code: string }>)
     : [];
   const shareCodeMap = new Map(shareRows.map((s) => [s.targetId, s.code]));
+  const shareCountMap = await getShareEventCounts('reel', pagedReelIds);
 
   const reelsWithStatus = paged.map(({ reel: r }) => {
     const isMine = r.userId === currentUserId;
@@ -719,7 +721,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     const theyFollow = followerSet.has(r.userId);
     const friendStatus = isMine ? 'self' : iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follower' : 'none';
     const author = r.user ? { id: r.user.id, username: (r.user as any).username || '', displayName: ((r.user as any).displayName || '').trim(), profilePictureUrl: (r.user as any).profilePictureUrl || null, isVerified: !!(r.user as any).isVerified } : null;
-    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, category: (r as any).category || null, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
+    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, category: (r as any).category || null, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, shareCount: shareCountMap.get(r.id) ?? 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
   });
   return { reels: reelsWithStatus, hasMore: excludeSet.size ? paged.length < total : safeOffset + paged.length < total };
 }
@@ -778,6 +780,7 @@ export async function getMyFavoriteReels(userId: string) {
     createdAt: f.reel.createdAt,
     likeCount: f.reel._count.likes,
     commentCount: f.reel._count.comments,
+    shareCount: (await getShareEventCounts('reel', [f.reel.id])).get(f.reel.id) ?? 0,
     liked: f.reel.likes.length > 0,
     favorited: true,
     isMine: f.reel.userId === userId,
@@ -823,6 +826,7 @@ export async function getReelById(reelId: string, currentUserId: string) {
     }
   }
   const friendStatus = isMine ? 'self' : await getFriendStatus(currentUserId, reel.userId);
+  const shareCount = (await getShareEventCounts('reel', [reel.id])).get(reel.id) ?? 0;
   return {
     id: reel.id,
     videoUrl: reel.videoUrl,
@@ -832,6 +836,7 @@ export async function getReelById(reelId: string, currentUserId: string) {
     createdAt: reel.createdAt,
     likeCount: reel._count.likes,
     commentCount: reel._count.comments,
+    shareCount,
     liked: reel.likes.length > 0,
     favorited: reel.favorites.length > 0,
     isMine,
@@ -862,6 +867,7 @@ export async function getReelsByUsername(username: string, currentUserId: string
     },
   });
   const friendStatus = isOwner ? 'self' : await getFriendStatus(currentUserId, user.id);
+  const shareCountMap = await getShareEventCounts('reel', reels.map((r) => r.id));
   return reels.map((r) => ({
     id: r.id,
     videoUrl: r.videoUrl,
@@ -871,6 +877,7 @@ export async function getReelsByUsername(username: string, currentUserId: string
     createdAt: r.createdAt,
     likeCount: r._count.likes,
     commentCount: r._count.comments,
+    shareCount: shareCountMap.get(r.id) ?? 0,
     liked: r.likes.length > 0,
     favorited: r.favorites.length > 0,
     isMine: isOwner,
