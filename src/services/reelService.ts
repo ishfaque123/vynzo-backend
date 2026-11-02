@@ -430,16 +430,17 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       return b.reel.id < a.reel.id ? -1 : b.reel.id > a.reel.id ? 1 : 0;
     });
 
-    // NEW REEL DISCOVERY (user-ordered 2026-10-17): guarantee fresh reels surface.
-    // Without this, old viral reels (affinity 50 + following 20 + engagement 20 = 90pts)
-    // bury brand-new reels (recency 15 max). Like the post feed's exploration slot,
-    // ensure at least 3 fresh (<6h) reels appear in the top 10 so new creators get growth.
-    // Runs on every page request (not just offset 0) together with the own-reel
-    // pin and the diversity pass below, so all pages slice ONE consistent list.
+    // NEW REEL DISCOVERY (user-ordered 2026-10-17, extended 2026-11-02):
+    // guarantee fresh reels surface. Without this, old viral reels bury
+    // brand-new reels. Like the post feed's exploration slot, ensure at
+    // least 3 fresh (<48h, was <6h) reels appear in the top 10 so new
+    // creators get growth. Runs on every page request (not just offset 0)
+    // together with the own-reel pin and the diversity pass below, so all
+    // pages slice ONE consistent list.
     {
       const nowMs = Date.now();
       const isFresh = (s: typeof scored[number]) =>
-        (nowMs - new Date(s.reel.createdAt).getTime()) / 3600000 < 6;
+        (nowMs - new Date(s.reel.createdAt).getTime()) / 3600000 < 48;
       const freshInTop10 = scored.slice(0, 10).filter(isFresh).length;
       const need = Math.max(0, 3 - freshInTop10);
       if (need > 0) {
@@ -516,6 +517,56 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       if (seen.length > 0 && unseen.length > 0) {
         scored.length = 0;
         scored.push(...unseen, ...seen);
+      }
+    }
+
+    // NEW-CREATOR DISCOVERY SLOTS ON EVERY PAGE (owner-ordered 2026-11-02):
+    // the top-10 guarantee above only helps page 1. Cold reels (under 48h
+    // old, zero views and zero likes) sit at the very bottom of the
+    // popularity order, so without this they are never served at all.
+    // Interleave them through the UNSEEN section only: 1 discovery reel
+    // after every 4 regular reels (~2 per 10), in their scored order,
+    // avoiding two same-creator reels back-to-back where possible.
+    // This runs on the single consistent ranked list, BEFORE pagination,
+    // so both paging modes get slots: the exclude path slices from the
+    // top of the exclude-filtered list, and the offset path slices the
+    // same list by offset. Already-shown ids are still filtered out
+    // below, so a discovery reel is never repeated in a session.
+    // Seen reels, the following tab, posts, swipe and repeat logic are
+    // untouched by this block.
+    {
+      const nowMs = Date.now();
+      const popularityOf = (x: (typeof scored)[number]) => (viewCounts.get(x.reel.id) || 0) + x.reel._count.likes;
+      const isDiscovery = (x: (typeof scored)[number]) =>
+        !seenReelIds.has(x.reel.id) &&
+        (nowMs - new Date(x.reel.createdAt).getTime()) / 3600000 < 48 &&
+        popularityOf(x) === 0;
+      const unseenPart = scored.filter((x) => !seenReelIds.has(x.reel.id));
+      const seenPart = scored.filter((x) => seenReelIds.has(x.reel.id));
+      const discovery = unseenPart.filter(isDiscovery);
+      if (discovery.length > 0 && unseenPart.length > discovery.length) {
+        const discoverySet = new Set(discovery.map((x) => x.reel.id));
+        const regular = unseenPart.filter((x) => !discoverySet.has(x.reel.id));
+        const merged: typeof scored = [];
+        const remaining = [...discovery];
+        let regularSinceDiscovery = 0;
+        for (const item of regular) {
+          merged.push(item);
+          regularSinceDiscovery += 1;
+          if (regularSinceDiscovery >= 4 && remaining.length > 0) {
+            const lastCreator = merged[merged.length - 1].reel.userId;
+            let pickIdx = remaining.findIndex((x) => x.reel.userId !== lastCreator);
+            if (pickIdx === -1) pickIdx = 0;
+            merged.push(remaining[pickIdx]);
+            remaining.splice(pickIdx, 1);
+            regularSinceDiscovery = 0;
+          }
+        }
+        // Any discovery reels left over (more cold reels than regular
+        // reels) go at the end of the unseen section, ahead of seen reels.
+        merged.push(...remaining);
+        scored.length = 0;
+        scored.push(...merged, ...seenPart);
       }
     }
   }
