@@ -30,6 +30,7 @@ import authFailureRoutes from './routes/authFailureRoutes';
 import geoRoutes from './routes/geoRoutes';
 import settingsRoutes from './routes/settingsRoutes';
 import tagRoutes from './routes/tagRoutes';
+import searchRoutes from './routes/searchRoutes';
 import videoGenRoutes from './routes/videoGenRoutes';
 import aiAssistantRoutes from './routes/aiAssistantRoutes';
 
@@ -58,6 +59,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/share', shareRoutes);
 app.use('/api/tags', tagRoutes);
+app.use('/api/search', searchRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/blocks', blockRoutes);
 app.use('/api/devices', deviceRoutes);
