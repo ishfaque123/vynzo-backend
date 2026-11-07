@@ -7,13 +7,14 @@ import {
   createPostHandler, getFeedHandler, deletePostHandler, setReactionHandler,
   sharePostHandler, getPostHandler, getUserPostsHandler, updatePostHandler,
   reportPostHandler, hidePostHandler, recordPostViewHandler, togglePinPostHandler,
-  getContentMixHandler,
+  getContentMixHandler, togglePostFavoriteHandler, getMyFavoritePostsHandler,
 } from '../controllers/postController';
 
 const router = Router();
 
 router.get('/', optionalAuth, getFeedHandler);
 router.get('/content-mix', authMiddleware, getContentMixHandler);
+router.get('/me/favorites', authMiddleware, getMyFavoritePostsHandler);
 router.post('/', authMiddleware, postCreateLimiter, upload.single('image'), createPostHandler);
 router.get('/user/:username', optionalAuth, getUserPostsHandler);
 router.get('/:id', optionalAuth, getPostHandler);
@@ -25,5 +26,6 @@ router.post('/:id/report', authMiddleware, reportPostHandler);
 router.post('/:id/hide', authMiddleware, hidePostHandler);
 router.post('/:id/view', authMiddleware, recordPostViewHandler);
 router.post('/:id/pin', authMiddleware, togglePinPostHandler);
+router.post('/:id/favorite', authMiddleware, togglePostFavoriteHandler);
 
 export default router;

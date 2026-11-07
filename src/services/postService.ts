@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
+import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
 import { moderatePost } from './moderationService';
 import { awardAchievement } from './achievementService';
@@ -28,6 +29,7 @@ async function getShareCodeMap(
 
 export async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?: Map<string, string>): Promise<any> {
   const myLike = currentUserId ? post.likes?.find((l: any) => l.userId === currentUserId) : null;
+  const isSaved = currentUserId ? (post.favorites?.some((f: any) => f.userId === currentUserId) ?? false) : false;
   const friendStatus = await getFriendStatus(currentUserId, post.userId);
   const reactionCounts: Record<string, number> = {};
   for (const like of post.likes || []) reactionCounts[like.type] = (reactionCounts[like.type] || 0) + 1;
@@ -52,6 +54,7 @@ export async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?
     shareCount: (post._count?.reposts ?? 0) + externalShares,
     reactionCounts,
     myReaction: myLike ? myLike.type : null,
+    isSaved,
     author: toAuthorDTO(post.user),
     friendStatus,
     taggedUsers: post.tags?.map((t: any) => toAuthorDTO(t.user)) ?? [],
@@ -64,12 +67,14 @@ export const includeShape = {
   user: true,
   _count: { select: { likes: true, comments: { where: { parentCommentId: null } }, reposts: true } },
   likes: true,
+  favorites: true,
   tags: { include: { user: true } },
   originalPost: {
     include: {
       user: true,
       _count: { select: { likes: true, comments: { where: { parentCommentId: null } }, reposts: true } },
       likes: true,
+      favorites: true,
       tags: { include: { user: true } },
     },
   },
@@ -448,4 +453,51 @@ export async function hidePost(userId: string, postId: string) {
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
   await prisma.hiddenPost.upsert({ where: { userId_postId: { userId, postId } }, update: {}, create: { userId, postId } });
   return { hidden: true };
+}
+
+// Same private-account rule as getPostById: a private author's posts are
+// visible only to the author themselves and to viewers who follow them
+// (following or mutual friends). Callers must check block first, so a
+// blocked viewer gets BLOCKED, not PRIVATE_ACCOUNT.
+async function assertPostAuthorVisibleTo(viewerId: string, authorId: string) {
+  if (viewerId === authorId) return;
+  const author = await prisma.user.findUnique({ where: { id: authorId }, select: { isPrivate: true } });
+  if (!author?.isPrivate) return;
+  const status = await getFriendStatus(viewerId, authorId);
+  if (status !== 'following' && status !== 'friends') throw new ApiError(403, 'PRIVATE_ACCOUNT', 'This account is private.');
+}
+
+export async function togglePostFavorite(userId: string, postId: string) {
+  const post = await prisma.post.findUnique({ where: { id: postId } });
+  if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+  if (await isEitherBlocked(userId, post.userId)) throw new ApiError(403, 'BLOCKED', 'Cannot save this post.');
+  await assertPostAuthorVisibleTo(userId, post.userId);
+  if (post.visibility === 'private' && post.userId !== userId) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.postFavorite.findUnique({ where: { postId_userId: { postId, userId } } });
+    if (existing) {
+      await tx.postFavorite.delete({ where: { id: existing.id } });
+      return { favorited: false };
+    }
+    await tx.postFavorite.create({ data: { postId, userId } });
+    return { favorited: true };
+  }, { isolationLevel: 'Serializable' });
+}
+
+export async function getMyFavoritePosts(userId: string) {
+  const blockedRows = await prisma.block.findMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] }, select: { blockerId: true, blockedId: true } });
+  const blockedIds = new Set<string>();
+  for (const b of blockedRows) blockedIds.add(b.blockerId === userId ? b.blockedId : b.blockerId);
+  const favorites = await prisma.postFavorite.findMany({ where: { userId, post: blockedIds.size ? { userId: { notIn: [...blockedIds] } } : {} }, orderBy: { createdAt: 'desc' }, include: { post: { include: includeShape } } });
+  // C1 (mirrors getMyFavoriteReels): a saved post from a private author must
+  // disappear from this list once the viewer no longer follows them (e.g.
+  // unfollowed after saving), instead of staying viewable via favorites.
+  const favouriteAuthorIds = [...new Set(favorites.filter((f) => f.post).map((f) => f.post.userId))];
+  const followingRows = favouriteAuthorIds.length
+    ? await prisma.follow.findMany({ where: { followerId: userId, followingId: { in: favouriteAuthorIds } }, select: { followingId: true } }).catch(() => [] as Array<{ followingId: string }>)
+    : [];
+  const followingFavs = new Set(followingRows.map((f) => f.followingId));
+  const visible = favorites.filter((f) => f.post && (f.post.userId === userId || !(f.post.user as any)?.isPrivate || followingFavs.has(f.post.userId)));
+  const shareCodeMap = await getShareCodeMap('post', visible.map((f) => f.post.id));
+  return Promise.all(visible.map((f) => toPostDTO(f.post, userId, shareCodeMap)));
 }

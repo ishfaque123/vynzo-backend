@@ -3,6 +3,7 @@ import { sendSuccess } from '../utils/ApiResponse';
 import {
   createPost, getFeed, deletePost, sharePost, getPostById, getPostsByUsername,
   updatePost, reportPost, hidePost, togglePinPost, getContentMix,
+  togglePostFavorite, getMyFavoritePosts,
 } from '../services/postService';
 import { setReaction } from '../services/likeService';
 import { recordPostView } from '../services/postAnalyticsService';
@@ -152,3 +153,6 @@ export async function recordPostViewHandler(req: Request, res: Response, next: N
     sendSuccess(res, await recordPostView(req.user!.id, req.params.id, watchSec));
   } catch (err) { next(err); }
 }
+
+export async function togglePostFavoriteHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await togglePostFavorite(req.user!.id, req.params.id)); } catch (err) { next(err); } }
+export async function getMyFavoritePostsHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, { posts: await getMyFavoritePosts(req.user!.id) }); } catch (err) { next(err); } }

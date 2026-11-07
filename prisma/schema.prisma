@@ -167,6 +167,7 @@ model User {
   reels                  Reel[]
   reelLikes              ReelLike[]
   reelFavorites          ReelFavorite[]
+  savedPosts             PostFavorite[]
   closeFriendsOf         CloseFriend[] @relation("CloseFriendOwner")
   closeFriendedBy        CloseFriend[] @relation("CloseFriendTarget")
   stickerVotes           StickerVote[]
@@ -253,6 +254,7 @@ model Post {
   reports      Report[]
   hiddenBy     HiddenPost[]
   views        PostView[]
+  favorites    PostFavorite[]
 
   @@index([userId])
   @@index([createdAt])
@@ -797,6 +799,20 @@ model ReelFavorite {
   @@unique([reelId, userId])
   @@index([userId])
   @@map("reel_favorites")
+}
+
+model PostFavorite {
+  id        String   @id @default(uuid())
+  postId    String   @map("post_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId])
+  @@map("post_favorites")
 }
 
 model ReelCommentReport {
