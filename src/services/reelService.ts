@@ -567,6 +567,23 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       scored.push(...diversified);
     }
 
+    // REFRESH FIX (2026-11-10): fresh seen reels are EXEMPT from
+    // seen-suppression. The #1 reel is marked seen the moment it becomes
+    // active (recordReelView with watchSec 0 — web reels/page.tsx, native
+    // Screens2.kt), so on refresh the partition below moved it behind EVERY
+    // unseen reel, out of the top 10 whenever >=10 unseen reels existed.
+    // The "3 fresh (<48h) in top 10" guarantee runs BEFORE the partition,
+    // so the partition undid it. A reel <48h old keeps its ranked place
+    // even after being watched; only seen reels >=48h old are partitioned
+    // to the end. The same exemption is used in the final anti-boredom pass
+    // and the discovery interleave below, which would otherwise re-partition
+    // the fresh seen reels to the end again.
+    const FRESH_REEL_HOURS = 48;
+    const isFreshReel = (x: (typeof scored)[number]) =>
+      (Date.now() - new Date(x.reel.createdAt).getTime()) / 3600000 < FRESH_REEL_HOURS;
+    const isSuppressedReel = (x: (typeof scored)[number]) =>
+      seenReelIds.has(x.reel.id) && !isFreshReel(x);
+
     // NO REPEATS UNTIL EVERYTHING IS SEEN (owner-ordered 2026-10-22):
     // stable-partition the ranked list — reels this user has already viewed
     // move to the very end, keeping their ranked order among themselves, so
@@ -575,8 +592,8 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     // reels was left, so once a viewer had watched most of the catalog the
     // same top reels came back on every load.
     {
-      const unseen = scored.filter((x: (typeof scored)[number]) => !seenReelIds.has(x.reel.id));
-      const seen = scored.filter((x: (typeof scored)[number]) => seenReelIds.has(x.reel.id));
+      const unseen = scored.filter((x: (typeof scored)[number]) => !isSuppressedReel(x));
+      const seen = scored.filter((x: (typeof scored)[number]) => isSuppressedReel(x));
       if (seen.length > 0 && unseen.length > 0) {
         scored.length = 0;
         scored.push(...unseen, ...seen);
@@ -636,8 +653,8 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
         }
         return out;
       };
-      const unseenPart = scored.filter((x) => !seenReelIds.has(x.reel.id));
-      const seenPart = scored.filter((x) => seenReelIds.has(x.reel.id));
+      const unseenPart = scored.filter((x) => !isSuppressedReel(x));
+      const seenPart = scored.filter((x) => isSuppressedReel(x));
       const diversifiedUnseen = diversify(unseenPart);
       // Freshness window guarantee, unseen section only.
       const nowMs = Date.now();
@@ -679,8 +696,8 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
         !seenReelIds.has(x.reel.id) &&
         (nowMs - new Date(x.reel.createdAt).getTime()) / 3600000 < 48 &&
         popularityExclCreatorOf(x) <= 5;
-      const unseenPart = scored.filter((x) => !seenReelIds.has(x.reel.id));
-      const seenPart = scored.filter((x) => seenReelIds.has(x.reel.id));
+      const unseenPart = scored.filter((x) => !isSuppressedReel(x));
+      const seenPart = scored.filter((x) => isSuppressedReel(x));
       const discovery = unseenPart.filter(isDiscovery);
       if (discovery.length > 0 && unseenPart.length > discovery.length) {
         const discoverySet = new Set(discovery.map((x) => x.reel.id));
