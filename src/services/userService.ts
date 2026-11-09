@@ -22,6 +22,7 @@ export function toPrivateProfile(user: any) {
     city: user.city,
     country: user.country,
     dateOfBirth: user.dateOfBirth,
+    interests: user.interests ?? [],
     profileCompleted: user.profileCompleted,
     commentsDisabled: user.commentsDisabled,
     messagePermission: user.messagePermission,
