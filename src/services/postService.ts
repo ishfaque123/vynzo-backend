@@ -348,6 +348,28 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
       scored.push(...rest);
     }
 
+    // NEWEST UNSEEN POST FIRST (user-ordered 2026-11-10): on refresh the
+    // newest post must surface at #1. Ranked score alone can keep a
+    // followed/high-affinity 1h-old post above a 2-minute-old post from a
+    // stranger forever (following +50, affinity up to +100 and engagement
+    // outweigh the ~64-point recency edge of a 2m-old post), so the top
+    // slot never changes between reloads. Only the single newest unseen
+    // post <3h old is pinned; once seen it falls back to normal score
+    // ranking. Runs BEFORE "OWN NEW POST FIRST" below so the viewer's own
+    // fresh post still wins the top slot when both apply.
+    if (currentUserId) {
+      const newestUnseen = scored
+        .filter((x) => x.hoursOld < 3 && !seenPostIds.has(x.post.id))
+        .sort((a, b) => a.hoursOld - b.hoursOld)[0];
+      if (newestUnseen) {
+        const idx = scored.indexOf(newestUnseen);
+        if (idx > 0) {
+          scored.splice(idx, 1);
+          scored.unshift(newestUnseen);
+        }
+      }
+    }
+
     // OWN NEW POST FIRST (user-ordered 2026-10-17): when you create a post,
     // you see it at the very top the 1st time. After you've seen it (reload),
     // normal ranking applies. Only for posts <1h old.
