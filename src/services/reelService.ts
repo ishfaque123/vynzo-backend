@@ -276,6 +276,11 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       const cat = catMap.get(v.reel_id);
       if (!cat) continue;
       const w = (Number(v.watch_sec) || 0) + (Number(v.completed) ? 10 : 0);
+      // WATCH-BASED RANKING (2026-11-10): skip rows with no reported watch
+      // time — a 0-sec activation row would otherwise create a 0-value
+      // entry that can still land in the top-3 watched categories and boost
+      // a category the user never actually watched.
+      if (w === 0) continue;
       categoryWatch.set(cat, (categoryWatch.get(cat) || 0) + w);
     }
   }
@@ -287,8 +292,14 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     const authorId = reelAuthorMap.get(v.reel_id);
     if (!authorId || authorId === currentUserId) continue;
     const s = creatorStats.get(authorId) || { watchTime: 0, views: 0, likes: 0, completed: 0 };
-    s.watchTime += Number(v.watch_sec) || 0;
-    s.views += 1;
+    const wsec = Number(v.watch_sec) || 0;
+    s.watchTime += wsec;
+    // WATCH-BASED RANKING (2026-11-10): a watch_sec of 0 is "no watch time
+    // reported yet", not a watch (same principle as the skip detector) —
+    // the activation row is created the moment a reel becomes active and
+    // the real watch time is lost on refresh. Counting 0-sec rows as views
+    // credited authors the user merely scrolled past.
+    if (wsec >= 1) s.views += 1;
     if (Number(v.completed)) s.completed += 1;
     creatorStats.set(authorId, s);
   }
@@ -406,7 +417,15 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     const last = viewHistory[0];
     const wsec = Number(last.watch_sec) || 0;
     const completed = Number(last.completed) === 1;
-    if (!completed && wsec < 3) lastWasSkip = true;
+    // REFRESH FIX 2 (2026-11-10): watch_sec = 0 means "no watch time
+    // reported yet", NOT a skip. The view row is created with watchSec 0
+    // the moment a reel becomes active (web reels/page.tsx, native
+    // Screens2.kt) and the real watch time is only sent later in a
+    // cleanup — which a browser refresh cancels (plain fetch, no
+    // keepalive), so the row still reads 0 when the refreshed feed loads.
+    // Treating 0 as a skip fired the +30 SKIP BOOST on every refresh and
+    // churned the top of the feed. A real skip is a reported 1-2s watch.
+    if (!completed && wsec >= 1 && wsec < 3) lastWasSkip = true;
   }
 
   const scored = reels.map((r) => {
@@ -465,7 +484,13 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     if (notInterestedCreators.has(r.userId)) score -= 50;
 
     // 7. Penalize already-seen reels (avoid repeats)
-    if (viewedReelIds.includes(r.id)) score -= 15;
+    // REFRESH FIX 2 (2026-11-10): fresh (<48h) seen reels are EXEMPT —
+    // same rule as the posts fix (postService.ts seenFactor, hoursOld >= 3).
+    // The -15 alone did not push a fresh reel out by itself, but together
+    // with the spurious +30 SKIP BOOST to young competitors it dropped the
+    // watched #1 reel to #14 on refresh. Only seen reels >=48h old lose
+    // the 15 points now; 48 matches FRESH_REEL_HOURS below.
+    if (viewedReelIds.includes(r.id) && ageHours >= 48) score -= 15;
 
     return { reel: r, score };
   });
@@ -492,6 +517,25 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
       if (byDate !== 0) return byDate;
       return b.reel.id < a.reel.id ? -1 : b.reel.id > a.reel.id ? 1 : 0;
     });
+
+    // NO-REPEAT (user-ordered 2026-11-10): mirror the posts SEEN RULE 2 —
+    // a reel shows ONCE. Remove every seen reel from the ranked list
+    // whenever at least one unseen reel exists in the pool, so the same
+    // reels stop coming back on every refresh ("same 5 reels every
+    // batch"). Only when NO unseen reel exists at all do we keep the full
+    // list, so the feed never goes empty. Runs BEFORE the fresh guarantee
+    // below, so the guarantee still fills the top 10 from unseen fresh
+    // reels. The NO REPEATS partition further down is kept as the fallback
+    // for the zero-unseen case (and for fresh seen reels, which it
+    // exempts). Consequence, by design: a watched fresh reel leaves the
+    // batch on the next load — the same rule as posts.
+    if (seenReelIds.size > 0) {
+      const unseenReels = scored.filter((x) => !seenReelIds.has(x.reel.id));
+      if (unseenReels.length > 0) {
+        scored.length = 0;
+        scored.push(...unseenReels);
+      }
+    }
 
     // NEW REEL DISCOVERY (user-ordered 2026-10-17, extended 2026-11-02):
     // guarantee fresh reels surface. Without this, old viral reels bury

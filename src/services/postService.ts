@@ -391,6 +391,32 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
       }
     }
 
+    // FOLLOWING-FIRST (user-ordered 2026-11-10): guarantee at least 2
+    // posts from followed authors in the top 5 on the first page, so a
+    // followed user's NEW post always surfaces on the next refresh. The
+    // +50 following bonus alone could not do it — engagement and affinity
+    // outweigh it, so followed posts sank below strangers. Only unseen
+    // followed posts are pulled (the list is already unseen-only after
+    // SEEN RULE 2 above), newest first. Same splice pattern as the fresh
+    // guarantee: positions 1 and 3.
+    if (currentUserId) {
+      const followedInTop5 = scored.slice(0, 5).filter((x) => followingIds.has(x.post.userId)).length;
+      const need = Math.max(0, 2 - followedInTop5);
+      if (need > 0) {
+        const candidates = scored
+          .filter((x, i) => i >= 5 && followingIds.has(x.post.userId))
+          .sort((a, b) => a.hoursOld - b.hoursOld)
+          .slice(0, need);
+        if (candidates.length > 0) {
+          const candidateIds = new Set(candidates.map((x) => x.post.id));
+          const rest = scored.filter((x) => !candidateIds.has(x.post.id));
+          candidates.forEach((item, k) => rest.splice(k === 0 ? 1 : 3, 0, item));
+          scored.length = 0;
+          scored.push(...rest);
+        }
+      }
+    }
+
     // ANTI-BOREDOM DIVERSITY (user-ordered 2026-10-17): never show 2 posts
     // from the same author back-to-back on the first page.
     const diversified: typeof scored = [];
