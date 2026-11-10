@@ -3,6 +3,7 @@ import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
 import { isUserOnline } from '../socket/socketServer';
 import { getBlockStatus } from './blockService';
+import { normalizeCountry } from '../utils/country';
 
 const COOLDOWN_DAYS = 30;
 
@@ -123,6 +124,12 @@ function checkCooldown(lastChanged: Date | null): { allowed: boolean; daysLeft: 
 function normalizeData(data: any) {
   const result = { ...data };
   if (result.dateOfBirth) result.dateOfBirth = new Date(result.dateOfBirth);
+  // Country-feed fix 2026-11-02: store the 2-letter code, not the full
+  // name, so feed comparisons stop missing same-country matches.
+  // Unknown values are kept as-is (never destroyed).
+  if (typeof result.country === 'string' && result.country.trim()) {
+    result.country = normalizeCountry(result.country) ?? result.country.trim();
+  }
   return result;
 }
 
@@ -156,6 +163,9 @@ export async function updateProfile(userId: string, data: any) {
   if (!current) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
 
   const updateData: any = { ...data };
+  if (typeof updateData.country === 'string' && updateData.country.trim()) {
+    updateData.country = normalizeCountry(updateData.country) ?? updateData.country.trim();
+  }
 
   if (data.username !== undefined && data.username !== current.username) {
     const cooldown = checkCooldown(current.usernameChangedAt);

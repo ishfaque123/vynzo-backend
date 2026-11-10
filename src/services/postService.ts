@@ -5,6 +5,7 @@ import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
 import { moderatePost } from './moderationService';
 import { awardAchievement } from './achievementService';
+import { isSameCountry, normalizeCountry } from '../utils/country';
 
 function toAuthorDTO(user: any) {
   if (!user) return { id: '', username: 'deleted', displayName: 'Deleted User', profilePictureUrl: null, isVerified: false };
@@ -179,12 +180,14 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   // This avoids the old fixed 200-item ceiling breaking pagination after page 10.
   const safeLimit = Math.min(Math.max(limit, 1), 50);
   const safeOffset = Math.max(offset, 0);
-  // POOL (widened 2026-11-10, SEEN RULE 2): +100, not +40 — the pool must
+  // POOL (widened 2026-11-10, SEEN RULE 2, then 2026-11-10 country-first): +300, not +100 — the pool must
   // hold enough UNSEEN posts to fill the page. With +40, a heavy user
   // (who has seen most of the newest posts) had fewer than 20 unseen in
   // the window, so the hide-seen guard switched off and seen posts
   // flooded back on every refresh.
-  const poolSize = safeOffset + safeLimit + 100;
+  // COUNTRY-FIRST (2026-11-10): +300 so small countries have enough local
+  // posts in the window to fill the country-first tier below.
+  const poolSize = safeOffset + safeLimit + 300;
 
   const followingIds = currentUserId
     ? new Set((await prisma.follow.findMany({ where: { followerId: currentUserId }, select: { followingId: true } })).map((f) => f.followingId))
@@ -234,7 +237,7 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const affinityMap = new Map<string, number>();
   if (currentUserId) {
     const me = await prisma.user.findUnique({ where: { id: currentUserId }, select: { country: true, city: true } });
-    currentUserCountry = me?.country ?? null;
+    currentUserCountry = normalizeCountry(me?.country) ?? null;
     currentUserCity = me?.city ?? null;
     // Affinity from likes (weight 1x)
     const pastLikes = await prisma.like.findMany({ where: { userId: currentUserId }, select: { post: { select: { userId: true } } }, take: 200, orderBy: { createdAt: 'desc' } }).catch(() => []);
@@ -284,7 +287,7 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     let locationBoost = 0;
     if (currentUserCity && (post.user as any).city && currentUserCity === (post.user as any).city) {
       locationBoost = WEIGHTS.cityMatch;
-    } else if (currentUserCountry && post.user.country && currentUserCountry === post.user.country) {
+    } else if (currentUserCountry && isSameCountry(currentUserCountry, post.user.country)) {
       locationBoost = WEIGHTS.countryMatch;
     }
     // Following bonus
@@ -334,6 +337,23 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     if (unseenOnly.length > 0) {
       scored.length = 0;
       scored.push(...unseenOnly);
+    }
+  }
+
+  // COUNTRY-FIRST (user-ordered 2026-11-10): same-country posts form the
+  // primary tier, foreign posts follow in their ranked order. Runs after
+  // SEEN RULE 2 (seen posts are already gone) and BEFORE the fresh /
+  // newest / following passes, so those top-5 guarantees still hold on
+  // the country-ordered list. NOT a hard filter — when the viewer has
+  // no country, or no same-country post exists, the order is unchanged,
+  // so small countries never get an empty feed.
+  if (currentUserCountry) {
+    const same = scored.filter((x) => isSameCountry(currentUserCountry, (x.post.user as any)?.country));
+    if (same.length > 0 && same.length < scored.length) {
+      const sameIds = new Set(same.map((x) => x.post.id));
+      const foreign = scored.filter((x) => !sameIds.has(x.post.id));
+      scored.length = 0;
+      scored.push(...same, ...foreign);
     }
   }
 

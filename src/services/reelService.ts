@@ -6,6 +6,7 @@ import { getFriendStatus } from './followService';
 import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
 import { awardAchievement } from './achievementService';
+import { isSameCountry, normalizeCountry } from '../utils/country';
 import { moderateReel } from './moderationService';
 import { getShareEventCounts } from './shareService';
 
@@ -459,7 +460,7 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
     // 5. Location bonus
     if (currentUser && r.user) {
       if (currentUser.city && r.user.city && currentUser.city === r.user.city) score += 10;
-      else if (currentUser.country && r.user.country && currentUser.country === r.user.country) score += 5;
+      else if (isSameCountry(currentUser.country, r.user.country)) score += 5;
     }
 
     // 6. Own reels get slight boost (user wants to see their own)
@@ -764,6 +765,27 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
         merged.push(...remaining);
         scored.length = 0;
         scored.push(...merged, ...seenPart);
+      }
+    }
+  }
+
+  // COUNTRY-FIRST (user-ordered 2026-11-10, For You only — Following stays
+  // chronological): within the unseen section, same-country reels come
+  // first, then foreign unseen reels, then seen reels last. This is a
+  // tier, not a filter, so small countries never get an empty feed, and
+  // it runs after the discovery/seen passes so repeat/exclude and
+  // new-reel slots are preserved.
+  if (!isFollowingFeed) {
+    const viewerCountry = normalizeCountry(currentUser?.country);
+    if (viewerCountry) {
+      const unseenPart = scored.filter((x) => !seenReelIds.has(x.reel.id));
+      const seenPart = scored.filter((x) => seenReelIds.has(x.reel.id));
+      const same = unseenPart.filter((x) => isSameCountry(viewerCountry, x.reel.user?.country));
+      if (same.length > 0 && same.length < unseenPart.length) {
+        const sameIds = new Set(same.map((x) => x.reel.id));
+        const foreign = unseenPart.filter((x) => !sameIds.has(x.reel.id));
+        scored.length = 0;
+        scored.push(...same, ...foreign, ...seenPart);
       }
     }
   }
