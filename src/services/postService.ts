@@ -310,8 +310,10 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     // is removed: it let fresh seen posts like a 1h-old followed post keep
     // returning to the top after every refresh.)
     const seenFactor = isFirstPage && seenPostIds.has(post.id) ? 0.05 : 1;
-    const jitter = isFirstPage ? 1 + (Math.random() - 0.5) * 0.08 : 1;
-    return { post, hoursOld, score: baseScore * seenFactor * jitter };
+    // STABLE ORDER (user-ordered 2026-11-10): no jitter. The old ±4%
+    // random factor re-shuffled page 1 on every refresh, so the same
+    // posts in the same state sorted differently each load.
+    return { post, hoursOld, score: baseScore * seenFactor };
   });
 
   scored.sort((a, b) => b.score - a.score);
