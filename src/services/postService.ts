@@ -179,7 +179,12 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   // This avoids the old fixed 200-item ceiling breaking pagination after page 10.
   const safeLimit = Math.min(Math.max(limit, 1), 50);
   const safeOffset = Math.max(offset, 0);
-  const poolSize = safeOffset + safeLimit + 40;
+  // POOL (widened 2026-11-10, SEEN RULE 2): +100, not +40 — the pool must
+  // hold enough UNSEEN posts to fill the page. With +40, a heavy user
+  // (who has seen most of the newest posts) had fewer than 20 unseen in
+  // the window, so the hide-seen guard switched off and seen posts
+  // flooded back on every refresh.
+  const poolSize = safeOffset + safeLimit + 100;
 
   const followingIds = currentUserId
     ? new Set((await prisma.follow.findMany({ where: { followerId: currentUserId }, select: { followingId: true } })).map((f) => f.followingId))
@@ -311,29 +316,28 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
 
   scored.sort((a, b) => b.score - a.score);
 
+  // SEEN RULE 2 (user-ordered 2026-11-10): seen posts NEVER come back —
+  // not on refresh, not on scroll. Remove every seen post from the ranked
+  // list on EVERY page. The old code only did this on page 1, and only
+  // when the newest-60 pool already held 20+ unseen posts ("unseen.length
+  // >= safeLimit") — for a heavy user that guard failed, so the hide rule
+  // switched off entirely and seen posts flooded back (re-test 07:35 PKT:
+  // 9 of 15 after refresh were already seen, first 5 fresh only because
+  // those were the few unseen posts in the window). No guard now: as long
+  // as even ONE unseen post exists in the window, seen posts are removed.
+  // Only when NO unseen post exists at all do we keep the full list, so
+  // the feed never goes empty.
+  if (currentUserId && seenPostIds.size > 0) {
+    const unseenOnly = scored.filter((x) => !seenPostIds.has(x.post.id));
+    if (unseenOnly.length > 0) {
+      scored.length = 0;
+      scored.push(...unseenOnly);
+    }
+  }
+
   // FIX 4 (2026-10-15): exploration slot — guarantee at least 2 fresh (<3h) posts in the
   // top 5 on the first page, so brand-new posts always get a chance to be discovered.
   if (isFirstPage) {
-    // HIDE SEEN POSTS (user-ordered 2026-10-17): "jo post dekh liya wo top par
-    // dobara na aaye". Remove seen posts from page 1 entirely (keep them for
-    // deeper pages). Only if unseen posts exist to fill the page.
-    if (currentUserId && seenPostIds.size > 0) {
-      const unseen = scored.filter((x) => !seenPostIds.has(x.post.id));
-      // Only filter if we have enough unseen to fill the page
-      if (unseen.length >= safeLimit) {
-        // SEEN RULE (user-ordered 2026-11-10): remove EVERY seen post from
-        // page 1, whatever its age. A post shows once; a followed user's
-        // post returns only when they post a NEW one. (The 2026-11-10 <3h
-        // exemption is removed: it kept fresh seen posts on page 1, so the
-        // same 1h-old post kept coming back to the top on every refresh.)
-        // The newest unseen post still takes #1 via NEWEST UNSEEN POST
-        // FIRST below, so every refresh brings fresh unseen posts.
-        const survivors = scored.filter((x) => !seenPostIds.has(x.post.id));
-        scored.length = 0;
-        scored.push(...survivors);
-      }
-    }
-
     const freshInTop5 = scored.slice(0, 5).filter((x) => x.hoursOld < 3).length;
     const need = Math.max(0, 2 - freshInTop5);
     if (need > 0) {
