@@ -298,14 +298,13 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     // refresh (IG-style). User complained 2026-10-17: "wahi old boring same posts".
     // 0.05 penalty ensures seen posts almost never resurface on page 1.
     // Only applied on the first page so offset pagination stays stable.
-    // REFRESH FIX (2026-11-10): the 0.05 penalty must NOT apply to FRESH (<3h)
-    // posts. The first load marks the newest post seen the moment it is 60%
-    // visible (web PostCard IntersectionObserver) / composed (native
-    // LaunchedEffect), so on refresh a fresh seen post scored ~0.05x and
-    // ranked below the page-1 slice even if it survived the HIDE SEEN
-    // removal below. Fresh posts keep their full score while fresh;
-    // seen-suppression only bites once a post is >=3h old.
-    const seenFactor = isFirstPage && seenPostIds.has(post.id) && hoursOld >= 3 ? 0.05 : 1;
+    // SEEN RULE (user-ordered 2026-11-10): a post shows ONCE. A followed
+    // user's post must not come back after being seen — it shows again
+    // only when they post a NEW one. So the 0.05 penalty applies to EVERY
+    // seen post on page 1, whatever its age. (The 2026-11-10 <3h exemption
+    // is removed: it let fresh seen posts like a 1h-old followed post keep
+    // returning to the top after every refresh.)
+    const seenFactor = isFirstPage && seenPostIds.has(post.id) ? 0.05 : 1;
     const jitter = isFirstPage ? 1 + (Math.random() - 0.5) * 0.08 : 1;
     return { post, hoursOld, score: baseScore * seenFactor * jitter };
   });
@@ -322,14 +321,14 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
       const unseen = scored.filter((x) => !seenPostIds.has(x.post.id));
       // Only filter if we have enough unseen to fill the page
       if (unseen.length >= safeLimit) {
-        // REFRESH FIX (2026-11-10): never remove a FRESH (<3h) seen post from
-        // page 1. The first load marks the newest post seen, so on refresh it
-        // was deleted here — and the <3h fresh guarantee below only promotes
-        // survivors, so it could never bring the post back. That is why the
-        // newest (45-min-old) post vanished from the top of the feed on
-        // refresh. Seen-suppression still applies to every post >=3h old, so
-        // the "wahi old boring same posts" rule is kept.
-        const survivors = scored.filter((x) => !seenPostIds.has(x.post.id) || x.hoursOld < 3);
+        // SEEN RULE (user-ordered 2026-11-10): remove EVERY seen post from
+        // page 1, whatever its age. A post shows once; a followed user's
+        // post returns only when they post a NEW one. (The 2026-11-10 <3h
+        // exemption is removed: it kept fresh seen posts on page 1, so the
+        // same 1h-old post kept coming back to the top on every refresh.)
+        // The newest unseen post still takes #1 via NEWEST UNSEEN POST
+        // FIRST below, so every refresh brings fresh unseen posts.
+        const survivors = scored.filter((x) => !seenPostIds.has(x.post.id));
         scored.length = 0;
         scored.push(...survivors);
       }
@@ -354,8 +353,8 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     // stranger forever (following +50, affinity up to +100 and engagement
     // outweigh the ~64-point recency edge of a 2m-old post), so the top
     // slot never changes between reloads. Only the single newest unseen
-    // post <3h old is pinned; once seen it falls back to normal score
-    // ranking. Runs BEFORE "OWN NEW POST FIRST" below so the viewer's own
+    // post <3h old is pinned; once seen it leaves page 1 entirely (SEEN
+    // RULE above) and the next newest unseen post takes #1. Runs BEFORE
     // fresh post still wins the top slot when both apply.
     if (currentUserId) {
       const newestUnseen = scored
