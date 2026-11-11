@@ -216,7 +216,7 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     OR: privacyOr,
   };
 
-  const candidatePosts = await prisma.post.findMany({
+  let candidatePosts = await prisma.post.findMany({
     where: candidateWhere,
     take: poolSize,
     orderBy: { createdAt: 'desc' },
@@ -272,6 +272,68 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
       });
       for (const r of seenRows) seenPostIds.add(r.postId);
     } catch {}
+  }
+
+  // FEED STALL FIX (2026-11-11): extend the pool into older posts when the
+  // unseen list inside the current window cannot fill the requested page.
+  // CONFIRMED LIVE 2026-11-11 12:25-12:29 PKT (@Fazeela): the feed loaded
+  // 55 posts then hung forever on "Loading more posts". The pool is only
+  // the newest offset+limit+300 posts, and SEEN RULE 2 removes the seen
+  // ones — a heavy user had only ~54 unseen in that window. At offset=54
+  // the page came back empty, hasMore stayed true (corpus fallback, see
+  // below), and nextOffset (= offset + 0 returned) pointed at the same
+  // offset forever, so the frontend requested the same empty page in a
+  // loop and the pool never grew to reach older unseen posts. Deadlock.
+  // Fix: after the seen set is known, keep fetching the next window of
+  // older eligible posts (same filter, createdAt desc, skip/take) until
+  // the unseen list covers the requested page PLUS at least one more
+  // unseen post (so hasMore below stays truthful), or the eligible corpus
+  // is truly exhausted, or the safety cap is hit. The merged candidates
+  // then flow through the unchanged ranking pipeline below (scoring,
+  // SEEN RULE 2, country tier, order passes, diversity), so page order
+  // and the "never empty" guarantee are preserved. Normal users are
+  // unaffected: the loop never runs when the first window already covers
+  // the page plus one more unseen post. Cost is one extra query per
+  // extension round, only when needed; the cap bounds the worst case.
+  // Residual edge: posts created between the window queries can shift a
+  // createdAt boundary by a post or two — merged by id below (dedup), a
+  // skipped post is possible but rare, same class as the existing
+  // between-page boundary shift.
+  {
+    const pageEnd = safeOffset + safeLimit;
+    const EXTENSION_CHUNK = 500;
+    const MAX_EXTENSION_ROUNDS = 6; // safety cap: at most +3000 older posts
+    const countUnseen = () => {
+      let n = 0;
+      for (const p of candidatePosts) if (!seenPostIds.has(p.id)) n++;
+      return n;
+    };
+    let fetched = candidatePosts.length;
+    let exhausted = fetched < poolSize; // first fetch came back short: corpus covered
+    const fetchedIds = new Set(candidatePosts.map((p) => p.id));
+    let rounds = 0;
+    while (!exhausted && rounds < MAX_EXTENSION_ROUNDS && countUnseen() <= pageEnd) {
+      const next = await prisma.post.findMany({
+        where: candidateWhere,
+        orderBy: { createdAt: 'desc' },
+        skip: fetched,
+        take: EXTENSION_CHUNK,
+        include: includeShape,
+      });
+      if (next.length === 0) {
+        exhausted = true;
+        break;
+      }
+      for (const p of next) {
+        if (!fetchedIds.has(p.id)) {
+          fetchedIds.add(p.id);
+          candidatePosts.push(p);
+        }
+      }
+      fetched += next.length;
+      if (next.length < EXTENSION_CHUNK) exhausted = true;
+      rounds++;
+    }
   }
 
   const now = Date.now();
@@ -462,16 +524,22 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   scored.push(...diversified);
 
   const pageSlice = scored.slice(safeOffset, safeOffset + safeLimit).map((s) => s.post);
-  let hasMore = scored.length > safeOffset + safeLimit;
-  if (!hasMore) {
-    // FIX (2026-10-23): corpus-true hasMore. The pool is only a window over
-    // the eligible corpus (and page-1 seen-removal above can shrink `scored`
-    // further), so a short scored list does NOT prove the feed is exhausted.
-    // One bounded count over the same eligibility filter decides truthfully:
-    // more pages exist iff eligible posts remain beyond this page's end.
-    const eligibleTotal = await prisma.post.count({ where: candidateWhere });
-    hasMore = eligibleTotal > safeOffset + safeLimit;
-  }
+  // FEED STALL FIX (2026-11-11): hasMore is judged ONLY on the ranked
+  // list. The old corpus fallback counted ALL eligible posts INCLUDING
+  // seen ones, so for a heavy user it stayed true on an empty page:
+  // offset=55 returned { posts: [], hasMore: true, nextOffset: 55 } and
+  // the frontend requested that same empty page forever. The pool
+  // extension above already fetched older posts until the page PLUS one
+  // more unseen post are covered or the eligible corpus is truly
+  // exhausted, so scored.length is now a truthful measure: hasMore is
+  // true exactly when at least one more post exists beyond this page,
+  // and an empty page always comes with hasMore=false (the handler's
+  // nextOffset = offset + 0 then cannot loop, because the frontend stops
+  // on hasMore=false). The 2026-10-23 corpus fallback is removed: it
+  // answered a different question (are there more eligible posts at
+  // all?) than the one hasMore must answer (is there another page to
+  // show this user?).
+  const hasMore = scored.length > safeOffset + safeLimit;
   const shareCodeMap = await getShareCodeMap('post', pageSlice.map((p) => p.id));
   const posts = await Promise.all(pageSlice.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
   return { posts, hasMore };
