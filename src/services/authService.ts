@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { getGoogleUserFromCode, getGoogleUserFromIdToken } from '../config/googleAuth';
 import { signToken } from '../utils/jwt';
 import { getOrCreateDeviceSession, getDeviceSession, RequestMeta } from './deviceSessionService';
+import { normalizeCountry } from '../utils/country';
 import { createNotification } from './notificationService';
 import { ApiError } from '../middleware/errorHandler';
 
@@ -23,6 +24,21 @@ async function generateUsernameFromEmail(email: string): Promise<string> {
       return username;
     }
   }
+}
+
+// Country-fill on login (2026-11-11): old users whose country is empty get
+// it from their login IP the next time they log in. Only fills when the
+// profile country is empty — never overwrites. Best-effort: never fails login.
+async function fillMissingCountry(user: { id: string; country?: string | null }, sessionCountry: string | null) {
+  if (user.country || !sessionCountry) return;
+  const code = normalizeCountry(sessionCountry);
+  if (!code) return;
+  try {
+    await prisma.user.updateMany({
+      where: { id: user.id, OR: [{ country: null }, { country: '' }] },
+      data: { country: code },
+    });
+  } catch { /* never fail login over a country fill */ }
 }
 
 async function loginWithGoogleIdentity(
@@ -84,6 +100,7 @@ async function loginWithGoogleIdentity(
   }
 
   const device = await getOrCreateDeviceSession(deviceToken, meta);
+  await fillMissingCountry(user, device.session.country);
 
   const existingAccountSession = await prisma.accountSession.findUnique({
     where: {
@@ -200,6 +217,7 @@ export async function switchAccount(accountId: string, deviceToken?: string) {
     where: { id: account.user.id },
     data: { lastActiveAt: now },
   });
+  await fillMissingCountry(account.user, device.country);
 
   const token = signToken({ userId: account.user.id, accountSessionId: updated.id });
 
@@ -238,6 +256,7 @@ export async function loginWithEmail(email: string, deviceToken?: string, meta?:
   }
 
   const device = await getOrCreateDeviceSession(deviceToken, meta);
+  await fillMissingCountry(user, device.session.country);
   const existingAccountSession = await prisma.accountSession.findUnique({
     where: { deviceSessionId_userId: { deviceSessionId: device.session.id, userId: user.id } },
   });
