@@ -3,6 +3,7 @@ import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 import { profileSetupSchema, profileUpdateSchema } from '../utils/validators/profileValidators';
 import { completeProfile, updateProfile, getPublicProfileByUsername, toPrivateProfile, searchUsers } from '../services/userService';
+import { extractRequestMeta, lookupLocation } from '../services/deviceSessionService';
 import { reportUser } from '../services/userReportService';
 import { prisma } from '../config/prisma';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
@@ -31,9 +32,14 @@ export async function postProfileSetup(req: Request, res: Response, next: NextFu
       throw new ApiError(403, 'PROFILE_ALREADY_COMPLETED', 'Profile setup already completed. Use Edit Profile to make changes.');
     }
     const data = profileSetupSchema.parse(req.body);
-    // Auto-detect country from IP (Cloudflare header) — no longer asked in signup form
+    // Auto-detect country from IP — no longer asked in signup form.
+    // Cloudflare header first (it never arrives: api.frianzo.online is
+    // DNS-only, not proxied), then the server-side geoip lookup the login
+    // sessions already use. A failed lookup leaves country null as before.
     const ipCountry = req.headers['cf-ipcountry'];
-    const autoCountry = typeof ipCountry === 'string' && /^[A-Z]{2}$/.test(ipCountry) ? ipCountry : null;
+    const headerCountry = typeof ipCountry === 'string' && /^[A-Z]{2}$/.test(ipCountry) ? ipCountry : null;
+    const geoCountry = lookupLocation(extractRequestMeta(req).ipAddress).country;
+    const autoCountry = headerCountry ?? (typeof geoCountry === 'string' && /^[A-Z]{2}$/.test(geoCountry) ? geoCountry : null);
     const user = await completeProfile(req.user!.id, { ...data, country: autoCountry || data.country || null });
     sendSuccess(res, { user: toPrivateProfile(user) });
   } catch (err) { next(err); }

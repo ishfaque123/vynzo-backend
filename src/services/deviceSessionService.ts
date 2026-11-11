@@ -26,7 +26,7 @@ export function extractRequestMeta(req: { headers: any; ip?: string; socket?: an
   return { userAgent, ipAddress };
 }
 
-function lookupLocation(ip?: string): { city: string | null; country: string | null } {
+export function lookupLocation(ip?: string): { city: string | null; country: string | null } {
   if (!ip) return { city: null, country: null };
   const clean = ip.replace('::ffff:', '').split(',')[0].trim();
   const geo = geoip.lookup(clean);
