@@ -6,6 +6,8 @@ import { createNotification } from './notificationService';
 import { moderatePost } from './moderationService';
 import { awardAchievement } from './achievementService';
 import { isSameCountry, normalizeCountry } from '../utils/country';
+import { thumbUrlForUrl } from './imageCompressService';
+import { env } from '../config/env';
 
 function toAuthorDTO(user: any) {
   if (!user) return { id: '', username: 'deleted', displayName: 'Deleted User', profilePictureUrl: null, isVerified: false };
@@ -43,6 +45,11 @@ export async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?
     id: post.id,
     content: post.content,
     imageUrl: post.imageUrl,
+    // Blur-up thumb (~320px, posts/<uuid>-thumb.jpg) for new uploads; null
+    // for old photos (uploaded before thumbs existed) and non-photo posts.
+    // Pure URL derivation — the thumb object may not exist yet, so clients
+    // must fall back to the grey box / full photo when it 404s.
+    imageThumbUrl: thumbUrlForUrl(post.imageUrl, env.r2PublicUrl),
     backgroundStyle: post.backgroundStyle,
     location: post.location,
     visibility: post.visibility,
