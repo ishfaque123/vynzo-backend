@@ -439,23 +439,30 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
       }
     }
 
-    // ANTI-BOREDOM DIVERSITY (user-ordered 2026-10-17): never show 2 posts
-    // from the same author back-to-back on the first page.
-    const diversified: typeof scored = [];
-    const remaining = [...scored];
-    while (remaining.length > 0) {
-      let pickIdx = 0;
-      if (diversified.length > 0) {
-        const lastAuthor = diversified[diversified.length - 1].post.userId;
-        pickIdx = remaining.findIndex((x) => x.post.userId !== lastAuthor);
-        if (pickIdx === -1) pickIdx = 0;
-      }
-      diversified.push(remaining[pickIdx]);
-      remaining.splice(pickIdx, 1);
-    }
-    scored.length = 0;
-    scored.push(...diversified);
   }
+
+  // ANTI-BOREDOM DIVERSITY (user-ordered 2026-10-17, extended to every
+  // page 2026-11-10): never show 2 posts from the same author
+  // back-to-back. It used to sit inside the page-1-only block above, so
+  // pages 2+ fell back to pure score order and per-author affinity
+  // bunched one author's posts together. Moved out unchanged — on page 1
+  // it still runs last, after the fresh / newest / own / following
+  // passes, so page-1 ordering is identical.
+  const diversified: typeof scored = [];
+  const remaining = [...scored];
+  while (remaining.length > 0) {
+    let pickIdx = 0;
+    if (diversified.length > 0) {
+      const lastAuthor = diversified[diversified.length - 1].post.userId;
+      pickIdx = remaining.findIndex((x) => x.post.userId !== lastAuthor);
+      if (pickIdx === -1) pickIdx = 0;
+    }
+    diversified.push(remaining[pickIdx]);
+    remaining.splice(pickIdx, 1);
+  }
+  scored.length = 0;
+  scored.push(...diversified);
+
   const pageSlice = scored.slice(safeOffset, safeOffset + safeLimit).map((s) => s.post);
   let hasMore = scored.length > safeOffset + safeLimit;
   if (!hasMore) {
