@@ -800,6 +800,37 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
   // ids (first page) the old offset behaviour is kept unchanged.
   const excludeSet = new Set(excludeIds.filter((id) => typeof id === 'string' && id.length > 0));
   const pageable = excludeSet.size ? scored.filter((s) => !excludeSet.has(s.reel.id)) : scored;
+
+  // REEL AUTHOR DIVERSITY, FINAL RE-PASS (2026-11-11): the For You list is
+  // already diversified by the final anti-boredom pass above — but two
+  // later steps can re-join same-author reels it separated: the
+  // country-first tier (same-country reels grouped together, stripping out
+  // the foreign spacers between two reels of one author) and the
+  // exclude-filter here (removing a shown reel can join the two same-author
+  // reels it sat between). Re-run the same greedy no-same-author-back-to-
+  // back reorder on the pageable list, after the tier and after the
+  // exclude filter, just before slicing — so both paging modes see a
+  // diversified order. Same greedy rule as the posts diversity fix
+  // (postService.ts, commit 90bf81ed). Following tab stays chronological:
+  // skipped when isFollowingFeed. Pool is capped at 1000, same cost as
+  // the existing passes.
+  if (!isFollowingFeed) {
+    const diversifiedPageable: typeof scored = [];
+    const remainingPageable = [...pageable];
+    while (remainingPageable.length > 0) {
+      let pickIdx = 0;
+      if (diversifiedPageable.length > 0) {
+        const lastAuthor = diversifiedPageable[diversifiedPageable.length - 1].reel.userId;
+        pickIdx = remainingPageable.findIndex((x) => x.reel.userId !== lastAuthor);
+        if (pickIdx === -1) pickIdx = 0;
+      }
+      diversifiedPageable.push(remainingPageable[pickIdx]);
+      remainingPageable.splice(pickIdx, 1);
+    }
+    pageable.length = 0;
+    pageable.push(...diversifiedPageable);
+  }
+
   const paged = excludeSet.size ? pageable.slice(0, safeLimit) : pageable.slice(safeOffset, safeOffset + safeLimit);
   const total = pageable.length;
 
