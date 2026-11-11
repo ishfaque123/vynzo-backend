@@ -359,87 +359,85 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
 
   // FIX 4 (2026-10-15): exploration slot — guarantee at least 2 fresh (<3h) posts in the
   // top 5 on the first page, so brand-new posts always get a chance to be discovered.
-  if (isFirstPage) {
-    const freshInTop5 = scored.slice(0, 5).filter((x) => x.hoursOld < 3).length;
-    const need = Math.max(0, 2 - freshInTop5);
-    if (need > 0) {
-      const picked: typeof scored = [];
-      const rest = scored.filter((x, i) => {
-        if (i >= 5 && x.hoursOld < 3 && picked.length < need) { picked.push(x); return false; }
-        return true;
-      });
-      picked.forEach((item, k) => rest.splice(k === 0 ? 1 : 3, 0, item));
-      scored.length = 0;
-      scored.push(...rest);
-    }
-
-    // NEWEST UNSEEN POST FIRST (user-ordered 2026-11-10): on refresh the
-    // newest post must surface at #1. Ranked score alone can keep a
-    // followed/high-affinity 1h-old post above a 2-minute-old post from a
-    // stranger forever (following +50, affinity up to +100 and engagement
-    // outweigh the ~64-point recency edge of a 2m-old post), so the top
-    // slot never changes between reloads. Only the single newest unseen
-    // post <3h old is pinned; once seen it leaves page 1 entirely (SEEN
-    // RULE above) and the next newest unseen post takes #1. Runs BEFORE
-    // fresh post still wins the top slot when both apply.
-    if (currentUserId) {
-      const newestUnseen = scored
-        .filter((x) => x.hoursOld < 3 && !seenPostIds.has(x.post.id))
-        .sort((a, b) => a.hoursOld - b.hoursOld)[0];
-      if (newestUnseen) {
-        const idx = scored.indexOf(newestUnseen);
-        if (idx > 0) {
-          scored.splice(idx, 1);
-          scored.unshift(newestUnseen);
-        }
-      }
-    }
-
-    // OWN NEW POST FIRST (user-ordered 2026-10-17): when you create a post,
-    // you see it at the very top the 1st time. After you've seen it (reload),
-    // normal ranking applies. Only for posts <1h old.
-    if (currentUserId) {
-      const ownFreshUnseen = scored.filter((x) => {
-        return x.post.userId === currentUserId && x.hoursOld < 1 && !seenPostIds.has(x.post.id);
-      });
-      if (ownFreshUnseen.length > 0) {
-        ownFreshUnseen.sort((a, b) => a.hoursOld - b.hoursOld);
-        const top = ownFreshUnseen[0];
-        const idx = scored.indexOf(top);
-        if (idx > 0) {
-          scored.splice(idx, 1);
-          scored.unshift(top);
-        }
-      }
-    }
-
-    // FOLLOWING-FIRST (user-ordered 2026-11-10): guarantee at least 2
-    // posts from followed authors in the top 5 on the first page, so a
-    // followed user's NEW post always surfaces on the next refresh. The
-    // +50 following bonus alone could not do it — engagement and affinity
-    // outweigh it, so followed posts sank below strangers. Only unseen
-    // followed posts are pulled (the list is already unseen-only after
-    // SEEN RULE 2 above), newest first. Same splice pattern as the fresh
-    // guarantee: positions 1 and 3.
-    if (currentUserId) {
-      const followedInTop5 = scored.slice(0, 5).filter((x) => followingIds.has(x.post.userId)).length;
-      const need = Math.max(0, 2 - followedInTop5);
-      if (need > 0) {
-        const candidates = scored
-          .filter((x, i) => i >= 5 && followingIds.has(x.post.userId))
-          .sort((a, b) => a.hoursOld - b.hoursOld)
-          .slice(0, need);
-        if (candidates.length > 0) {
-          const candidateIds = new Set(candidates.map((x) => x.post.id));
-          const rest = scored.filter((x) => !candidateIds.has(x.post.id));
-          candidates.forEach((item, k) => rest.splice(k === 0 ? 1 : 3, 0, item));
-          scored.length = 0;
-          scored.push(...rest);
-        }
-      }
-    }
-
+  const freshInTop5 = scored.slice(0, 5).filter((x) => x.hoursOld < 3).length;
+  const need = Math.max(0, 2 - freshInTop5);
+  if (need > 0) {
+    const picked: typeof scored = [];
+    const rest = scored.filter((x, i) => {
+      if (i >= 5 && x.hoursOld < 3 && picked.length < need) { picked.push(x); return false; }
+      return true;
+    });
+    picked.forEach((item, k) => rest.splice(k === 0 ? 1 : 3, 0, item));
+    scored.length = 0;
+    scored.push(...rest);
   }
+
+  // NEWEST UNSEEN POST FIRST (user-ordered 2026-11-10): on refresh the
+  // newest post must surface at #1. Ranked score alone can keep a
+  // followed/high-affinity 1h-old post above a 2-minute-old post from a
+  // stranger forever (following +50, affinity up to +100 and engagement
+  // outweigh the ~64-point recency edge of a 2m-old post), so the top
+  // slot never changes between reloads. Only the single newest unseen
+  // post <3h old is pinned; once seen it leaves page 1 entirely (SEEN
+  // RULE above) and the next newest unseen post takes #1. Runs BEFORE
+  // fresh post still wins the top slot when both apply.
+  if (currentUserId) {
+    const newestUnseen = scored
+      .filter((x) => x.hoursOld < 3 && !seenPostIds.has(x.post.id))
+      .sort((a, b) => a.hoursOld - b.hoursOld)[0];
+    if (newestUnseen) {
+      const idx = scored.indexOf(newestUnseen);
+      if (idx > 0) {
+        scored.splice(idx, 1);
+        scored.unshift(newestUnseen);
+      }
+    }
+  }
+
+  // OWN NEW POST FIRST (user-ordered 2026-10-17): when you create a post,
+  // you see it at the very top the 1st time. After you've seen it (reload),
+  // normal ranking applies. Only for posts <1h old.
+  if (currentUserId) {
+    const ownFreshUnseen = scored.filter((x) => {
+      return x.post.userId === currentUserId && x.hoursOld < 1 && !seenPostIds.has(x.post.id);
+    });
+    if (ownFreshUnseen.length > 0) {
+      ownFreshUnseen.sort((a, b) => a.hoursOld - b.hoursOld);
+      const top = ownFreshUnseen[0];
+      const idx = scored.indexOf(top);
+      if (idx > 0) {
+        scored.splice(idx, 1);
+        scored.unshift(top);
+      }
+    }
+  }
+
+  // FOLLOWING-FIRST (user-ordered 2026-11-10): guarantee at least 2
+  // posts from followed authors in the top 5 on the first page, so a
+  // followed user's NEW post always surfaces on the next refresh. The
+  // +50 following bonus alone could not do it — engagement and affinity
+  // outweigh it, so followed posts sank below strangers. Only unseen
+  // followed posts are pulled (the list is already unseen-only after
+  // SEEN RULE 2 above), newest first. Same splice pattern as the fresh
+  // guarantee: positions 1 and 3.
+  if (currentUserId) {
+    const followedInTop5 = scored.slice(0, 5).filter((x) => followingIds.has(x.post.userId)).length;
+    const need = Math.max(0, 2 - followedInTop5);
+    if (need > 0) {
+      const candidates = scored
+        .filter((x, i) => i >= 5 && followingIds.has(x.post.userId))
+        .sort((a, b) => a.hoursOld - b.hoursOld)
+        .slice(0, need);
+      if (candidates.length > 0) {
+        const candidateIds = new Set(candidates.map((x) => x.post.id));
+        const rest = scored.filter((x) => !candidateIds.has(x.post.id));
+        candidates.forEach((item, k) => rest.splice(k === 0 ? 1 : 3, 0, item));
+        scored.length = 0;
+        scored.push(...rest);
+      }
+    }
+  }
+
 
   // ANTI-BOREDOM DIVERSITY (user-ordered 2026-10-17, extended to every
   // page 2026-11-10): never show 2 posts from the same author
