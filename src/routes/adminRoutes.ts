@@ -41,13 +41,15 @@ router.get('/overview', getAdminOverview);
 router.get('/media/census', getMediaCensusHandler);
 router.get('/db/census', getDbCensusHandler);
 router.post('/db/optimize', startDbOptimizeHandler);
-router.get('/db/optimize/start', startDbOptimizeHandler);
 router.get('/db/optimize/status', getDbOptimizeStatusHandler);
 router.post('/db/cleanup', startDbCleanupHandler);
-router.get('/db/cleanup/start', startDbCleanupHandler);
 router.get('/db/cleanup/status', getDbCleanupStatusHandler);
-router.get('/media/optimize-one', optimizeOneMediaHandler);
-router.get('/media/optimize-batch/start', optimizeBatchStartHandler);
+// Security: state-changing admin actions are POST-only. GET routes for these
+// were removed because a plain GET can be fired cross-site (e.g. an <img> tag
+// on an attacker's page) with the admin's cookie attached — CSRF. POST goes
+// through the global Origin check in verifyOrigin.
+router.post('/media/optimize-one', optimizeOneMediaHandler);
+router.post('/media/optimize-batch/start', optimizeBatchStartHandler);
 router.get('/media/optimize-batch/status', optimizeBatchStatusHandler);
 router.get('/users', listAdminUsers);
 router.patch('/users/:userId/status', updateAdminUserStatus);

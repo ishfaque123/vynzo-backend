@@ -6,6 +6,12 @@ import { ApiError } from '../middleware/errorHandler';
 const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
+// Daily send caps protect the mailbox's small sending quota (~100/day):
+// without them a script can burn the whole day's quota in minutes and take
+// email login/signup down for everyone.
+const DAILY_LIMIT_PER_EMAIL = 5;
+const DAILY_LIMIT_GLOBAL = 70;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -78,6 +84,22 @@ export async function requestEmailVerification(rawEmail: string) {
 
   if (latest && Date.now() - latest.createdAt.getTime() < RESEND_COOLDOWN_MS) {
     throw new ApiError(429, 'OTP_COOLDOWN', 'Please wait before requesting another code.');
+  }
+
+  const dayAgo = new Date(Date.now() - DAY_MS);
+
+  const sentTodayForEmail = await prisma.emailVerificationCode.count({
+    where: { email, createdAt: { gte: dayAgo } },
+  });
+  if (sentTodayForEmail >= DAILY_LIMIT_PER_EMAIL) {
+    throw new ApiError(429, 'OTP_DAILY_LIMIT', 'Too many codes requested today. Please try again tomorrow.');
+  }
+
+  const sentTodayTotal = await prisma.emailVerificationCode.count({
+    where: { createdAt: { gte: dayAgo } },
+  });
+  if (sentTodayTotal >= DAILY_LIMIT_GLOBAL) {
+    throw new ApiError(429, 'OTP_SERVICE_LIMIT', 'Email codes are paused right now. Please use Google login, or try again later.');
   }
 
   const code = String(randomInt(100000, 1000000));
