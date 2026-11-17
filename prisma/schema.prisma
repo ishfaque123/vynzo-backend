@@ -71,12 +71,25 @@ enum NotificationType {
   reel_removed
   messaging_restricted
   viral_post
+  boost_approved
 }
 
 enum VerificationRequestStatus {
   pending
   approved
   rejected
+}
+
+enum PostBoostStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
+enum PostBoostContentType {
+  post
+  reel
 }
 
 enum ReportReason {
@@ -136,6 +149,7 @@ model User {
   verifiedAt             DateTime?         @map("verified_at")
   verifiedBy             String?           @map("verified_by")
   verificationRequests   VerificationRequest[]
+  postBoosts             PostBoost[]
   referralsMade           Referral[]         @relation("ReferralsMade")
   referralReceived        Referral?         @relation("ReferralReceived")
   posts                  Post[]
@@ -255,6 +269,7 @@ model Post {
   hiddenBy     HiddenPost[]
   views        PostView[]
   favorites    PostFavorite[]
+  boosts       PostBoost[]
 
   @@index([userId])
   @@index([createdAt])
@@ -731,6 +746,7 @@ model Reel {
   favorites ReelFavorite[]
   comments  ReelComment[]
   reports   ReelReport[]
+  boosts    PostBoost[]
 
   @@index([userId])
   @@index([createdAt])
@@ -935,6 +951,38 @@ model VerificationRequest {
   @@index([userId, status])
   @@index([status, createdAt])
   @@map("verification_requests")
+}
+
+model PostBoost {
+  id            String               @id @default(uuid())
+  contentType   PostBoostContentType @default(post) @map("content_type")
+  postId        String?              @map("post_id")
+  reelId        String?              @map("reel_id")
+  userId        String               @map("user_id")
+  purpose       String               @db.VarChar(30)
+  planDays      Int                  @map("plan_days")
+  amountPkr     Int                  @map("amount_pkr")
+  paymentMethod String               @db.VarChar(20) @map("payment_method")
+  transactionId String?              @db.VarChar(100) @map("transaction_id")
+  screenshotUrl String               @map("screenshot_url")
+  status        PostBoostStatus      @default(pending)
+  adminNote     String?              @db.VarChar(1000) @map("admin_note")
+  reviewedBy    String?              @map("reviewed_by")
+  reviewedAt    DateTime?            @map("reviewed_at")
+  startsAt      DateTime?            @map("starts_at")
+  endsAt        DateTime?            @map("ends_at")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  post Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reel Reel? @relation(fields: [reelId], references: [id], onDelete: Cascade)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, status])
+  @@index([reelId, status])
+  @@index([userId, createdAt])
+  @@index([status, endsAt])
+  @@map("post_boosts")
 }
 
 model EmailVerificationCode {

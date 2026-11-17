@@ -8,6 +8,7 @@ import { awardAchievement } from './achievementService';
 import { isSameCountry, normalizeCountry } from '../utils/country';
 import { thumbUrlForUrl } from './imageCompressService';
 import { env } from '../config/env';
+import { getActiveBoostPostIds } from './boostService';
 
 function toAuthorDTO(user: any) {
   if (!user) return { id: '', username: 'deleted', displayName: 'Deleted User', profilePictureUrl: null, isVerified: false };
@@ -57,6 +58,10 @@ export async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?
     createdAt: post.createdAt,
     pinnedAt: post.pinnedAt ?? null,
     isPinned: !!post.pinnedAt,
+    // Boosted (paid promotion) flag. Defaults false here; the feed and
+    // the single-post / profile reads flip it to true when the post has
+    // a live approved boost (see getActiveBoostPostIds in boostService).
+    isBoosted: false,
     likeCount: post._count?.likes ?? 0,
     commentCount: post._count?.comments ?? 0,
     shareCount: (post._count?.reposts ?? 0) + externalShares,
@@ -530,7 +535,54 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   scored.length = 0;
   scored.push(...diversified);
 
-  const pageSlice = scored.slice(safeOffset, safeOffset + safeLimit).map((s) => s.post);
+  const pagePosts = scored.slice(safeOffset, safeOffset + safeLimit).map((s) => s.post);
+
+  // BOOSTED POSTS (paid promotion): up to 2 posts with a live approved
+  // boost are inserted into the page as sponsored slots at positions 2
+  // and 5 (indexes 1 and 4). Guarded end to end: any failure, or no live
+  // boosts, leaves the ranked page exactly as it was. Rules:
+  // - a boosted post the viewer has already seen is NOT inserted (SEEN
+  //   RULE 2 applies to the boost slot too: once seen, it does not come
+  //   back through the boost slot either);
+  // - the viewer's own posts are never boost-inserted for themselves
+  //   (the own-post rules above already surface those);
+  // - hidden posts are excluded, and the privacy / blocked rules are the
+  //   same candidateWhere filter the ranked pool uses;
+  // - slots rotate by page (page 1 takes live boosts #1-2, page 2 takes
+  //   #3-4, ...), soonest-expiring first, so one boost cannot occupy
+  //   every page; the seen rule removes it after its first showing
+  //   anyway. hasMore is unchanged: it still describes the ranked list.
+  let boostedPostIds = new Set<string>();
+  try {
+    if (pagePosts.length > 0) {
+      const activeBoostIds = await getActiveBoostPostIds();
+      if (activeBoostIds.size > 0) {
+        const pageIndex = Math.floor(safeOffset / safeLimit);
+        const inPage = new Set(pagePosts.map((p) => p.id));
+        const eligibleIds = [...activeBoostIds].filter((id) => !inPage.has(id) && !seenPostIds.has(id));
+        const slotIds = eligibleIds.slice(pageIndex * 2, pageIndex * 2 + 2);
+        if (slotIds.length > 0) {
+          const boostedWhere: any = { ...candidateWhere, id: { in: slotIds } };
+          if (currentUserId) {
+            const existingNotIn: string[] = boostedWhere.userId?.notIn ?? [];
+            boostedWhere.userId = { notIn: [...existingNotIn, currentUserId] };
+          }
+          const boostedPosts = await prisma.post.findMany({ where: boostedWhere, include: includeShape });
+          const byId = new Map(boostedPosts.map((p) => [p.id, p]));
+          const ordered = slotIds
+            .map((id) => byId.get(id))
+            .filter((p): p is NonNullable<typeof p> => !!p)
+            .filter((p) => !hiddenIds.includes(p.id));
+          if (ordered.length > 0) {
+            boostedPostIds = new Set(ordered.map((p) => p.id));
+            // Insert the later slot first so the first slot stays at index 1.
+            if (ordered.length > 1) pagePosts.splice(Math.min(4, pagePosts.length), 0, ordered[1]);
+            pagePosts.splice(Math.min(1, pagePosts.length), 0, ordered[0]);
+          }
+        }
+      }
+    }
+  } catch {}
   // FEED STALL FIX (2026-11-11): hasMore is judged ONLY on the ranked
   // list. The old corpus fallback counted ALL eligible posts INCLUDING
   // seen ones, so for a heavy user it stayed true on an empty page:
@@ -547,8 +599,11 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   // all?) than the one hasMore must answer (is there another page to
   // show this user?).
   const hasMore = scored.length > safeOffset + safeLimit;
-  const shareCodeMap = await getShareCodeMap('post', pageSlice.map((p) => p.id));
-  const posts = await Promise.all(pageSlice.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
+  const shareCodeMap = await getShareCodeMap('post', pagePosts.map((p) => p.id));
+  const posts = await Promise.all(pagePosts.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
+  if (boostedPostIds.size > 0) {
+    for (const dto of posts) if (boostedPostIds.has(dto.id)) dto.isBoosted = true;
+  }
   return { posts, hasMore };
 }
 
@@ -562,7 +617,12 @@ export async function getPostsByUsername(username: string, currentUserId?: strin
   }
   const posts = await prisma.post.findMany({ where: isOwner ? { userId: user.id } : { userId: user.id, visibility: 'public' }, orderBy: [{ pinnedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }], include: includeShape });
   const shareCodeMap = await getShareCodeMap('post', posts.map((p) => p.id));
-  return Promise.all(posts.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
+  const dtos = await Promise.all(posts.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
+  const boostedIds = await getActiveBoostPostIds(posts.map((p) => p.id)).catch(() => new Set<string>());
+  if (boostedIds.size > 0) {
+    for (const dto of dtos) if (boostedIds.has(dto.id)) dto.isBoosted = true;
+  }
+  return dtos;
 }
 
 export async function togglePinPost(userId: string, postId: string) {
@@ -589,7 +649,10 @@ export async function getPostById(postId: string, currentUserId?: string) {
     if (friendStatus !== 'following' && friendStatus !== 'friends') throw new ApiError(403, 'PRIVATE_ACCOUNT', 'This account is private.');
   }
   if (post.visibility === 'private' && post.userId !== currentUserId) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
-  return toPostDTO(post, currentUserId);
+  const dto = await toPostDTO(post, currentUserId);
+  const boostedIds = await getActiveBoostPostIds([postId]).catch(() => new Set<string>());
+  if (boostedIds.has(postId)) dto.isBoosted = true;
+  return dto;
 }
 
 export async function updatePost(userId: string, postId: string, data: { content?: string; commentAudience?: 'everyone' | 'followers' | 'only_me' }) {

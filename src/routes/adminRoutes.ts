@@ -28,6 +28,7 @@ import {
   adminUploadReel,
 } from '../controllers/adminController';
 import { upload } from '../middleware/upload';
+import { listAdminBoostRequests, reviewAdminBoostRequest } from '../controllers/boostController';
 import { getMediaCensusHandler } from '../controllers/mediaCensusController';
 import { getDbCensusHandler, startDbOptimizeHandler, getDbOptimizeStatusHandler, startDbCleanupHandler, getDbCleanupStatusHandler } from '../controllers/dbCensusController';
 import { optimizeOneMediaHandler, optimizeBatchStartHandler, optimizeBatchStatusHandler } from '../controllers/mediaOptimizeController';
@@ -69,6 +70,8 @@ router.delete('/reels/:reelId', deleteAdminReel);
 router.get('/auth-failures', listAdminAuthFailures);
 router.get('/verification-requests', listAdminVerificationRequests);
 router.patch('/verification-requests/:requestId', reviewAdminVerificationRequest);
+router.get('/boost-requests', listAdminBoostRequests);
+router.patch('/boost-requests/:requestId', reviewAdminBoostRequest);
 router.delete('/messages/clear-all', clearAllAdminMessages);
 router.get('/seo-settings', getAdminSeoSettings);
 router.put('/seo-settings', updateAdminSeoSettings);

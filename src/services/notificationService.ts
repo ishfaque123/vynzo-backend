@@ -46,7 +46,8 @@ type NotificationType =
   | 'comment_removed'
   | 'post_removed'
   | 'reel_removed'
-  | 'messaging_restricted';
+  | 'messaging_restricted'
+  | 'boost_approved';
 
 // Toggle-style actions (like/unlike, follow/unfollow) must not notify the
 // same person about the same thing again and again.
@@ -197,6 +198,9 @@ const PUSH_TEXT: Record<string, (name: string, others: number, reaction?: string
   reel_removed: (n, o, r) => `Your reel was removed${r ? ` for ${r}` : ''}`,
   messaging_restricted: (n, o, r) => `Messaging restricted${r ? `: ${r}` : ''}`,
   viral_post: (n) => `🔥 ${n}'s post is going viral!`,
+  // content type ('post' | 'reel') is passed via the `reaction` slot, like
+  // the moderation reasons above — display-only, not stored
+  boost_approved: (n, o, r) => (r === 'reel' ? 'Your reel boost is approved' : 'Your post boost is approved'),
 };
 
 // Several people doing the same thing to the same target are merged into
