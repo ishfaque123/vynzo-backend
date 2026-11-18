@@ -35,7 +35,7 @@ function localCheck(content: string): string | null {
   // Optional subdomains (www., m., music., chat., ...) are allowed, but the
   // domain itself must be followed by /, ?, #, whitespace, or end-of-text,
   // so lookalikes (youtube.com.evil.com, fakeyoutube.com) are NOT stripped.
-  const PLATFORM_LINK_RE = /https?:\/\/(?:[a-z0-9-]+\.)*(?:youtube\.com|youtu\.be|facebook\.com|fb\.watch|instagram\.com|tiktok\.com|twitter\.com|x\.com|wa\.me|whatsapp\.com|t\.me)(?:[/?#]\S*)?(?=\s|$)/gi;
+  const PLATFORM_LINK_RE = /https?:\/\/(?:(?:[a-z0-9-]+\.)*(?:youtube\.com|youtu\.be|facebook\.com|fb\.watch|instagram\.com|tiktok\.com|twitter\.com|x\.com|wa\.me|whatsapp\.com|t\.me)(?:[/?#]\S*)?|play\.google\.com\/store\/apps\/details(?:\?\S*)?)(?=\s|$)/gi;
   const contentWithoutOwnLinks = content.replace(OWN_LINK_RE, '').replace(PLATFORM_LINK_RE, '');
   for (const re of BLOCKED_PATTERNS) {
     if (re.test(contentWithoutOwnLinks)) {
