@@ -353,6 +353,74 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
     }
   }
 
+
+  // COUNTRY DEEP POOL (owner-ordered 2026-11-18): the windows above only
+  // hold the newest posts overall (first window offset+limit+300, then
+  // the stall-fix extension), and in the newest-300 window same-country
+  // posts are a minority (measured 2026-11-18: BD 108, IN 97, PK 45,
+  // NULL 23). A viewer whose country is known burns through the unseen
+  // same-country posts in 2-3 pages (SEEN RULE 2 removes each one after
+  // it shows) and then gets walls of foreign posts, even though plenty
+  // of same-country posts exist just outside the window (PK alone: 252
+  // posts in the last 7 days). Fix: when the viewer's country is known,
+  // top the candidate pool up from a SEPARATE DEEP same-country pool --
+  // public posts from the last 30 days under the same candidateWhere
+  // filter, scanned newest-first in chunks and matched in memory with
+  // isSameCountry (country is stored as a 2-letter code OR a full name,
+  // so a SQL equality on the raw value would miss half the authors) --
+  // until the pool holds enough UNSEEN same-country posts to fill the
+  // requested page plus one more (so hasMore below stays truthful), or
+  // the 30-day same-country corpus is exhausted, or the scan cap is
+  // hit. The merged candidates flow through the unchanged pipeline
+  // below: scoring is untouched (followed authors keep their bonuses
+  // and stay on top), SEEN RULE 2 still removes seen posts, and the
+  // COUNTRY-FIRST tier then orders the whole ranked list
+  // same-country-first, so foreign posts only fill a page once the
+  // same-country unseen pool cannot. Viewers with no known country
+  // skip this block entirely -- behaviour for them is exactly as
+  // before. Cost: zero extra queries when the window already holds
+  // enough unseen same-country posts (the normal case); otherwise one
+  // 500-row query per scan round, capped.
+  if (currentUserCountry) {
+    const pageEnd = safeOffset + safeLimit;
+    const countSameCountryUnseen = () => {
+      let n = 0;
+      for (const p of candidatePosts) {
+        if (!seenPostIds.has(p.id) && isSameCountry(currentUserCountry, (p.user as any)?.country)) n++;
+      }
+      return n;
+    };
+    if (countSameCountryUnseen() <= pageEnd) {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600000);
+      const deepWhere: any = { ...candidateWhere, createdAt: { gte: thirtyDaysAgo } };
+      const DEEP_CHUNK = 500;
+      const MAX_DEEP_ROUNDS = 8; // safety cap: at most 4000 scanned posts
+      const haveIds = new Set(candidatePosts.map((p) => p.id));
+      let scanned = 0;
+      let rounds = 0;
+      let deepExhausted = false;
+      while (!deepExhausted && rounds < MAX_DEEP_ROUNDS && countSameCountryUnseen() <= pageEnd) {
+        const chunk = await prisma.post.findMany({
+          where: deepWhere,
+          orderBy: { createdAt: 'desc' },
+          skip: scanned,
+          take: DEEP_CHUNK,
+          include: includeShape,
+        });
+        if (chunk.length === 0) break;
+        scanned += chunk.length;
+        for (const p of chunk) {
+          if (!haveIds.has(p.id) && isSameCountry(currentUserCountry, (p.user as any)?.country)) {
+            haveIds.add(p.id);
+            candidatePosts.push(p);
+          }
+        }
+        if (chunk.length < DEEP_CHUNK) deepExhausted = true;
+        rounds++;
+      }
+    }
+  }
+
   const now = Date.now();
   const isFirstPage = safeOffset === 0;
   const scored = candidatePosts.map((post) => {

@@ -357,6 +357,87 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
   // the client below is built explicitly and never includes it.
   reels = reels.filter((r) => r.userId === currentUserId || !r.user?.isPrivate || followingSet.has(r.userId));
 
+  // COUNTRY DEEP POOL (owner-ordered 2026-11-18, For You only): the
+  // candidate pool above is the newest 1000 reels overall, in which
+  // same-country reels are a minority (last 7 days measured 2026-11-18:
+  // BD 458, PK 195, IN 176, NULL 101). A heavy viewer burns through the
+  // unseen same-country reels inside that window (the NO-REPEAT rule
+  // removes each one after it shows) and then gets walls of foreign
+  // reels, even though more same-country reels exist just outside the
+  // window. Fix: when the viewer's country is known, top the pool up
+  // from a SEPARATE DEEP same-country pool -- reels from the last 30
+  // days under the same blocked-author filter, scanned newest-first in
+  // chunks and matched in memory with isSameCountry (country is stored
+  // as a 2-letter code OR a full name, so a SQL equality on the raw
+  // value would miss half the authors) -- until the pool holds enough
+  // UNSEEN same-country reels to fill the requested page plus one more
+  // (so hasMore below stays truthful), or the 30-day same-country
+  // corpus is exhausted, or the scan cap is hit. The merged reels flow
+  // through the unchanged pipeline below (view counts, creator-view
+  // exclusion, scoring, seen rules, diversity) and the COUNTRY-FIRST
+  // tier near the end then orders the unseen section
+  // same-country-first, so foreign reels only fill a page once the
+  // same-country unseen pool cannot. The Following tab is untouched:
+  // it stays chronological and its country tier never applied.
+  // Viewers with no known country skip this block entirely --
+  // behaviour for them is exactly as before.
+  if (!isFollowingFeed) {
+    const viewerCountry = normalizeCountry(currentUser?.country);
+    if (viewerCountry) {
+      const deepSeenRows = await prisma.reelView.findMany({
+        where: { viewerId: currentUserId },
+        select: { reelId: true },
+      }).catch(() => [] as Array<{ reelId: string }>);
+      const deepSeenIds = new Set<string>([...viewedReelIds, ...deepSeenRows.map((v) => v.reelId)]);
+      const shownIds = new Set(excludeIds.filter((id) => typeof id === 'string' && id.length > 0));
+      const pageEnd = shownIds.size + safeOffset + safeLimit;
+      const countSameCountryUnseen = () => {
+        let n = 0;
+        for (const r of reels) {
+          if (!deepSeenIds.has(r.id) && !shownIds.has(r.id) && isSameCountry(viewerCountry, r.user?.country)) n++;
+        }
+        return n;
+      };
+      if (countSameCountryUnseen() <= pageEnd) {
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600000);
+        const deepWhere: any = { ...where, createdAt: { gte: thirtyDaysAgo } };
+        const DEEP_CHUNK = 500;
+        const MAX_DEEP_ROUNDS = 6; // safety cap: at most 3000 scanned reels
+        const haveIds = new Set(reels.map((r) => r.id));
+        let scanned = 0;
+        let rounds = 0;
+        let deepExhausted = false;
+        while (!deepExhausted && rounds < MAX_DEEP_ROUNDS && countSameCountryUnseen() <= pageEnd) {
+          const chunk = await prisma.reel.findMany({
+            where: deepWhere,
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            skip: scanned,
+            take: DEEP_CHUNK,
+            include: {
+              user: { select: { id: true, city: true, country: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true, isPrivate: true } },
+              _count: { select: { likes: true, comments: true } },
+              likes: { where: { userId: currentUserId }, select: { id: true } },
+              favorites: { where: { userId: currentUserId }, select: { id: true } },
+            },
+          });
+          if (chunk.length === 0) break;
+          scanned += chunk.length;
+          for (const r of chunk) {
+            if (haveIds.has(r.id)) continue;
+            // Same private-author rule as the pool filter above.
+            if (!(r.userId === currentUserId || !r.user?.isPrivate || followingSet.has(r.userId))) continue;
+            if (!isSameCountry(viewerCountry, r.user?.country)) continue;
+            haveIds.add(r.id);
+            reels.push(r);
+          }
+          if (chunk.length < DEEP_CHUNK) deepExhausted = true;
+          rounds++;
+        }
+      }
+    }
+  }
+
+
   // REAL USER BOOST: fetch AI user IDs once for the boost below
   const aiUserIds = new Set(
     (await prisma.aIAgent.findMany({ select: { userId: true } }))
