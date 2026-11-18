@@ -9,7 +9,7 @@ import { awardAchievement } from './achievementService';
 import { isSameCountry, normalizeCountry } from '../utils/country';
 import { moderateReel } from './moderationService';
 import { getShareEventCounts } from './shareService';
-import { getActiveBoostReelIds } from './boostService';
+import { getActiveBoostReelIds, getActiveBoostReelInfo, boostButtonFor, getStaleViewedReelIds } from './boostService';
 
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true };
 
@@ -839,15 +839,19 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
   const rankedPageLength = paged.length;
 
   // BOOSTED REELS (paid promotion): up to 2 reels with a live approved
-  // boost are inserted into the For You page as sponsored slots at
-  // positions 2 and 5 (indexes 1 and 4) — the same treatment as boosted
-  // posts in postService.getFeed. Guarded end to end: any failure, or no
-  // live boosts, leaves the ranked page exactly as it was. Rules:
+  // boost are inserted into the For You page as sponsored slots —
+  // positions 1 and 3 (indexes 0 and 2) on the first page, positions 2
+  // and 5 (indexes 1 and 4) on later pages (Boost v2, owner 2026-11-18)
+  // — the same treatment as boosted posts in postService.getFeed.
+  // Guarded end to end: any failure, or no live boosts, leaves the
+  // ranked page exactly as it was. Rules:
   // - For You only; the Following tab stays purely chronological;
   // - a boosted reel the viewer has already seen is NOT inserted (the
   //   feed's own seen set, seenReelIds from reel_views — the NO-REPEAT
   //   rule applies to the boost slot too), and neither is a reel the
-  //   client already shows (excludeSet);
+  //   client already shows (excludeSet) — Boost v2 exception: once the
+  //   view is at least BOOST_REPEAT_AFTER_HOURS old, the reel may come
+  //   back through the boost slot (boost slots only);
   // - the viewer's own reels are never boost-inserted for themselves;
   // - blocked authors are excluded by the same blockedIds rule as the
   //   candidate pool, and private authors follow the same rule as the
@@ -866,8 +870,11 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
           ? Math.floor(excludeSet.size / safeLimit)
           : Math.floor(safeOffset / safeLimit);
         const inPage = new Set(paged.map((s) => s.reel.id));
+        const staleReelIds = currentUserId
+          ? await getStaleViewedReelIds(currentUserId, [...activeBoostReelIds]).catch(() => new Set<string>())
+          : new Set<string>();
         const eligibleIds = [...activeBoostReelIds].filter(
-          (id) => !inPage.has(id) && !seenReelIds.has(id) && !excludeSet.has(id)
+          (id) => !inPage.has(id) && (!seenReelIds.has(id) || staleReelIds.has(id)) && !excludeSet.has(id)
         );
         const slotIds = eligibleIds.slice(pageIndex * 2, pageIndex * 2 + 2);
         if (slotIds.length > 0) {
@@ -891,9 +898,12 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
           if (ordered.length > 0) {
             boostedReelIds = new Set(ordered.map((r) => r.id));
             const wrapped = ordered.map((reel) => ({ reel, score: 0 }));
-            // Insert the later slot first so the first slot stays at index 1.
-            if (wrapped.length > 1) paged.splice(Math.min(4, paged.length), 0, wrapped[1]);
-            paged.splice(Math.min(1, paged.length), 0, wrapped[0]);
+            // Insert the later slot first so the first slot keeps its
+            // index. First page: indexes 0 and 2; later pages: 1 and 4.
+            const firstIdx = pageIndex === 0 ? 0 : 1;
+            const secondIdx = pageIndex === 0 ? 2 : 4;
+            if (wrapped.length > 1) paged.splice(Math.min(secondIdx, paged.length), 0, wrapped[1]);
+            paged.splice(Math.min(firstIdx, paged.length), 0, wrapped[0]);
           }
         }
       }
@@ -927,13 +937,14 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
   const shareCodeMap = new Map(shareRows.map((s) => [s.targetId, s.code]));
   const shareCountMap = await getShareEventCounts('reel', pagedReelIds);
 
+  const boostInfo = await getActiveBoostReelInfo(pagedReelIds).catch(() => new Map());
   const reelsWithStatus = paged.map(({ reel: r }) => {
     const isMine = r.userId === currentUserId;
     const iFollow = followingSet2.has(r.userId);
     const theyFollow = followerSet.has(r.userId);
     const friendStatus = isMine ? 'self' : iFollow && theyFollow ? 'friends' : iFollow ? 'following' : theyFollow ? 'follow_back' : 'none';
     const author = r.user ? { id: r.user.id, username: (r.user as any).username || '', displayName: ((r.user as any).displayName || '').trim(), profilePictureUrl: (r.user as any).profilePictureUrl || null, isVerified: !!(r.user as any).isVerified } : null;
-    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, category: (r as any).category || null, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, shareCount: shareCountMap.get(r.id) ?? 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, isBoosted: boostedReelIds.has(r.id), friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
+    return { id: r.id, videoUrl: r.videoUrl, thumbnailUrl: r.thumbnailUrl, caption: r.caption, category: (r as any).category || null, durationSec: r.durationSec, createdAt: r.createdAt, userId: r.userId, author, likeCount: r._count.likes, commentCount: r._count.comments, viewCount: viewCounts.get(r.id) || 0, shareCount: shareCountMap.get(r.id) ?? 0, liked: (r as any).likes?.length > 0, favorited: (r as any).favorites?.length > 0, isMine, isBoosted: boostedReelIds.has(r.id) || boostInfo.has(r.id), boostButton: boostButtonFor(boostInfo.get(r.id)), friendStatus, shareCode: shareCodeMap.get(r.id) ?? null };
   });
   return { reels: reelsWithStatus, hasMore: excludeSet.size ? rankedPageLength < total : safeOffset + rankedPageLength < total };
 }
@@ -1052,7 +1063,7 @@ export async function getReelById(reelId: string, currentUserId: string) {
   }
   const friendStatus = isMine ? 'self' : await getFriendStatus(currentUserId, reel.userId);
   const shareCount = (await getShareEventCounts('reel', [reel.id])).get(reel.id) ?? 0;
-  const boostedIds = await getActiveBoostReelIds([reel.id]).catch(() => new Set<string>());
+  const boostInfo = await getActiveBoostReelInfo([reel.id]).catch(() => new Map());
   return {
     id: reel.id,
     videoUrl: reel.videoUrl,
@@ -1066,7 +1077,8 @@ export async function getReelById(reelId: string, currentUserId: string) {
     liked: reel.likes.length > 0,
     favorited: reel.favorites.length > 0,
     isMine,
-    isBoosted: boostedIds.has(reel.id),
+    isBoosted: boostInfo.has(reel.id),
+    boostButton: boostButtonFor(boostInfo.get(reel.id)),
     author: { id: reel.user.id, username: reel.user.username, displayName: (reel.user.displayName || '').trim(), profilePictureUrl: reel.user.profilePictureUrl, isVerified: reel.user.isVerified },
     friendStatus,
   };
@@ -1095,7 +1107,7 @@ export async function getReelsByUsername(username: string, currentUserId: string
   });
   const friendStatus = isOwner ? 'self' : await getFriendStatus(currentUserId, user.id);
   const shareCountMap = await getShareEventCounts('reel', reels.map((r) => r.id));
-  const boostedIds = await getActiveBoostReelIds(reels.map((r) => r.id)).catch(() => new Set<string>());
+  const boostInfo = await getActiveBoostReelInfo(reels.map((r) => r.id)).catch(() => new Map());
   return reels.map((r) => ({
     id: r.id,
     videoUrl: r.videoUrl,
@@ -1109,7 +1121,8 @@ export async function getReelsByUsername(username: string, currentUserId: string
     liked: r.likes.length > 0,
     favorited: r.favorites.length > 0,
     isMine: isOwner,
-    isBoosted: boostedIds.has(r.id),
+    isBoosted: boostInfo.has(r.id),
+    boostButton: boostButtonFor(boostInfo.get(r.id)),
     author: r.user,
     friendStatus,
   }));

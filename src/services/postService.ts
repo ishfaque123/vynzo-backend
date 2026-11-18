@@ -8,7 +8,7 @@ import { awardAchievement } from './achievementService';
 import { isSameCountry, normalizeCountry } from '../utils/country';
 import { thumbUrlForUrl } from './imageCompressService';
 import { env } from '../config/env';
-import { getActiveBoostPostIds } from './boostService';
+import { getActiveBoostPostIds, getActiveBoostPostInfo, boostButtonFor, getStaleViewedPostIds } from './boostService';
 
 function toAuthorDTO(user: any) {
   if (!user) return { id: '', username: 'deleted', displayName: 'Deleted User', profilePictureUrl: null, isVerified: false };
@@ -62,6 +62,11 @@ export async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?
     // the single-post / profile reads flip it to true when the post has
     // a live approved boost (see getActiveBoostPostIds in boostService).
     isBoosted: false,
+    // Boost v2: the button a live boost puts on this post (Follow for a
+    // Followers Gain boost, the user's link button for a Business
+    // Promotion boost with a link, null otherwise). Set by the same
+    // reads that set isBoosted, via boostButtonFor in boostService.
+    boostButton: null as null | { type: 'follow' } | { type: 'link'; url: string; text: string },
     likeCount: post._count?.likes ?? 0,
     commentCount: post._count?.comments ?? 0,
     shareCount: (post._count?.reposts ?? 0) + externalShares,
@@ -538,12 +543,17 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const pagePosts = scored.slice(safeOffset, safeOffset + safeLimit).map((s) => s.post);
 
   // BOOSTED POSTS (paid promotion): up to 2 posts with a live approved
-  // boost are inserted into the page as sponsored slots at positions 2
-  // and 5 (indexes 1 and 4). Guarded end to end: any failure, or no live
-  // boosts, leaves the ranked page exactly as it was. Rules:
+  // boost are inserted into the page as sponsored slots — positions 1
+  // and 3 (indexes 0 and 2) on the first page, positions 2 and 5
+  // (indexes 1 and 4) on later pages (Boost v2, owner 2026-11-18: page 1
+  // slots moved up so a boost reaches more people). Guarded end to end:
+  // any failure, or no live boosts, leaves the ranked page exactly as
+  // it was. Rules:
   // - a boosted post the viewer has already seen is NOT inserted (SEEN
-  //   RULE 2 applies to the boost slot too: once seen, it does not come
-  //   back through the boost slot either);
+  //   RULE 2 applies to the boost slot too) — Boost v2 exception: once
+  //   the view is at least BOOST_REPEAT_AFTER_HOURS old, the post may
+  //   come back through the boost slot (boost slots only; the ranked
+  //   list's seen rule is unchanged);
   // - the viewer's own posts are never boost-inserted for themselves
   //   (the own-post rules above already surface those);
   // - hidden posts are excluded, and the privacy / blocked rules are the
@@ -559,7 +569,12 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
       if (activeBoostIds.size > 0) {
         const pageIndex = Math.floor(safeOffset / safeLimit);
         const inPage = new Set(pagePosts.map((p) => p.id));
-        const eligibleIds = [...activeBoostIds].filter((id) => !inPage.has(id) && !seenPostIds.has(id));
+        const staleIds = currentUserId
+          ? await getStaleViewedPostIds(currentUserId, [...activeBoostIds]).catch(() => new Set<string>())
+          : new Set<string>();
+        const eligibleIds = [...activeBoostIds].filter(
+          (id) => !inPage.has(id) && (!seenPostIds.has(id) || staleIds.has(id))
+        );
         const slotIds = eligibleIds.slice(pageIndex * 2, pageIndex * 2 + 2);
         if (slotIds.length > 0) {
           const boostedWhere: any = { ...candidateWhere, id: { in: slotIds } };
@@ -575,9 +590,12 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
             .filter((p) => !hiddenIds.includes(p.id));
           if (ordered.length > 0) {
             boostedPostIds = new Set(ordered.map((p) => p.id));
-            // Insert the later slot first so the first slot stays at index 1.
-            if (ordered.length > 1) pagePosts.splice(Math.min(4, pagePosts.length), 0, ordered[1]);
-            pagePosts.splice(Math.min(1, pagePosts.length), 0, ordered[0]);
+            // Insert the later slot first so the first slot keeps its
+            // index. First page: indexes 0 and 2; later pages: 1 and 4.
+            const firstIdx = pageIndex === 0 ? 0 : 1;
+            const secondIdx = pageIndex === 0 ? 2 : 4;
+            if (ordered.length > 1) pagePosts.splice(Math.min(secondIdx, pagePosts.length), 0, ordered[1]);
+            pagePosts.splice(Math.min(firstIdx, pagePosts.length), 0, ordered[0]);
           }
         }
       }
@@ -601,8 +619,11 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   const hasMore = scored.length > safeOffset + safeLimit;
   const shareCodeMap = await getShareCodeMap('post', pagePosts.map((p) => p.id));
   const posts = await Promise.all(pagePosts.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
-  if (boostedPostIds.size > 0) {
-    for (const dto of posts) if (boostedPostIds.has(dto.id)) dto.isBoosted = true;
+  const boostInfo = await getActiveBoostPostInfo(posts.map((p) => p.id)).catch(() => new Map());
+  for (const dto of posts) {
+    const info = boostInfo.get(dto.id);
+    if (info || boostedPostIds.has(dto.id)) dto.isBoosted = true;
+    if (info) dto.boostButton = boostButtonFor(info);
   }
   return { posts, hasMore };
 }
@@ -618,9 +639,13 @@ export async function getPostsByUsername(username: string, currentUserId?: strin
   const posts = await prisma.post.findMany({ where: isOwner ? { userId: user.id } : { userId: user.id, visibility: 'public' }, orderBy: [{ pinnedAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }], include: includeShape });
   const shareCodeMap = await getShareCodeMap('post', posts.map((p) => p.id));
   const dtos = await Promise.all(posts.map((p) => toPostDTO(p, currentUserId, shareCodeMap)));
-  const boostedIds = await getActiveBoostPostIds(posts.map((p) => p.id)).catch(() => new Set<string>());
-  if (boostedIds.size > 0) {
-    for (const dto of dtos) if (boostedIds.has(dto.id)) dto.isBoosted = true;
+  const boostInfo = await getActiveBoostPostInfo(posts.map((p) => p.id)).catch(() => new Map());
+  for (const dto of dtos) {
+    const info = boostInfo.get(dto.id);
+    if (info) {
+      dto.isBoosted = true;
+      dto.boostButton = boostButtonFor(info);
+    }
   }
   return dtos;
 }
@@ -650,8 +675,12 @@ export async function getPostById(postId: string, currentUserId?: string) {
   }
   if (post.visibility === 'private' && post.userId !== currentUserId) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
   const dto = await toPostDTO(post, currentUserId);
-  const boostedIds = await getActiveBoostPostIds([postId]).catch(() => new Set<string>());
-  if (boostedIds.has(postId)) dto.isBoosted = true;
+  const boostInfo = await getActiveBoostPostInfo([postId]).catch(() => new Map());
+  const info = boostInfo.get(postId);
+  if (info) {
+    dto.isBoosted = true;
+    dto.boostButton = boostButtonFor(info);
+  }
   return dto;
 }
 

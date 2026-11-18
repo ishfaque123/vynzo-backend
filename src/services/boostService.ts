@@ -4,7 +4,7 @@ import { ApiError } from '../middleware/errorHandler';
 import { env } from '../config/env';
 import { normalizeCountry } from '../utils/country';
 import {
-  BOOST_CONTENT_TYPES, BOOST_COUNTRY_CODE, BOOST_FIRST_BOOST_TRIAL, BOOST_MAX_ACTIVE_BOOSTS, BOOST_PAYMENT_DETAILS, BOOST_PLANS, BOOST_PURPOSES,
+  BOOST_BUTTON_TEXTS, BOOST_CONTENT_TYPES, BOOST_COUNTRY_CODE, BOOST_DAILY_BUDGET, BOOST_DURATIONS, BOOST_ESTIMATE_FACTORS, BOOST_FIRST_BOOST_TRIAL, BOOST_MAX_ACTIVE_BOOSTS, BOOST_PAYMENT_DETAILS, BOOST_PLANS, BOOST_PURPOSES, BOOST_REPEAT_AFTER_HOURS, BOOST_V2_FIRST_BOOST_TRIAL,
   type BoostContentType, type BoostPurpose,
 } from '../config/boost';
 
@@ -29,6 +29,9 @@ const boostSelect = {
   purpose: true,
   planDays: true,
   amountPkr: true,
+  dailyBudget: true,
+  linkUrl: true,
+  buttonText: true,
   paymentMethod: true,
   transactionId: true,
   screenshotUrl: true,
@@ -82,7 +85,14 @@ export async function getBoostConfigForUser(userId: string) {
       available: trialAvailable,
       planDays: BOOST_FIRST_BOOST_TRIAL.planDays,
       amountPkr: BOOST_FIRST_BOOST_TRIAL.amountPkr,
+      dailyBudget: BOOST_V2_FIRST_BOOST_TRIAL.dailyBudget,
+      days: BOOST_V2_FIRST_BOOST_TRIAL.days,
     },
+    // Boost v2 pricing model (daily-budget slider + separate duration).
+    budget: BOOST_DAILY_BUDGET,
+    durations: BOOST_DURATIONS,
+    buttonTexts: BOOST_BUTTON_TEXTS,
+    estimateFactors: BOOST_ESTIMATE_FACTORS,
     purposes: BOOST_PURPOSES,
     paymentMethods: BOOST_PAYMENT_DETAILS.methods,
   };
@@ -92,7 +102,9 @@ export async function createBoostRequest(
   userId: string,
   input: {
     contentType?: unknown; postId?: unknown; reelId?: unknown; purpose?: unknown;
-    planDays?: unknown; paymentMethod?: unknown; transactionId?: unknown; screenshotUrl?: unknown;
+    planDays?: unknown; dailyBudget?: unknown; days?: unknown;
+    linkUrl?: unknown; buttonText?: unknown;
+    paymentMethod?: unknown; transactionId?: unknown; screenshotUrl?: unknown;
   }
 ) {
   const contentType = (typeof input.contentType === 'string' ? input.contentType : 'post') as BoostContentType;
@@ -109,8 +121,55 @@ export async function createBoostRequest(
   const purpose = BOOST_PURPOSES.find((p) => p.id === input.purpose);
   if (!purpose) throw new ApiError(400, 'INVALID_BOOST_PURPOSE', 'Choose why you are boosting (followers, views or business promotion).');
 
-  const plan = BOOST_PLANS.find((p) => p.days === input.planDays);
-  if (!plan) throw new ApiError(400, 'INVALID_BOOST_PLAN', 'Choose a valid boost plan.');
+  // Boost v2 pricing (owner-approved design 2026-11-18): the user picks
+  // a DAILY budget (Rs 100–1,000, steps of 50) and a duration (1/3/7/14
+  // days) separately; the total is dailyBudget × days, derived here —
+  // never taken from the client. The legacy fixed-plan path (planDays)
+  // stays for older clients: it resolves to the plan's days and total,
+  // with dailyBudget stored as null.
+  const isV2 = typeof input.dailyBudget === 'number' || typeof input.days === 'number';
+  let planDays: number;
+  let dailyBudget: number | null = null;
+  let baseAmountPkr: number;
+  if (isV2) {
+    const db = typeof input.dailyBudget === 'number' ? input.dailyBudget : NaN;
+    if (!Number.isInteger(db) || db < BOOST_DAILY_BUDGET.min || db > BOOST_DAILY_BUDGET.max || db % BOOST_DAILY_BUDGET.step !== 0) {
+      throw new ApiError(400, 'INVALID_BOOST_BUDGET', 'Choose a daily budget between Rs 100 and Rs 1,000.');
+    }
+    const days = typeof input.days === 'number' ? input.days : NaN;
+    if (!BOOST_DURATIONS.includes(days)) {
+      throw new ApiError(400, 'INVALID_BOOST_DURATION', 'Choose how many days the boost should run.');
+    }
+    dailyBudget = db;
+    planDays = days;
+    baseAmountPkr = db * days;
+  } else {
+    const plan = BOOST_PLANS.find((p) => p.days === input.planDays);
+    if (!plan) throw new ApiError(400, 'INVALID_BOOST_PLAN', 'Choose a valid boost plan.');
+    planDays = plan.days;
+    baseAmountPkr = plan.amountPkr;
+  }
+
+  // Optional business link + button (Boost v2): only for the Business
+  // Promotion purpose. The link shows on the boosted content as a
+  // button with the chosen text; no link means no button. For other
+  // purposes any link/button sent by the client is dropped.
+  let linkUrl: string | null = null;
+  let buttonText: string | null = null;
+  if (purpose.id === 'business_promotion') {
+    const rawLink = typeof input.linkUrl === 'string' ? input.linkUrl.trim() : '';
+    if (rawLink) {
+      if (rawLink.length > 500 || !/^https?:\/\/.+/i.test(rawLink)) {
+        throw new ApiError(400, 'INVALID_BOOST_LINK', 'Enter a valid link starting with http:// or https://.');
+      }
+      const rawButton = typeof input.buttonText === 'string' ? input.buttonText : '';
+      if (!(BOOST_BUTTON_TEXTS as readonly string[]).includes(rawButton)) {
+        throw new ApiError(400, 'INVALID_BOOST_BUTTON', 'Choose a button text for your link.');
+      }
+      linkUrl = rawLink;
+      buttonText = rawButton;
+    }
+  }
 
   const method = BOOST_PAYMENT_DETAILS.methods.find((m) => m.id === input.paymentMethod);
   if (!method) throw new ApiError(400, 'INVALID_PAYMENT_METHOD', 'Choose a valid payment method.');
@@ -194,11 +253,17 @@ export async function createBoostRequest(
   }
 
   // Amount is ALWAYS derived here, never taken from the client: the
-  // plan's price, except the 1-day plan costs the Rs 79 first-boost
-  // trial price while the user has never had an approved boost.
-  let amountPkr = plan.amountPkr;
-  if (plan.days === BOOST_FIRST_BOOST_TRIAL.planDays && !(await hasEverHadApprovedBoost(userId))) {
-    amountPkr = BOOST_FIRST_BOOST_TRIAL.amountPkr;
+  // plan's price (legacy) or dailyBudget × days (v2), except a
+  // first-ever boost at the smallest size (1 day / Rs 100 plan, or
+  // Rs 100/day × 1 day in v2) costs the Rs 79 trial price while the
+  // user has never had an approved boost.
+  let amountPkr = baseAmountPkr;
+  if (!(await hasEverHadApprovedBoost(userId))) {
+    if (isV2 && dailyBudget === BOOST_V2_FIRST_BOOST_TRIAL.dailyBudget && planDays === BOOST_V2_FIRST_BOOST_TRIAL.days) {
+      amountPkr = BOOST_V2_FIRST_BOOST_TRIAL.amountPkr;
+    } else if (!isV2 && planDays === BOOST_FIRST_BOOST_TRIAL.planDays) {
+      amountPkr = BOOST_FIRST_BOOST_TRIAL.amountPkr;
+    }
   }
 
   const boost = await prisma.postBoost.create({
@@ -208,8 +273,11 @@ export async function createBoostRequest(
       reelId: contentType === 'reel' ? targetId : null,
       userId,
       purpose: purpose.id as BoostPurpose,
-      planDays: plan.days,
+      planDays,
       amountPkr,
+      dailyBudget,
+      linkUrl,
+      buttonText,
       paymentMethod: method.id,
       transactionId: transactionId || null,
       screenshotUrl,
@@ -304,4 +372,102 @@ export async function getActiveBoostReelIds(reelIds?: string[]): Promise<Set<str
     orderBy: { endsAt: 'asc' },
   });
   return new Set(rows.map((r) => r.reelId).filter((id): id is string => !!id));
+}
+
+// ---- Boost v2 read helpers (owner-approved design 2026-11-18) ----
+
+export interface ActiveBoostInfo {
+  purpose: string;
+  linkUrl: string | null;
+  buttonText: string | null;
+}
+
+// Live-boost details for a set of posts/reels, keyed by content id. The
+// feeds and single-content reads use this to attach the boost button:
+// Followers Gain boosts carry a Follow button, Business Promotion
+// boosts with a link carry that link as a button, Views Gain boosts
+// carry no button (see boostButtonFor).
+export async function getActiveBoostPostInfo(postIds: string[]): Promise<Map<string, ActiveBoostInfo>> {
+  const map = new Map<string, ActiveBoostInfo>();
+  if (postIds.length === 0) return map;
+  const now = new Date();
+  const rows = await prisma.postBoost.findMany({
+    where: {
+      contentType: 'post',
+      status: PostBoostStatus.approved,
+      startsAt: { lte: now },
+      endsAt: { gt: now },
+      postId: { in: postIds },
+    },
+    select: { postId: true, purpose: true, linkUrl: true, buttonText: true },
+    orderBy: { endsAt: 'asc' },
+  });
+  for (const r of rows) {
+    if (r.postId && !map.has(r.postId)) {
+      map.set(r.postId, { purpose: r.purpose, linkUrl: r.linkUrl, buttonText: r.buttonText });
+    }
+  }
+  return map;
+}
+
+export async function getActiveBoostReelInfo(reelIds: string[]): Promise<Map<string, ActiveBoostInfo>> {
+  const map = new Map<string, ActiveBoostInfo>();
+  if (reelIds.length === 0) return map;
+  const now = new Date();
+  const rows = await prisma.postBoost.findMany({
+    where: {
+      contentType: 'reel',
+      status: PostBoostStatus.approved,
+      startsAt: { lte: now },
+      endsAt: { gt: now },
+      reelId: { in: reelIds },
+    },
+    select: { reelId: true, purpose: true, linkUrl: true, buttonText: true },
+    orderBy: { endsAt: 'asc' },
+  });
+  for (const r of rows) {
+    if (r.reelId && !map.has(r.reelId)) {
+      map.set(r.reelId, { purpose: r.purpose, linkUrl: r.linkUrl, buttonText: r.buttonText });
+    }
+  }
+  return map;
+}
+
+// The button a boosted item shows in the feed, derived from its boost:
+// Follow for Followers Gain, the user's link (with its chosen text) for
+// Business Promotion with a link, and nothing otherwise.
+export function boostButtonFor(
+  info?: ActiveBoostInfo | null,
+): { type: 'follow' } | { type: 'link'; url: string; text: string } | null {
+  if (!info) return null;
+  if (info.purpose === 'followers_gain') return { type: 'follow' };
+  if (info.purpose === 'business_promotion' && info.linkUrl) {
+    return { type: 'link', url: info.linkUrl, text: info.buttonText || 'Learn More' };
+  }
+  return null;
+}
+
+// Of `postIds`, the ones this viewer saw at least
+// BOOST_REPEAT_AFTER_HOURS ago. The feeds use this to let a BOOSTED
+// item re-appear through its boost slot once the earlier view is old;
+// a fresh view (< 6h) still blocks the slot, and normal (non-boosted)
+// content is never affected — its seen rule is unchanged.
+export async function getStaleViewedPostIds(viewerId: string, postIds: string[]): Promise<Set<string>> {
+  if (!viewerId || postIds.length === 0) return new Set();
+  const cutoff = new Date(Date.now() - BOOST_REPEAT_AFTER_HOURS * 60 * 60 * 1000);
+  const rows = await prisma.postView.findMany({
+    where: { viewerId, postId: { in: postIds }, createdAt: { lt: cutoff } },
+    select: { postId: true },
+  }).catch(() => [] as Array<{ postId: string }>);
+  return new Set(rows.map((r) => r.postId));
+}
+
+export async function getStaleViewedReelIds(viewerId: string, reelIds: string[]): Promise<Set<string>> {
+  if (!viewerId || reelIds.length === 0) return new Set();
+  const cutoff = new Date(Date.now() - BOOST_REPEAT_AFTER_HOURS * 60 * 60 * 1000);
+  const rows = await prisma.reelView.findMany({
+    where: { viewerId, reelId: { in: reelIds }, createdAt: { lt: cutoff } },
+    select: { reelId: true },
+  }).catch(() => [] as Array<{ reelId: string }>);
+  return new Set(rows.map((r) => r.reelId));
 }

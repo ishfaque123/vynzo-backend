@@ -73,6 +73,42 @@ export interface BoostPaymentMethod {
   instructions: string;
 }
 
+// ---- Boost v2 (owner-approved design, 2026-11-18) ----
+// Fixed plans are replaced by a DAILY budget the user picks on a slider
+// plus a duration picked separately — the Facebook model. The total is
+// always dailyBudget × days and is derived server-side in
+// boostService.createBoostRequest; the client's amount is never trusted.
+// BOOST_PLANS above stays only so older clients keep working.
+export const BOOST_DAILY_BUDGET = { min: 100, max: 1000, step: 50 };
+export const BOOST_DURATIONS: number[] = [1, 3, 7, 14];
+
+// First-boost trial under v2 pricing: a first-ever boost at Rs 100/day
+// for 1 day costs Rs 79 (same trial as v1, expressed in v2 terms).
+export const BOOST_V2_FIRST_BOOST_TRIAL = { dailyBudget: 100, days: 1, amountPkr: 79 };
+
+// Button texts a Business Promotion boost can put on its link button
+// (Facebook-style choice: Learn More / Shop Now / Order Now).
+export const BOOST_BUTTON_TEXTS = ['Learn More', 'Shop Now', 'Order Now'] as const;
+
+// Estimated daily results per rupee of daily budget (ANDAZAN — shown to
+// the user as estimates, never a guarantee). These are the exact
+// factors behind the numbers on the approved Boost page design:
+// reach = budget × 3.5–7, impressions = budget × 5–10,
+// clicks = reach × 0.06.
+export const BOOST_ESTIMATE_FACTORS = {
+  reachPerRupeeMin: 3.5,
+  reachPerRupeeMax: 7,
+  impressionsPerRupeeMin: 5,
+  impressionsPerRupeeMax: 10,
+  clicksPerReach: 0.06,
+};
+
+// A boosted item may be shown again to the same viewer once their
+// earlier view is at least this old (boost slots only — the normal
+// feed's seen rule is unchanged). Owner direction 2026-11-18: a 1-day
+// boost reached too few people when a single view blocked it forever.
+export const BOOST_REPEAT_AFTER_HOURS = 6;
+
 export const BOOST_PAYMENT_DETAILS: { methods: BoostPaymentMethod[] } = {
   methods: [
     {
