@@ -27,9 +27,16 @@ const BLOCKED_PATTERNS: RegExp[] = [
 function localCheck(content: string): string | null {
   // Frianzo's own links are NEVER spam — strip them before checking.
   // Allowed: frianzo.online (site + user post/reel links), and the official
-  // Frianzo Play Store app link. All other external links are spam.
+  // Frianzo Play Store app link. Links to well-known platforms (YouTube,
+  // Facebook, Instagram, TikTok, X, WhatsApp, Telegram) are also stripped
+  // below — only links to other/unknown sites count as spam.
   const OWN_LINK_RE = /https?:\/\/(www\.)?frianzo\.online[^\s]*|https?:\/\/play\.google\.com\/store\/apps\/details\?id=com\.frianzo\.app[^\s]*/gi;
-  const contentWithoutOwnLinks = content.replace(OWN_LINK_RE, '');
+  // Whitelisted platform links are also NEVER spam — strip them too.
+  // Optional subdomains (www., m., music., chat., ...) are allowed, but the
+  // domain itself must be followed by /, ?, #, whitespace, or end-of-text,
+  // so lookalikes (youtube.com.evil.com, fakeyoutube.com) are NOT stripped.
+  const PLATFORM_LINK_RE = /https?:\/\/(?:[a-z0-9-]+\.)*(?:youtube\.com|youtu\.be|facebook\.com|fb\.watch|instagram\.com|tiktok\.com|twitter\.com|x\.com|wa\.me|whatsapp\.com|t\.me)(?:[/?#]\S*)?(?=\s|$)/gi;
+  const contentWithoutOwnLinks = content.replace(OWN_LINK_RE, '').replace(PLATFORM_LINK_RE, '');
   for (const re of BLOCKED_PATTERNS) {
     if (re.test(contentWithoutOwnLinks)) {
       const m = contentWithoutOwnLinks.match(re);
