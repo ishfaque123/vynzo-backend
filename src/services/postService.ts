@@ -8,7 +8,7 @@ import { awardAchievement } from './achievementService';
 import { isSameCountry, normalizeCountry } from '../utils/country';
 import { thumbUrlForUrl } from './imageCompressService';
 import { env } from '../config/env';
-import { getActiveBoostPostIds, getActiveBoostPostInfo, boostButtonFor, getStaleViewedPostIds } from './boostService';
+import { getActiveBoostPostIds, getActiveBoostPostInfo, boostButtonFor, getStaleViewedPostIds, getViewerBoostAffinities, orderBoostIdsForViewer } from './boostService';
 
 function toAuthorDTO(user: any) {
   if (!user) return { id: '', username: 'deleted', displayName: 'Deleted User', profilePictureUrl: null, isVerified: false };
@@ -575,7 +575,21 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
         const eligibleIds = [...activeBoostIds].filter(
           (id) => !inPage.has(id) && (!seenPostIds.has(id) || staleIds.has(id))
         );
-        const slotIds = eligibleIds.slice(pageIndex * 2, pageIndex * 2 + 2);
+        // Audience targeting (owner, 2026-11-18): for a signed-in
+        // viewer, rank the eligible boosts by how well each boost's
+        // goal matches the viewer's habits — Followers Gain first for
+        // people who follow a lot, Views Gain first for people who
+        // mostly watch — then let the page rotation pick its slots
+        // from that order. Order only; eligibility is unchanged.
+        let orderedIds = eligibleIds;
+        if (currentUserId && eligibleIds.length > 1) {
+          const infoMap = await getActiveBoostPostInfo(eligibleIds).catch(() => null);
+          if (infoMap) {
+            const affinities = await getViewerBoostAffinities(currentUserId, 'post');
+            orderedIds = orderBoostIdsForViewer(eligibleIds, infoMap, affinities);
+          }
+        }
+        const slotIds = orderedIds.slice(pageIndex * 2, pageIndex * 2 + 2);
         if (slotIds.length > 0) {
           const boostedWhere: any = { ...candidateWhere, id: { in: slotIds } };
           if (currentUserId) {

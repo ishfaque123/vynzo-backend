@@ -9,7 +9,7 @@ import { awardAchievement } from './achievementService';
 import { isSameCountry, normalizeCountry } from '../utils/country';
 import { moderateReel } from './moderationService';
 import { getShareEventCounts } from './shareService';
-import { getActiveBoostReelIds, getActiveBoostReelInfo, boostButtonFor, getStaleViewedReelIds } from './boostService';
+import { getActiveBoostReelIds, getActiveBoostReelInfo, boostButtonFor, getStaleViewedReelIds, getViewerBoostAffinities, orderBoostIdsForViewer } from './boostService';
 
 const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true };
 
@@ -876,7 +876,18 @@ export async function getReelFeed(currentUserId: string, limit = 10, offset = 0,
         const eligibleIds = [...activeBoostReelIds].filter(
           (id) => !inPage.has(id) && (!seenReelIds.has(id) || staleReelIds.has(id)) && !excludeSet.has(id)
         );
-        const slotIds = eligibleIds.slice(pageIndex * 2, pageIndex * 2 + 2);
+        // Audience targeting (owner, 2026-11-18): same rule as the
+        // post feed — rank eligible boosts by goal-vs-habit match for
+        // this viewer before the page rotation picks its slots.
+        let orderedIds = eligibleIds;
+        if (currentUserId && eligibleIds.length > 1) {
+          const infoMap = await getActiveBoostReelInfo(eligibleIds).catch(() => null);
+          if (infoMap) {
+            const affinities = await getViewerBoostAffinities(currentUserId, 'reel');
+            orderedIds = orderBoostIdsForViewer(eligibleIds, infoMap, affinities);
+          }
+        }
+        const slotIds = orderedIds.slice(pageIndex * 2, pageIndex * 2 + 2);
         if (slotIds.length > 0) {
           const boostedReels = await prisma.reel.findMany({
             where: {

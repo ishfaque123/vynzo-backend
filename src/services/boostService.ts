@@ -471,3 +471,58 @@ export async function getStaleViewedReelIds(viewerId: string, reelIds: string[])
   }).catch(() => [] as Array<{ reelId: string }>);
   return new Set(rows.map((r) => r.reelId));
 }
+
+// ---- Boost audience targeting (owner, 2026-11-18) ----
+// A boost should reach the people most likely to give it results: a
+// Followers Gain boost goes first to people who follow a lot, a Views
+// Gain boost goes first to people who mostly just watch. The feeds
+// rank their eligible boost slots by this viewer's two affinities
+// before the page rotation picks the slots. Targeting changes the
+// ORDER only, never eligibility — every boost still rotates through
+// later pages, so no boost is starved. Anonymous viewers and any
+// counting failure fall back to neutral affinities (0.5 / 0.5), which
+// keeps the plain soonest-expiring-first order.
+export interface BoostAffinities {
+  follow: number;
+  view: number;
+}
+
+export async function getViewerBoostAffinities(
+  viewerId: string | null | undefined,
+  kind: 'post' | 'reel',
+): Promise<BoostAffinities> {
+  const neutral: BoostAffinities = { follow: 0.5, view: 0.5 };
+  if (!viewerId) return neutral;
+  try {
+    const [follows, views] = await Promise.all([
+      prisma.follow.count({ where: { followerId: viewerId } }),
+      kind === 'post'
+        ? prisma.postView.count({ where: { viewerId } })
+        : prisma.reelView.count({ where: { viewerId } }),
+    ]);
+    const total = follows + views;
+    if (total <= 0) return neutral;
+    return { follow: follows / total, view: views / total };
+  } catch {
+    return neutral;
+  }
+}
+
+// Stable re-order of eligible boost content ids for one viewer:
+// Followers Gain boosts score the viewer's follow affinity, Views
+// Gain boosts score the view affinity, Business Promotion sits in
+// the middle (0.5). Equal scores keep the incoming order (Array.sort
+// is stable), which is soonest-expiring first.
+export function orderBoostIdsForViewer(
+  ids: string[],
+  info: Map<string, ActiveBoostInfo>,
+  affinities: BoostAffinities,
+): string[] {
+  const score = (id: string): number => {
+    const purpose = info.get(id)?.purpose;
+    if (purpose === 'followers_gain') return affinities.follow;
+    if (purpose === 'views_gain') return affinities.view;
+    return 0.5;
+  };
+  return [...ids].sort((a, b) => score(b) - score(a));
+}
