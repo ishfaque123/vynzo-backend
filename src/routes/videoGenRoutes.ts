@@ -4,6 +4,39 @@ import { authMiddleware } from '../middleware/authMiddleware';
 
 const router = Router();
 
+// ── AI Video Generator DISABLED (owner order 2026-11-19) ─────────────────
+// The tool is switched off. While this block is in place, /status reports
+// the tool as unavailable (so web and native clients show their "not
+// available" state) and every other /api/video-gen route is refused with
+// 403 AI_VIDEO_DISABLED before any handler — or the Veo API — is reached.
+// To re-enable the tool, delete this block; nothing else changes.
+const AI_VIDEO_DISABLED = true;
+
+if (AI_VIDEO_DISABLED) {
+  router.use((req, res) => {
+    if (req.method === 'GET' && req.path === '/status') {
+      res.json({
+        success: true,
+        data: {
+          enabled: false,
+          hasAccess: false,
+          referralCount: 0,
+          referralsNeeded: 25,
+          threshold: 25,
+        },
+      });
+      return;
+    }
+    res.status(403).json({
+      success: false,
+      error: {
+        code: 'AI_VIDEO_DISABLED',
+        message: 'AI video generation is currently unavailable.',
+      },
+    });
+  });
+}
+
 // Check if video generation is available (global + per-user referral unlock)
 router.get('/status', authMiddleware, async (req, res) => {
   const access = await hasVideoGenAccess(req.user!.id);
