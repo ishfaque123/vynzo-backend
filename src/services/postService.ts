@@ -283,6 +283,22 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
   }
 
   // FIX 3 (2026-10-15): posts this user already viewed (for seen-suppression on refresh)
+  // FEED REFRESH FIX (2026-11-19): this window was take: 500 — only the
+  // viewer's 500 most recently viewed posts. post_views is unique on
+  // (post_id, viewer_id), so that is 500 DISTINCT posts; a heavy viewer
+  // passes 500 quickly, and every older seen post fell out of this set,
+  // counted as "unseen" again by the pool extension and by SEEN RULE 2
+  // below, and resurfaced on refresh (verified live 2026-11-13 and
+  // 2026-11-19: pull-to-refresh returned the identical posts). Raised
+  // to 5000: the feed can only surface the newest offset+limit+300
+  // posts, plus the stall-fix extension (+3000), plus the 30-day
+  // same-country deep pool, so a 5000-view window covers every post
+  // the feed can reach many times over. The query stays a single
+  // indexed lookup (@@index([viewerId])) returning post ids only, and
+  // a larger seen set only ever EXCLUDES more posts than before — the
+  // never-empty fallback in SEEN RULE 2 below is unchanged for the
+  // case where nothing unseen remains. (The reels feed already loads
+  // its full seen set with no cap; see getReelFeed in reelService.ts.)
   const seenPostIds = new Set<string>();
   if (currentUserId) {
     try {
@@ -290,7 +306,7 @@ export async function getFeed(currentUserId?: string, limit = 20, offset = 0) {
         where: { viewerId: currentUserId },
         select: { postId: true },
         orderBy: { createdAt: 'desc' },
-        take: 500,
+        take: 5000,
       });
       for (const r of seenRows) seenPostIds.add(r.postId);
     } catch {}
