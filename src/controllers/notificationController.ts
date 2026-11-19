@@ -11,10 +11,20 @@ import {
   setPreference,
 } from '../services/notificationService';
 
+// Query params arrive as strings; anything missing or invalid falls back to
+// the historical defaults (offset 0, limit 50) so existing callers that pass
+// no params see exactly the old behaviour.
+function parsePageParam(value: unknown, fallback: number): number {
+  const n = typeof value === 'string' ? Number.parseInt(value, 10) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
 export async function getNotificationsHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const notifications = await getNotifications(req.user!.id);
-    sendSuccess(res, { notifications });
+    const offset = parsePageParam(req.query.offset, 0);
+    const limit = parsePageParam(req.query.limit, 50);
+    const result = await getNotifications(req.user!.id, { offset, limit });
+    sendSuccess(res, result);
   } catch (err) {
     next(err);
   }

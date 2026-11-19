@@ -103,15 +103,24 @@ async function createNotificationRecord(params: {
   return prisma.notification.create({ data });
 }
 
-export async function getNotifications(userId: string) {
+export async function getNotifications(userId: string, options?: { offset?: number; limit?: number }) {
+  // Pagination: callers that pass no options get exactly the historical
+  // behaviour — the newest 50 rows, newest first.
+  const offset = Math.max(0, Math.floor(options?.offset ?? 0));
+  const limit = Math.min(100, Math.max(1, Math.floor(options?.limit ?? 50)));
   const notifications = await prisma.notification.findMany({
     where: { userId },
-    orderBy: { createdAt: 'desc' },
-    take: 50,
+    // Secondary id sort keeps offset pages stable when rows share a timestamp.
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    skip: offset,
+    // Fetch one extra row so we can report whether another page exists.
+    take: limit + 1,
     include: { actor: true },
   });
+  const hasMore = notifications.length > limit;
+  const page = hasMore ? notifications.slice(0, limit) : notifications;
   await ensureDetailColumn();
-  const data = notifications.map((n) => ({
+  const data = page.map((n) => ({
     id: n.id,
     type: n.type,
     read: n.read,
@@ -122,20 +131,28 @@ export async function getNotifications(userId: string) {
     reelId: n.reelId,
     actor: n.actor ? toAuthorDTO(n.actor) : null,
   }));
-  // Opening the notifications list means the user has now seen everything up
-  // to this point (Facebook-style). Mark ALL of the user's unread rows read,
-  // but only AFTER the response data above has captured the original read
-  // flags, so this page view still highlights what was new when it opened.
-  // From here on, the push "and N others" count (which counts unread rows)
-  // and the unread badge both restart from zero — only genuinely new
-  // activity counts. Best-effort: a marking failure must never break the
-  // list response.
-  try {
-    await prisma.notification.updateMany({ where: { userId, read: false }, data: { read: true } });
-  } catch {
-    // best-effort only
+  // Opening the notifications list means the user has now seen the rows in
+  // this response (Facebook-style), so mark exactly those rows read — but
+  // only AFTER the response data above has captured the original read flags,
+  // so this page view still highlights what was new when it opened. Rows
+  // beyond the returned page are NOT marked: they stay unread until a later
+  // page actually returns them, and a row created after this fetch can never
+  // be marked unseen because it is not in the returned id set. From here on,
+  // the push "and N others" count (which counts unread rows) and the unread
+  // badge count only what the user has not actually been shown. Best-effort:
+  // a marking failure must never break the list response.
+  const returnedIds = data.map((n) => n.id);
+  if (returnedIds.length > 0) {
+    try {
+      await prisma.notification.updateMany({
+        where: { userId, id: { in: returnedIds }, read: false },
+        data: { read: true },
+      });
+    } catch {
+      // best-effort only
+    }
   }
-  return data;
+  return { notifications: data, hasMore };
 }
 
 export async function markNotificationRead(userId: string, notificationId: string) {
@@ -308,7 +325,17 @@ async function sendPushForNotification(params: NotificationParams) {
     body = `${withOthers(name, others)} ${params.commentId ? 'mentioned you in a comment' : 'tagged you in a post'}`;
   }
   let url = '/notifications';
-  if (params.type === 'follow' && username) url = `/u/${username}`;
+  // Removed or restricted content no longer exists, so a tap on these pushes
+  // must not open the deleted post/reel. Send the user to the Community
+  // Guidelines page instead — the same destination the in-app notification
+  // rows use for these types.
+  if (
+    params.type === 'post_removed' ||
+    params.type === 'reel_removed' ||
+    params.type === 'messaging_restricted'
+  ) {
+    url = '/community-guidelines';
+  } else if (params.type === 'follow' && username) url = `/u/${username}`;
   else if (params.reelId) url = `/reels?id=${params.reelId}`;
   else if (params.postId) url = `/post/${params.postId}`;
   const tag = grouped ? `${params.type}:${params.postId ?? ''}:${params.commentId ?? ''}:${params.reelId ?? ''}` : undefined;
