@@ -92,6 +92,13 @@ enum PostBoostContentType {
   reel
 }
 
+enum PayFastPaymentStatus {
+  pending
+  paid
+  failed
+  expired
+}
+
 enum ReportReason {
   spam
   harassment
@@ -148,8 +155,10 @@ model User {
   isVerified             Boolean           @default(false) @map("is_verified")
   verifiedAt             DateTime?         @map("verified_at")
   verifiedBy             String?           @map("verified_by")
+  verifiedUntil          DateTime?         @map("verified_until")
   verificationRequests   VerificationRequest[]
   postBoosts             PostBoost[]
+  payfastPayments        PayFastPayment[]
   referralsMade           Referral[]         @relation("ReferralsMade")
   referralReceived        Referral?         @relation("ReferralReceived")
   posts                  Post[]
@@ -986,6 +995,34 @@ model PostBoost {
   @@index([userId, createdAt])
   @@index([status, endsAt])
   @@map("post_boosts")
+}
+
+// One row per PayFast hosted-checkout attempt (today: Blue Tick
+// purchases). Created as `pending` before the customer is sent to
+// PayFast; only the verified callback handler in payfastService may
+// move it to `paid` (validation_hash + err_code "000"). basketId is
+// the merchant-side order id sent to PayFast in both checkout steps.
+model PayFastPayment {
+  id            String               @id @default(uuid())
+  userId        String               @map("user_id")
+  basketId      String               @unique @map("basket_id")
+  product       String               @db.VarChar(30)
+  amountPkr     Int                  @map("amount_pkr")
+  currencyCode  String               @default("PKR") @map("currency_code")
+  status        PayFastPaymentStatus @default(pending)
+  transactionId String?              @db.VarChar(100) @map("transaction_id")
+  errCode       String?              @db.VarChar(20) @map("err_code")
+  errMsg        String?              @db.VarChar(255) @map("err_msg")
+  rawCallback   Json?                @map("raw_callback")
+  paidAt        DateTime?            @map("paid_at")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@map("payfast_payments")
 }
 
 model EmailVerificationCode {

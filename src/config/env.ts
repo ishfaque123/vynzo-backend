@@ -32,4 +32,17 @@ export const env = {
   emailLoginEnabled: Boolean(process.env.HOSTINGER_MAIL_API_TOKEN && process.env.HOSTINGER_MAILBOX_RESOURCE_ID),
   hostingerMailApiToken: process.env.HOSTINGER_MAIL_API_TOKEN || '',
   hostingerMailboxResourceId: process.env.HOSTINGER_MAILBOX_RESOURCE_ID || '',
+  // PayFast (Pakistan) hosted checkout for the paid Blue Tick. These
+  // are optional on purpose (like the Hostinger mail settings above):
+  // the server must still boot when payments are not configured, and
+  // the PayFast endpoints answer 503 PAYFAST_NOT_CONFIGURED instead.
+  // The secured key is a secret — set it only in the server
+  // environment, never in code or in the repo.
+  payfastMerchantId: process.env.PAYFAST_MERCHANT_ID || '',
+  payfastSecuredKey: process.env.PAYFAST_SECURED_KEY || '',
+  payfastMerchantName: process.env.PAYFAST_MERCHANT_NAME || 'Frianzo',
+  // Sandbox by default. Going live is exactly two changes: set this to
+  // https://ipg1.apps.net.pk and swap in the live credentials.
+  payfastBaseUrl: (process.env.PAYFAST_BASE_URL || 'https://ipguat.apps.net.pk').replace(/\/+$/, ''),
 };
+
