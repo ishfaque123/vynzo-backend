@@ -111,7 +111,7 @@ export async function getNotifications(userId: string) {
     include: { actor: true },
   });
   await ensureDetailColumn();
-  return notifications.map((n) => ({
+  const data = notifications.map((n) => ({
     id: n.id,
     type: n.type,
     read: n.read,
@@ -122,6 +122,20 @@ export async function getNotifications(userId: string) {
     reelId: n.reelId,
     actor: n.actor ? toAuthorDTO(n.actor) : null,
   }));
+  // Opening the notifications list means the user has now seen everything up
+  // to this point (Facebook-style). Mark ALL of the user's unread rows read,
+  // but only AFTER the response data above has captured the original read
+  // flags, so this page view still highlights what was new when it opened.
+  // From here on, the push "and N others" count (which counts unread rows)
+  // and the unread badge both restart from zero — only genuinely new
+  // activity counts. Best-effort: a marking failure must never break the
+  // list response.
+  try {
+    await prisma.notification.updateMany({ where: { userId, read: false }, data: { read: true } });
+  } catch {
+    // best-effort only
+  }
+  return data;
 }
 
 export async function markNotificationRead(userId: string, notificationId: string) {
