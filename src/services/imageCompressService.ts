@@ -173,3 +173,71 @@ export async function compressPostThumbBuffer(
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
+
+/** Derive the medium R2 key from a full R2 image URL, or null if it is
+ * not one of our R2 URLs. The medium lives under the full image's key
+ * with "-medium" inserted before the extension:
+ *   posts/<uuid>.jpg -> posts/<uuid>-medium.jpg
+ * No DB column is needed to find a medium. */
+export function mediumKeyForUrl(fullUrl: string, r2PublicUrl: string): string | null {
+  const prefix = `${r2PublicUrl}/`;
+  if (!fullUrl.startsWith(prefix)) return null;
+  const key = fullUrl.slice(prefix.length);
+  const dot = key.lastIndexOf('.');
+  if (dot <= 0) return null;
+  return `${key.slice(0, dot)}-medium${key.slice(dot)}`;
+}
+
+/** Derive the medium's full public URL from a full R2 image URL, or null
+ * when the URL is missing or is not one of our R2 URLs. Pure string math —
+ * it does NOT check whether the medium object actually exists, so callers
+ * must tolerate a 404 (old uploads predate mediums until backfilled). */
+export function mediumUrlForUrl(fullUrl: string | null | undefined, r2PublicUrl: string): string | null {
+  if (!fullUrl) return null;
+  const key = mediumKeyForUrl(fullUrl, r2PublicUrl);
+  return key ? `${r2PublicUrl}/${key}` : null;
+}
+
+/**
+ * Post-photo medium (2026-11-19): a ~720px JPEG q6 for the feed. The full
+ * post photo is up to 1600px (~90-600KB) and the feed was downloading it
+ * for every card; a 720px copy is sharp at card width (~480px CSS) at
+ * roughly a quarter of the bytes. The full photo is still used when a
+ * post is opened full-screen.
+ *
+ * Best-effort by design, mirroring compressPostThumbBuffer: returns null
+ * on any failure and the caller must keep the full photo working without
+ * a medium — an upload can never break because of it.
+ */
+export async function compressPostMediumBuffer(
+  buffer: Buffer,
+  mimeType: string,
+): Promise<Buffer | null> {
+  if (!COMPRESSIBLE.has(mimeType)) return null;
+  let dir: string | null = null;
+  try {
+    dir = await mkdtemp(join(tmpdir(), 'fri-post-medium-'));
+    const inPath = join(dir, 'in');
+    const outPath = join(dir, 'medium.jpg');
+    await writeFile(inPath, buffer);
+    await execFileAsync(
+      'ffmpeg',
+      [
+        '-y',
+        '-i', inPath,
+        '-vf', "scale='min(720,iw)':'min(720,ih)':force_original_aspect_ratio=decrease",
+        '-q:v', '6',
+        outPath,
+      ],
+      { timeout: 30000, maxBuffer: 8 * 1024 * 1024 },
+    );
+    const out = await readFile(outPath);
+    if (out.length > 0) return out;
+    return null;
+  } catch (err) {
+    console.error('[image] post medium failed, keeping full photo only', err);
+    return null;
+  } finally {
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}

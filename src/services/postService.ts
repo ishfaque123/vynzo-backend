@@ -6,7 +6,7 @@ import { createNotification } from './notificationService';
 import { moderatePost } from './moderationService';
 import { awardAchievement } from './achievementService';
 import { isSameCountry, normalizeCountry } from '../utils/country';
-import { thumbUrlForUrl } from './imageCompressService';
+import { thumbUrlForUrl, mediumUrlForUrl } from './imageCompressService';
 import { env } from '../config/env';
 import { getActiveBoostPostIds, getActiveBoostPostInfo, boostButtonFor, getStaleViewedPostIds, getViewerBoostAffinities, orderBoostIdsForViewer } from './boostService';
 
@@ -51,6 +51,11 @@ export async function toPostDTO(post: any, currentUserId?: string, shareCodeMap?
     // Pure URL derivation — the thumb object may not exist yet, so clients
     // must fall back to the grey box / full photo when it 404s.
     imageThumbUrl: thumbUrlForUrl(post.imageUrl, env.r2PublicUrl),
+    // Feed-size medium (~720px, posts/<uuid>-medium.jpg), derived the
+    // same way. The medium object exists only for new uploads and
+    // backfilled photos, so clients must fall back to imageUrl (the
+    // full photo) when it 404s. Full-screen viewing keeps imageUrl.
+    imageMediumUrl: mediumUrlForUrl(post.imageUrl, env.r2PublicUrl),
     backgroundStyle: post.backgroundStyle,
     location: post.location,
     visibility: post.visibility,

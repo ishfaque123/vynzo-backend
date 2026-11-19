@@ -8,7 +8,7 @@ import {
 import { setReaction } from '../services/likeService';
 import { recordPostView } from '../services/postAnalyticsService';
 import { uploadToR2, uploadBufferToKey } from '../config/r2';
-import { compressImageBuffer, compressPostThumbBuffer, thumbKeyForUrl } from '../services/imageCompressService';
+import { compressImageBuffer, compressPostThumbBuffer, thumbKeyForUrl, compressPostMediumBuffer, mediumKeyForUrl } from '../services/imageCompressService';
 import { env } from '../config/env';
 import { z } from 'zod';
 import { ApiError } from '../middleware/errorHandler';
@@ -38,6 +38,16 @@ export async function createPostHandler(req: Request, res: Response, next: NextF
         if (thumb && thumbKey) await uploadBufferToKey(thumb, thumbKey, 'image/jpeg');
       } catch (err) {
         console.error('[post] thumbnail upload failed, keeping full photo only', err);
+      }
+      // Best-effort ~720px medium (posts/<uuid>-medium.jpg) so the feed
+      // can load a sharp-but-light copy instead of the full photo.
+      // Never fails the post itself.
+      try {
+        const medium = await compressPostMediumBuffer(req.file.buffer, req.file.mimetype);
+        const mediumKey = medium ? mediumKeyForUrl(imageUrl, env.r2PublicUrl) : null;
+        if (medium && mediumKey) await uploadBufferToKey(medium, mediumKey, 'image/jpeg');
+      } catch (err) {
+        console.error('[post] medium upload failed, keeping full photo only', err);
       }
     }
     if (!content.trim() && !imageUrl) throw new ApiError(400, 'POST_CONTENT_REQUIRED', 'Post must contain text or an image.');
