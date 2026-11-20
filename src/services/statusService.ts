@@ -8,7 +8,7 @@ import { updateStoryStreak, awardAchievement } from './achievementService';
 
 const STATUS_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const DAILY_STATUS_LIMIT = 20;
-const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true };
+const authorSelect = { id: true, username: true, displayName: true, profilePictureUrl: true, isVerified: true };
 
 export async function createStatus(userId: string, data: { mediaUrl?: string; mediaType?: string; thumbnailUrl?: string; textContent?: string; bgColor?: string; visibility?: string; stickers?: StickerInput[] }) {
   if (!data.mediaUrl && !data.textContent) throw new ApiError(400, 'EMPTY_STATUS', 'Status must have media or text.');
