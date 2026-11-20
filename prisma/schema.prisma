@@ -148,6 +148,8 @@ model User {
   usernameChangedAt      DateTime?         @map("username_changed_at")
   displayNameChangedAt   DateTime?         @map("display_name_changed_at")
   dobChangedAt           DateTime?         @map("dob_changed_at")
+  usernameChangeCount    Int               @default(0) @map("username_change_count")
+  displayNameChangeCount Int               @default(0) @map("display_name_change_count")
   createdAt              DateTime          @default(now()) @map("created_at")
   updatedAt              DateTime          @updatedAt @map("updated_at")
   lastActiveAt           DateTime?         @map("last_active_at")
