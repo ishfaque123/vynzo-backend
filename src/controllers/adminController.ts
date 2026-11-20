@@ -4,6 +4,7 @@ import { AccountStatus, VerificationRequestStatus } from '@prisma/client';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 import { createNotification } from '../services/notificationService';
+import { FREE_MONTH_DAYS, FREE_MONTH_REQUEST_REASON } from '../config/verification';
 import { getSiteSettings, updateSeoSettings } from '../services/settingsService';
 
 const PAGE_SIZE_MAX = 50;
@@ -656,7 +657,7 @@ export async function reviewAdminVerificationRequest(req: Request, res: Response
 
     const request = await prisma.verificationRequest.findUnique({
       where: { id: requestId },
-      select: { id: true, userId: true, status: true },
+      select: { id: true, userId: true, status: true, reason: true },
     });
     if (!request) throw new ApiError(404, 'VERIFICATION_REQUEST_NOT_FOUND', 'Verification request not found.');
     if (request.status !== 'pending') {
@@ -690,10 +691,28 @@ export async function reviewAdminVerificationRequest(req: Request, res: Response
         throw new ApiError(409, 'VERIFICATION_REQUEST_ALREADY_REVIEWED', 'This verification request has already been reviewed.');
       }
 
+      // A free-month request grants a 30-day tick, not a permanent one,
+      // and marks the account's free month as used. A standard request
+      // keeps the permanent admin grant. Approving never shortens a
+      // tick that is already active for longer.
+      const isFreeMonth = request.reason === FREE_MONTH_REQUEST_REASON;
+      let grantData: Record<string, unknown> = { isVerified: true, verifiedAt: now, verifiedBy: req.user!.id };
+      if (action === 'approve' && isFreeMonth) {
+        const current = await tx.user.findUnique({
+          where: { id: request.userId },
+          select: { isVerified: true, verifiedUntil: true },
+        });
+        const freeUntil = new Date(now.getTime() + FREE_MONTH_DAYS * 24 * 60 * 60 * 1000);
+        const keepUntil = current?.isVerified && current.verifiedUntil && current.verifiedUntil.getTime() > freeUntil.getTime()
+          ? current.verifiedUntil
+          : freeUntil;
+        grantData = { isVerified: true, verifiedAt: now, verifiedBy: 'free_month', verifiedUntil: keepUntil, freeMonthClaimed: true };
+      }
+
       const user = await tx.user.update({
         where: { id: request.userId },
         data: action === 'approve'
-          ? { isVerified: true, verifiedAt: now, verifiedBy: req.user!.id }
+          ? grantData
           : {},
         select: { id: true, username: true, displayName: true, isVerified: true, verifiedAt: true, verifiedBy: true },
       });

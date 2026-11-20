@@ -6,6 +6,7 @@ import { completeProfile, updateProfile, getPublicProfileByUsername, toPrivatePr
 import { extractRequestMeta, lookupLocation } from '../services/deviceSessionService';
 import { reportUser } from '../services/userReportService';
 import { prisma } from '../config/prisma';
+import { FREE_MONTH_REQUEST_REASON } from '../config/verification';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
 import { claimReferral, getMyReferralInfo, getLeaderboard, LeaderboardCategory } from '../services/referralService';
@@ -318,13 +319,11 @@ export async function getMyVerificationRequest(req: Request, res: Response, next
   }
 }
 
-const FREE_MONTH_DAYS = 30;
-
-// The plan page's first month costs Rs 0 (owner decision 2026-11-18):
-// an eligible user claims it with one tap and is verified immediately
-// for 30 days. One free month per account, ever — freeMonthClaimed is
-// the durable marker, and the guarded update makes a double claim
-// impossible even with two taps at the same moment.
+// The plan page's first month costs Rs 0 (owner decision 2026-11-18).
+// Tapping "Get Verified" submits a verification request for team
+// review (owner decision 2026-11-20) — the tick is granted by the
+// admin review, not instantly, and runs for 30 days. One free month
+// per account, ever: freeMonthClaimed is set when the team approves.
 export async function claimFreeVerificationMonth(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.id;
@@ -344,15 +343,19 @@ export async function claimFreeVerificationMonth(req: Request, res: Response, ne
       throw new ApiError(403, 'VERIFICATION_REQUIREMENTS_NOT_MET', 'Your account does not meet all verification requirements yet.');
     }
 
-    const verifiedUntil = new Date(now.getTime() + FREE_MONTH_DAYS * 24 * 60 * 60 * 1000);
-    const result = await prisma.user.updateMany({
-      where: { id: userId, freeMonthClaimed: false },
-      data: { isVerified: true, verifiedAt: now, verifiedBy: 'free_month', verifiedUntil, freeMonthClaimed: true },
+    const pending = await prisma.verificationRequest.findFirst({
+      where: { userId, status: 'pending' },
+      select: { id: true },
     });
-    if (result.count === 0) throw new ApiError(400, 'FREE_MONTH_ALREADY_USED', 'The free month has already been used on this account.');
+    if (pending) throw new ApiError(409, 'VERIFICATION_REQUEST_PENDING', 'Your verification request is already pending review.');
+
+    const request = await prisma.verificationRequest.create({
+      data: { userId, reason: FREE_MONTH_REQUEST_REASON },
+      select: { id: true, status: true, createdAt: true },
+    });
 
     const fresh = await getVerificationEligibility(userId);
-    return sendSuccess(res, { claimed: true, verifiedUntil, eligibility: fresh });
+    return sendSuccess(res, { submitted: true, request, eligibility: fresh });
   } catch (err) {
     next(err);
   }
