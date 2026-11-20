@@ -177,22 +177,16 @@ Rules for replies:
 }
 
 // Seed AI agents linked to real accounts (safe: only creates if not exists)
-// Roles: @Fazeela = commenter, @mrbeast = daily poster
+// Roles: @mrbeast = daily poster
 // @frienzo = personal assistant (separate service)
+// NOTE: @Fazeela is a real person's account and must NEVER be an auto-comment
+// agent (owner order 2026-11-20). Do not add her back to this list.
 export async function seedAIAgents() {
   try {
     const existing = await prisma.aIAgent.count().catch(() => -1);
     if (existing !== 0) return;
 
     const agents = [
-      {
-        username: 'Fazeela',
-        role: 'commenter',
-        gender: 'girl',
-        name: 'Fazeela',
-        personality: 'Warm, caring Pakistani woman. Comments like a real female friend — gentle, kind, uses soft language.',
-        systemPrompt: 'You are Fazeela, a warm and caring Pakistani woman on Frianzo. You are FEMALE — comment like a real woman would: gentle, kind, warm, uses soft friendly language. You comment like a genuine female friend — supportive, caring, uses Roman Urdu mix naturally. Keep comments short and heartfelt.',
-      },
       {
         username: 'mrbeast',
         role: 'poster',
