@@ -569,7 +569,9 @@ async function getVerificationEligibilityForUsers(userIds: string[]) {
       profile: { current: hasPhoto && hasBio ? 'Complete' : 'Incomplete', required: 'Photo + Bio', met: hasPhoto && hasBio },
       cleanRecord: { current: violations === 0 ? 'Clean' : `${violations} violation(s)`, required: 'No violations (90d)', met: violations === 0 },
     };
-    map.set(user.id, { eligible: Object.values(requirements).every((r) => r.met), requirements, isVerified: user.isVerified });
+    // Owner decision (2026-11-20): the posts count is reported but does not
+    // gate eligibility; only the other five requirements decide it.
+    map.set(user.id, { eligible: [requirements.referrals, requirements.followers, requirements.accountAge, requirements.profile, requirements.cleanRecord].every((r) => r.met), requirements, isVerified: user.isVerified });
   }
   return map;
 }

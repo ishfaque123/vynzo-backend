@@ -255,7 +255,10 @@ async function getVerificationEligibility(userId: string) {
   };
 
   return {
-    eligible: Object.values(requirements).every((item) => item.met),
+    // Owner decision (2026-11-20): eligibility is decided by these five
+    // requirements only. The posts count is still reported in the payload
+    // but no longer gates verification.
+    eligible: [requirements.referrals, requirements.followers, requirements.accountAge, requirements.profile, requirements.cleanRecord].every((item) => item.met),
     requirements,
     isVerified: user.isVerified,
   };
