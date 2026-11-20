@@ -159,6 +159,9 @@ model User {
   verifiedBy             String?           @map("verified_by")
   verifiedUntil          DateTime?         @map("verified_until")
   freeMonthClaimed       Boolean           @default(false) @map("free_month_claimed")
+  category               String?           @db.VarChar(32)
+  socialLinks            Json?             @map("social_links")
+  introPrivacy           Json?             @map("intro_privacy")
   verificationRequests   VerificationRequest[]
   postBoosts             PostBoost[]
   payfastPayments        PayFastPayment[]

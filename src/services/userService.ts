@@ -7,6 +7,41 @@ import { normalizeCountry } from '../utils/country';
 
 const COOLDOWN_DAYS = 30;
 
+// Profile Intro section (owner feature 2026-11-21): a fixed category list,
+// optional social links, and a per-field Public/Lock choice. A locked field
+// is never sent to other viewers at all. Phone and email are locked by
+// default; every other field is public by default.
+export const PROFILE_CATEGORIES = ['Personal', 'Video Creator', 'Business', 'Artist', 'Public Figure', 'Other'];
+export const SOCIAL_LINK_KEYS = ['facebook', 'instagram', 'youtube', 'tiktok'];
+export const INTRO_PRIVACY_KEYS = ['category', 'location', 'dateOfBirth', 'gender', 'website', 'facebook', 'instagram', 'youtube', 'tiktok', 'phone', 'email'];
+const INTRO_PRIVATE_BY_DEFAULT = new Set(['phone', 'email']);
+
+export function introFieldVisible(privacy: any, key: string): boolean {
+  const value = privacy && typeof privacy === 'object' ? privacy[key] : undefined;
+  if (typeof value === 'boolean') return value;
+  return !INTRO_PRIVATE_BY_DEFAULT.has(key);
+}
+
+export function buildIntro(user: any, isSelf: boolean) {
+  const privacy = user.introPrivacy && typeof user.introPrivacy === 'object' ? user.introPrivacy : {};
+  const links = user.socialLinks && typeof user.socialLinks === 'object' ? user.socialLinks : {};
+  const show = (key: string) => isSelf || introFieldVisible(privacy, key);
+  return {
+    category: show('category') ? (user.category ?? null) : null,
+    city: show('location') ? (user.city ?? null) : null,
+    province: show('location') ? (user.province ?? null) : null,
+    dateOfBirth: show('dateOfBirth') ? (user.dateOfBirth ?? null) : null,
+    gender: show('gender') ? (user.gender ?? null) : null,
+    website: show('website') ? (user.website ?? null) : null,
+    facebook: show('facebook') ? (links.facebook ?? null) : null,
+    instagram: show('instagram') ? (links.instagram ?? null) : null,
+    youtube: show('youtube') ? (links.youtube ?? null) : null,
+    tiktok: show('tiktok') ? (links.tiktok ?? null) : null,
+    phone: show('phone') ? (user.phone ?? null) : null,
+    email: show('email') ? (user.email ?? null) : null,
+  };
+}
+
 export function toPrivateProfile(user: any) {
   return {
     id: user.id,
@@ -34,6 +69,9 @@ export function toPrivateProfile(user: any) {
     displayNameChangedAt: user.displayNameChangedAt,
     dobChangedAt: user.dobChangedAt,
     isVerified: user.isVerified ?? false,
+    category: user.category ?? null,
+    socialLinks: user.socialLinks ?? {},
+    introPrivacy: user.introPrivacy ?? {},
     publicKey: user.publicKey ?? null,
     storyStreak: user.storyStreak ?? 0,
     loginStreak: user.loginStreak ?? 0,
@@ -44,8 +82,11 @@ export function toPrivateProfile(user: any) {
 export function toPublicProfile(
   user: any,
   friendStatus?: string,
-  extra?: { isOnline?: boolean; lastActiveAt?: Date | null; blockedByMe?: boolean; blockedByOther?: boolean; mutualFollowers?: { username: string | null; displayName: string | null }[]; mutualCount?: number }
+  extra?: { isOnline?: boolean; lastActiveAt?: Date | null; blockedByMe?: boolean; blockedByOther?: boolean; mutualFollowers?: { username: string | null; displayName: string | null }[]; mutualCount?: number; isSelf?: boolean }
 ) {
+  const isSelf = extra?.isSelf ?? false;
+  const privacy = user.introPrivacy && typeof user.introPrivacy === 'object' ? user.introPrivacy : {};
+  const show = (key: string) => isSelf || introFieldVisible(privacy, key);
   return {
     id: user.id,
     username: user.username,
@@ -53,9 +94,10 @@ export function toPublicProfile(
     bio: user.bio,
     profilePictureUrl: user.profilePictureUrl,
     coverPhotoUrl: user.coverPhotoUrl,
-    website: user.website,
-    province: user.province,
-    city: user.city,
+    website: show('website') ? user.website : null,
+    province: show('location') ? user.province : null,
+    city: show('location') ? user.city : null,
+    intro: buildIntro(user, isSelf),
     country: user.country,
     createdAt: user.createdAt,
     friendStatus: friendStatus ?? 'none',
@@ -107,6 +149,7 @@ export async function getPublicProfileByUsername(username: string, currentUserId
     : { mutuals: [], count: 0 };
 
   return toPublicProfile(user, friendStatus, {
+    isSelf: Boolean(currentUserId) && currentUserId === user.id,
     isOnline: isUserOnline(user.id),
     lastActiveAt: user.lastActiveAt,
     ...blockStatus,
@@ -176,6 +219,26 @@ export async function updateProfile(userId: string, data: any) {
   if (!current) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
 
   const updateData: any = { ...data };
+  if (data.category !== undefined) {
+    updateData.category = PROFILE_CATEGORIES.includes(data.category) ? data.category : null;
+  }
+  if (data.socialLinks !== undefined) {
+    const src = data.socialLinks && typeof data.socialLinks === 'object' ? data.socialLinks : {};
+    const cleanLinks: Record<string, string> = {};
+    for (const key of SOCIAL_LINK_KEYS) {
+      const value = typeof src[key] === 'string' ? src[key].trim().slice(0, 200) : '';
+      if (value) cleanLinks[key] = value;
+    }
+    updateData.socialLinks = cleanLinks;
+  }
+  if (data.introPrivacy !== undefined) {
+    const src = data.introPrivacy && typeof data.introPrivacy === 'object' ? data.introPrivacy : {};
+    const cleanPrivacy: Record<string, boolean> = {};
+    for (const key of INTRO_PRIVACY_KEYS) {
+      if (typeof src[key] === 'boolean') cleanPrivacy[key] = src[key];
+    }
+    updateData.introPrivacy = cleanPrivacy;
+  }
   if (typeof updateData.country === 'string' && updateData.country.trim()) {
     updateData.country = normalizeCountry(updateData.country) ?? updateData.country.trim();
   }
