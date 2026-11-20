@@ -1199,6 +1199,19 @@ export async function getReelsByUsername(username: string, currentUserId: string
   });
   const friendStatus = isOwner ? 'self' : await getFriendStatus(currentUserId, user.id);
   const shareCountMap = await getShareEventCounts('reel', reels.map((r) => r.id));
+  // View counts, batched the same way as the reels feed, so profile
+  // reel grids can show a views overlay.
+  const viewCounts = new Map<string, number>();
+  const reelIds = reels.map((r) => r.id);
+  if (reelIds.length) {
+    try {
+      const vc = await prisma.$queryRawUnsafe<Array<{ reel_id: string; cnt: bigint }>>(
+        `SELECT reel_id, COUNT(*) AS cnt FROM reel_views WHERE reel_id IN (${reelIds.map(() => '?').join(',')}) GROUP BY reel_id`,
+        ...reelIds
+      );
+      for (const row of vc) viewCounts.set(row.reel_id, Number(row.cnt));
+    } catch {}
+  }
   const boostInfo = await getActiveBoostReelInfo(reels.map((r) => r.id)).catch(() => new Map());
   return reels.map((r) => ({
     id: r.id,
@@ -1209,6 +1222,7 @@ export async function getReelsByUsername(username: string, currentUserId: string
     createdAt: r.createdAt,
     likeCount: r._count.likes,
     commentCount: r._count.comments,
+    viewCount: viewCounts.get(r.id) || 0,
     shareCount: shareCountMap.get(r.id) ?? 0,
     liked: r.likes.length > 0,
     favorited: r.favorites.length > 0,
