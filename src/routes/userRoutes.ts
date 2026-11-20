@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getMyProfile, getPublicProfile, postProfileSetup, patchMyProfile, searchUsersHandler, getMyDashboard, getMyReferral, claimMyReferral, getReferralLeaderboardHandler, deleteMyAccount, reportUserHandler, updateAvatarHandler, updateCoverHandler, createVerificationRequest, getMyVerificationRequest, getMyAchievements, getUserAchievementsHandler,
+import { getMyProfile, getPublicProfile, postProfileSetup, patchMyProfile, searchUsersHandler, getMyDashboard, getMyReferral, claimMyReferral, getReferralLeaderboardHandler, deleteMyAccount, reportUserHandler, updateAvatarHandler, updateCoverHandler, createVerificationRequest, getMyVerificationRequest, claimFreeVerificationMonth, getMyAchievements, getUserAchievementsHandler,
   getMyStrikes,
   getInterests,
   updateMyInterests,
@@ -19,6 +19,7 @@ router.post('/me/referral/claim', authMiddleware, claimMyReferral);
 router.get('/leaderboard', getReferralLeaderboardHandler);
 router.get('/me/verification-request', authMiddleware, getMyVerificationRequest);
 router.post('/me/verification-request', authMiddleware, createVerificationRequest);
+router.post('/me/verification-free-month', authMiddleware, claimFreeVerificationMonth);
 router.get('/me/achievements', authMiddleware, getMyAchievements);
 router.get('/me/strikes', authMiddleware, getMyStrikes);
 router.get('/interests', getInterests);

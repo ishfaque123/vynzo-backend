@@ -221,7 +221,7 @@ export async function updateCoverHandler(req: Request, res: Response, next: Next
 async function getVerificationEligibility(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { createdAt: true, isVerified: true, profilePictureUrl: true, bio: true },
+    select: { createdAt: true, isVerified: true, verifiedUntil: true, freeMonthClaimed: true, profilePictureUrl: true, bio: true },
   });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
 
@@ -260,7 +260,13 @@ async function getVerificationEligibility(userId: string) {
     // but no longer gates verification.
     eligible: [requirements.referrals, requirements.followers, requirements.accountAge, requirements.profile, requirements.cleanRecord].every((item) => item.met),
     requirements,
-    isVerified: user.isVerified,
+    // Effective verification state: a paid/free tick whose verifiedUntil
+    // has passed no longer counts as verified, even before the hourly
+    // expiry sweep clears the stored flag. A null verifiedUntil (admin
+    // grant) never expires.
+    isVerified: user.isVerified && (user.verifiedUntil === null || user.verifiedUntil.getTime() > Date.now()),
+    verifiedUntil: user.verifiedUntil,
+    freeMonthClaimed: user.freeMonthClaimed,
   };
 }
 
@@ -307,6 +313,46 @@ export async function getMyVerificationRequest(req: Request, res: Response, next
     ]);
 
     return sendSuccess(res, { request, eligibility });
+  } catch (err) {
+    next(err);
+  }
+}
+
+const FREE_MONTH_DAYS = 30;
+
+// The plan page's first month costs Rs 0 (owner decision 2026-11-18):
+// an eligible user claims it with one tap and is verified immediately
+// for 30 days. One free month per account, ever — freeMonthClaimed is
+// the durable marker, and the guarded update makes a double claim
+// impossible even with two taps at the same moment.
+export async function claimFreeVerificationMonth(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user!.id;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { isVerified: true, verifiedUntil: true, freeMonthClaimed: true },
+    });
+    if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
+
+    const now = new Date();
+    const tickActive = user.isVerified && (user.verifiedUntil === null || user.verifiedUntil.getTime() > now.getTime());
+    if (tickActive) throw new ApiError(400, 'ALREADY_VERIFIED', 'Your account is already verified.');
+    if (user.freeMonthClaimed) throw new ApiError(400, 'FREE_MONTH_ALREADY_USED', 'The free month has already been used on this account.');
+
+    const eligibility = await getVerificationEligibility(userId);
+    if (!eligibility.eligible) {
+      throw new ApiError(403, 'VERIFICATION_REQUIREMENTS_NOT_MET', 'Your account does not meet all verification requirements yet.');
+    }
+
+    const verifiedUntil = new Date(now.getTime() + FREE_MONTH_DAYS * 24 * 60 * 60 * 1000);
+    const result = await prisma.user.updateMany({
+      where: { id: userId, freeMonthClaimed: false },
+      data: { isVerified: true, verifiedAt: now, verifiedBy: 'free_month', verifiedUntil, freeMonthClaimed: true },
+    });
+    if (result.count === 0) throw new ApiError(400, 'FREE_MONTH_ALREADY_USED', 'The free month has already been used on this account.');
+
+    const fresh = await getVerificationEligibility(userId);
+    return sendSuccess(res, { claimed: true, verifiedUntil, eligibility: fresh });
   } catch (err) {
     next(err);
   }

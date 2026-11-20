@@ -156,6 +156,7 @@ model User {
   verifiedAt             DateTime?         @map("verified_at")
   verifiedBy             String?           @map("verified_by")
   verifiedUntil          DateTime?         @map("verified_until")
+  freeMonthClaimed       Boolean           @default(false) @map("free_month_claimed")
   verificationRequests   VerificationRequest[]
   postBoosts             PostBoost[]
   payfastPayments        PayFastPayment[]

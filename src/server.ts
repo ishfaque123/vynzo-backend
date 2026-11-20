@@ -111,6 +111,25 @@ async function start() {
     runStatusCleanup();
     setInterval(runStatusCleanup, STATUS_CLEANUP_INTERVAL_MS);
 
+    // Verified-tick expiry: a paid or free tick ends when verifiedUntil
+    // passes. Clearing the stored flag hourly keeps every badge surface
+    // (feed, profiles, search) honest without touching their queries.
+    // Admin grants have verifiedUntil = null and never expire.
+    const VERIFIED_EXPIRY_INTERVAL_MS = 60 * 60 * 1000; // hourly
+    async function runVerifiedExpirySweep() {
+      try {
+        const result = await prisma.user.updateMany({
+          where: { isVerified: true, verifiedUntil: { not: null, lt: new Date() } },
+          data: { isVerified: false },
+        });
+        if (result.count) console.log(`Expired ${result.count} verified tick(s).`);
+      } catch (err) {
+        console.error('Verified expiry sweep failed:', err);
+      }
+    }
+    runVerifiedExpirySweep();
+    setInterval(runVerifiedExpirySweep, VERIFIED_EXPIRY_INTERVAL_MS);
+
     const VIRAL_CHECK_INTERVAL_MS = 15 * 60 * 1000; // every 15 minutes
     async function runViralCheck() {
       try {
