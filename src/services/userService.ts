@@ -6,6 +6,7 @@ import { getBlockStatus } from './blockService';
 import { normalizeCountry } from '../utils/country';
 
 const COOLDOWN_DAYS = 30;
+const NEW_USER_WINDOW_DAYS = 7;
 
 export function toPrivateProfile(user: any) {
   return {
@@ -163,14 +164,20 @@ export async function updateProfile(userId: string, data: any) {
   if (!current) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
 
   const updateData: any = { ...data };
+  // New accounts can change their username and name freely during their
+  // first days; the 30-day change cooldown applies only after that window.
+  const accountAgeDays = (Date.now() - current.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+  const inNewUserWindow = accountAgeDays < NEW_USER_WINDOW_DAYS;
   if (typeof updateData.country === 'string' && updateData.country.trim()) {
     updateData.country = normalizeCountry(updateData.country) ?? updateData.country.trim();
   }
 
   if (data.username !== undefined && data.username !== current.username) {
-    const cooldown = checkCooldown(current.usernameChangedAt);
-    if (!cooldown.allowed) {
-      throw new ApiError(403, 'USERNAME_COOLDOWN', `You can change your username again in ${cooldown.daysLeft} day(s).`);
+    if (!inNewUserWindow) {
+      const cooldown = checkCooldown(current.usernameChangedAt);
+      if (!cooldown.allowed) {
+        throw new ApiError(403, 'USERNAME_COOLDOWN', `You can change your username again in ${cooldown.daysLeft} day(s).`);
+      }
     }
     const existing = await prisma.user.findUnique({ where: { username: data.username } });
     if (existing && existing.id !== userId) throw new ApiError(409, 'USERNAME_TAKEN', 'Username already taken.');
@@ -178,9 +185,11 @@ export async function updateProfile(userId: string, data: any) {
   }
 
   if (data.displayName !== undefined && data.displayName !== current.displayName) {
-    const cooldown = checkCooldown(current.displayNameChangedAt);
-    if (!cooldown.allowed) {
-      throw new ApiError(403, 'DISPLAY_NAME_COOLDOWN', `You can change your name again in ${cooldown.daysLeft} day(s).`);
+    if (!inNewUserWindow) {
+      const cooldown = checkCooldown(current.displayNameChangedAt);
+      if (!cooldown.allowed) {
+        throw new ApiError(403, 'DISPLAY_NAME_COOLDOWN', `You can change your name again in ${cooldown.daysLeft} day(s).`);
+      }
     }
     updateData.displayNameChangedAt = new Date();
   }
