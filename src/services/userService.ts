@@ -98,6 +98,9 @@ export function toPublicProfile(
     province: show('location') ? user.province : null,
     city: show('location') ? user.city : null,
     intro: buildIntro(user, isSelf),
+    // Your own privacy choices are returned only to you, so Edit Profile
+    // can show the current Public/Lock state of every Intro field.
+    introPrivacy: isSelf ? privacy : undefined,
     country: user.country,
     createdAt: user.createdAt,
     friendStatus: friendStatus ?? 'none',
