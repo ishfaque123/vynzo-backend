@@ -57,6 +57,7 @@ export function toPublicProfile(
     province: user.province,
     city: user.city,
     country: user.country,
+    createdAt: user.createdAt,
     friendStatus: friendStatus ?? 'none',
     isPrivate: user.isPrivate,
     isOnline: extra?.isOnline ?? false,
