@@ -415,7 +415,7 @@ export async function runEngagerReelCycle() {
         } else if (roll < 0.75) {
           const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: reel.userId } });
           if (!isAIAuthor) {
-            const template = COMMENT_TEMPLATES[Math.floor(Math.random() * COMMENT_TEMPLATES.length)];
+            const template = VIEWER_EMOJI_COMMENTS[Math.floor(Math.random() * VIEWER_EMOJI_COMMENTS.length)];
             const existing = await prisma.reelComment.findFirst({
               where: { reelId: reel.id, userId: agent.userId },
             });
@@ -488,7 +488,7 @@ export async function runEngagerCycle() {
             }
           }
         } else {
-          const template = COMMENT_TEMPLATES[Math.floor(Math.random() * COMMENT_TEMPLATES.length)];
+          const template = VIEWER_EMOJI_COMMENTS[Math.floor(Math.random() * VIEWER_EMOJI_COMMENTS.length)];
           const existingComment = await prisma.comment.findFirst({
             where: { userId: agent.userId, postId: post.id },
           });
@@ -513,7 +513,7 @@ export async function runEngagerCycle() {
 
 // ============ VIEWER ACCOUNTS (user-ordered 2026-10-17) ============
 // 100 accounts that watch reels, like, and comment like real viewers.
-// Reels: 100% view, 75% like, 25% comment (85% emoji / 15% text)
+// Reels: 100% view, 75% like, 25% comment (emoji-only since 2026-11-20)
 // Posts: 90% like, 35% comment
 // Comments are "interested" style — engagement-bait like real viewers.
 
@@ -817,9 +817,9 @@ async function viewerCommentIfReal(viewer: { userId: string | null; username: st
   if (!viewer.userId) return;
   const isAIAuthor = await prisma.aIAgent.findFirst({ where: { userId: authorId } });
   if (isAIAuthor) return;
-  const useEmoji = Math.random() < 0.85;
-  const pool = useEmoji ? VIEWER_EMOJI_COMMENTS : VIEWER_TEXT_COMMENTS;
-  const content = pool[Math.floor(Math.random() * pool.length)];
+  // Emoji-only comments (owner order 2026-11-20): bot accounts never post
+  // written text comments, so this always uses the emoji pool.
+  const content = VIEWER_EMOJI_COMMENTS[Math.floor(Math.random() * VIEWER_EMOJI_COMMENTS.length)];
   try {
     if (kind === 'post') {
       const existing = await prisma.comment.findFirst({ where: { userId: viewer.userId, postId: itemId } });

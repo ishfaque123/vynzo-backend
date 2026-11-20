@@ -317,54 +317,16 @@ export async function seedCommenterAgents() {
   }
 }
 
-// Trigger AI comments on a new post (background, non-blocking)
+// Trigger AI comments on a new post — DISABLED by owner order (2026-11-20).
+// Bot accounts must not post written text comments at all; the only bot
+// comments allowed are the short emoji-only ones from the viewer/engager
+// cycles in aiEngagerService. The previous implementation generated full
+// text comments from the named commenter agents on new posts. The call site
+// in postService stays but now lands on this no-op. Restore from git history
+// only on a fresh owner order.
 export function triggerAIComments(postId: string, postContent: string, authorName: string, authorId: string, postCreatedAt?: Date) {
-  setImmediate(async () => {
-    // Only comment on fresh posts (< 24h old)
-    if (postCreatedAt) {
-      const ageHours = (Date.now() - new Date(postCreatedAt).getTime()) / 3600000;
-      if (ageHours > 24) return;
-    }
-    // Skip 20% of posts (real people don't comment on everything)
-    if (Math.random() < 0.2) return;
-    // Night slowdown: 2-5 AM PKT = 21:00-00:00 UTC, 90% skip
-    const utcHour = new Date().getUTCHours();
-    if (utcHour >= 21 && Math.random() < 0.9) return;
-    try {
-      const agents = await getActiveAgents('commenter');
-      if (!agents.length) return;
-
-      // Only 1-2 agents comment per post (looks natural, not spammy)
-      const shuffled = agents.sort(() => Math.random() - 0.5);
-      const roll = Math.random();
-  const numComments = roll < 0.6 ? 1 : roll < 0.9 ? Math.min(2, shuffled.length) : Math.min(3, shuffled.length);
-      const selected = shuffled.slice(0, numComments);
-
-      for (const agent of selected) {
-        if (!agent.userId) continue;
-        if (agent.userId === authorId) continue; // don't comment on own posts
-
-        const commentText = await generateAIComment(agent, postContent, authorName);
-        if (!commentText) continue;
-
-        // Human-like delay: random 30 sec to 5 min (very natural)
-        await new Promise((r) => setTimeout(r, 30000 + Math.random() * 270000));
-
-        try {
-          // Use addComment for proper flow: commentsDisabled check, commentAudience
-          // enforcement, notifications, and background moderation
-          const { addComment } = await import('./commentService');
-          await addComment(agent.userId, postId, commentText);
-        } catch (e: any) {
-          // Skip silently if comments disabled/restricted (expected)
-          if (e.code === 'COMMENTS_DISABLED' || e.code === 'COMMENTS_RESTRICTED') return;
-          console.error('[ai-agent] comment failed:', e.message?.substring(0, 100));
-        }
-      }
-    } catch (err) {
-      console.error('[ai-agent] trigger failed:', (err as Error).message?.substring(0, 100));
-    }
-  });
+  void postId; void postContent; void authorName; void authorId; void postCreatedAt;
+  return;
 }
 
 // Trigger AI replies to new comments — DISABLED by owner order (2026-10-22).
