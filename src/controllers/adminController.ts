@@ -214,6 +214,9 @@ export async function updateAdminUserVerification(req: Request, res: Response, n
     }
 
     const now = new Date();
+    // Owner rule (2026-11-21): every verification lasts at most 30 days,
+    // including direct admin grants — no permanent ticks.
+    const grantUntil = new Date(now.getTime() + FREE_MONTH_DAYS * 24 * 60 * 60 * 1000);
     const user = await prisma.$transaction(async (tx) => {
       const updatedUser = await tx.user.update({
         where: { id: userId },
@@ -221,6 +224,7 @@ export async function updateAdminUserVerification(req: Request, res: Response, n
           isVerified: verified,
           verifiedAt: verified ? now : null,
           verifiedBy: verified ? req.user!.id : null,
+          verifiedUntil: verified ? grantUntil : null,
         },
         select: {
           id: true,
@@ -691,12 +695,12 @@ export async function reviewAdminVerificationRequest(req: Request, res: Response
         throw new ApiError(409, 'VERIFICATION_REQUEST_ALREADY_REVIEWED', 'This verification request has already been reviewed.');
       }
 
-      // A free-month request grants a 30-day tick, not a permanent one,
-      // and marks the account's free month as used. A standard request
-      // keeps the permanent admin grant. Approving never shortens a
-      // tick that is already active for longer.
+      // Every approval grants a 30-day tick (owner rule 2026-11-21: no
+      // verification lasts longer than 30 days). A free-month request
+      // also marks the account's free month as used. Approving never
+      // shortens a tick that is already active for longer.
       const isFreeMonth = request.reason === FREE_MONTH_REQUEST_REASON;
-      let grantData: Record<string, unknown> = { isVerified: true, verifiedAt: now, verifiedBy: req.user!.id };
+      let grantData: Record<string, unknown> = { isVerified: true, verifiedAt: now, verifiedBy: req.user!.id, verifiedUntil: new Date(now.getTime() + FREE_MONTH_DAYS * 24 * 60 * 60 * 1000) };
       if (action === 'approve' && isFreeMonth) {
         const current = await tx.user.findUnique({
           where: { id: request.userId },

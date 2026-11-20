@@ -114,7 +114,8 @@ async function start() {
     // Verified-tick expiry: a paid or free tick ends when verifiedUntil
     // passes. Clearing the stored flag hourly keeps every badge surface
     // (feed, profiles, search) honest without touching their queries.
-    // Admin grants have verifiedUntil = null and never expire.
+    // Every grant (admin, free month, paid) carries a verifiedUntil,
+    // so every tick ends — there are no permanent ticks.
     const VERIFIED_EXPIRY_INTERVAL_MS = 60 * 60 * 1000; // hourly
     async function runVerifiedExpirySweep() {
       try {

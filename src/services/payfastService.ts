@@ -27,8 +27,8 @@ import {
 //
 // Blue Tick grant: the same user fields the admin verification flow
 // sets (isVerified / verifiedAt / verifiedBy), plus verifiedUntil —
-// the paid tick runs for BLUE_TICK_DURATION_DAYS and then expires,
-// unlike an admin grant (verifiedUntil stays null = no expiry).
+// the paid tick runs for BLUE_TICK_DURATION_DAYS and then expires.
+// Every grant path sets verifiedUntil; no tick is permanent.
 
 export function isPayFastConfigured(): boolean {
   return Boolean(env.payfastMerchantId && env.payfastSecuredKey);
@@ -320,14 +320,10 @@ export async function handlePayFastResult(params: PayFastResultParams, source: '
     });
     if (result.count !== 1) return false; // a parallel report beat us to it
 
-    const user = await tx.user.findUnique({
-      where: { id: payment.userId },
-      select: { verifiedUntil: true },
-    });
-    // Renewals stack on a still-running paid tick; otherwise the
-    // month starts now.
-    const base = user?.verifiedUntil && user.verifiedUntil.getTime() > now.getTime() ? user.verifiedUntil : now;
-    const verifiedUntil = new Date(base.getTime() + BLUE_TICK_DURATION_DAYS * 24 * 60 * 60 * 1000);
+    // Owner rule (2026-11-21): a tick never runs longer than
+    // BLUE_TICK_DURATION_DAYS, so a renewal restarts the period from
+    // payment instead of stacking on the remaining time.
+    const verifiedUntil = new Date(now.getTime() + BLUE_TICK_DURATION_DAYS * 24 * 60 * 60 * 1000);
 
     await tx.user.update({
       where: { id: payment.userId },
