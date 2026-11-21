@@ -82,7 +82,7 @@ export function toPrivateProfile(user: any) {
 export function toPublicProfile(
   user: any,
   friendStatus?: string,
-  extra?: { isOnline?: boolean; lastActiveAt?: Date | null; blockedByMe?: boolean; blockedByOther?: boolean; mutualFollowers?: { username: string | null; displayName: string | null }[]; mutualCount?: number; isSelf?: boolean }
+  extra?: { isOnline?: boolean; lastActiveAt?: Date | null; blockedByMe?: boolean; blockedByOther?: boolean; mutualFollowers?: { username: string | null; displayName: string | null }[]; mutualCount?: number; isSelf?: boolean; followersCount?: number; followingCount?: number }
 ) {
   const isSelf = extra?.isSelf ?? false;
   const privacy = user.introPrivacy && typeof user.introPrivacy === 'object' ? user.introPrivacy : {};
@@ -112,6 +112,11 @@ export function toPublicProfile(
     isVerified: user.isVerified ?? false,
     mutualFollowers: extra?.mutualFollowers ?? [],
     mutualCount: extra?.mutualCount ?? 0,
+    // Follow counts travel with the profile itself, so the numbers
+    // render together with the name and photo instead of arriving
+    // later through the separate counts request.
+    followersCount: extra?.followersCount ?? 0,
+    followingCount: extra?.followingCount ?? 0,
     storyStreak: user.storyStreak ?? 0,
     loginStreak: user.loginStreak ?? 0,
   };
@@ -150,6 +155,10 @@ export async function getPublicProfileByUsername(username: string, currentUserId
   const mutual = currentUserId
     ? await getMutualFollowers(user.id, currentUserId)
     : { mutuals: [], count: 0 };
+  const [followersCount, followingCount] = await Promise.all([
+    prisma.follow.count({ where: { followingId: user.id } }),
+    prisma.follow.count({ where: { followerId: user.id } }),
+  ]);
 
   return toPublicProfile(user, friendStatus, {
     isSelf: Boolean(currentUserId) && currentUserId === user.id,
@@ -158,6 +167,8 @@ export async function getPublicProfileByUsername(username: string, currentUserId
     ...blockStatus,
     mutualFollowers: mutual.mutuals,
     mutualCount: mutual.count,
+    followersCount,
+    followingCount,
   });
 }
 
