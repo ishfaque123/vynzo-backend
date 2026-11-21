@@ -210,7 +210,7 @@ async function start() {
       setTimeout(runEngagerPosts, 30 * 60 * 1000);
       setInterval(runEngagerPosts, 6 * 60 * 60 * 1000);
 
-      // AI engagers watch reels + like/comment like real viewers (every 4 hours)
+      // AI engagers watch reels + like/comment like real viewers (every 2 hours)
       async function runEngagerReels() {
         try {
           await runEngagerReelCycle();
@@ -219,18 +219,23 @@ async function start() {
         }
       }
       setTimeout(runEngagerReels, 45 * 60 * 1000);
-      setInterval(runEngagerReels, 4 * 60 * 60 * 1000);
+      setInterval(runEngagerReels, 2 * 60 * 60 * 1000);
 
-      // AI viewers watch reels: 100% view, 75% like, 25% comment (every 2 hours)
+      // AI viewers watch reels: 100% view, 75% like, 25% comment (every 30 minutes)
+      let viewerReelsRunning = false;
       async function runViewerReels() {
+        if (viewerReelsRunning) return;
+        viewerReelsRunning = true;
         try {
           await runViewerReelCycle();
         } catch (err) {
           console.error('AI viewer reel cycle failed:', err);
+        } finally {
+          viewerReelsRunning = false;
         }
       }
       setTimeout(runViewerReels, 20 * 60 * 1000);
-      setInterval(runViewerReels, 2 * 60 * 60 * 1000);
+      setInterval(runViewerReels, 30 * 60 * 1000);
 
       // AI viewers engage posts: 90% like, 35% comment (every 2 hours)
       async function runViewerPosts() {
