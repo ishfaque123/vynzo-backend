@@ -152,6 +152,7 @@ export async function getReferralsList(userId: string) {
     displayName: r.referredUser.displayName,
     avatar: r.referredUser.profilePictureUrl,
     joinedAt: r.createdAt,
+    lastActiveAt: r.referredUser.lastActiveAt,
     active: !!r.referredUser.lastActiveAt && r.referredUser.lastActiveAt >= dayAgo,
   }));
   // Active first; the query order (newest first) is kept inside each group.
