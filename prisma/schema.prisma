@@ -182,6 +182,7 @@ model User {
   highlights             Highlight[]
   earnings               Earning[]
   payoutMethods          PayoutMethod[]
+  payouts                Payout[]
   usagePings             UsagePing[]
   conversationParticipants ConversationParticipant[]
   messagesSent           Message[]
@@ -948,6 +949,20 @@ model PayoutMethod {
 
   @@index([userId])
   @@map("payout_methods")
+}
+
+model Payout {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  amount      Float
+  status      String   @default("sent") @db.VarChar(20)
+  methodLabel String?  @map("method_label") @db.VarChar(100)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("payouts")
 }
 
 model VerificationRequest {

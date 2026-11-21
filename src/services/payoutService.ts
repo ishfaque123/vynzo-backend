@@ -120,6 +120,7 @@ export async function getEarnings(userId: string, limit = 20) {
     take: Math.min(50, Math.max(1, limit)),
   });
   const total = await prisma.earning.aggregate({ where: { userId }, _sum: { amount: true } });
+  const paid = await prisma.payout.aggregate({ where: { userId, status: 'sent' }, _sum: { amount: true } });
   return {
     earnings: earnings.map((e) => ({
       id: e.id,
@@ -128,5 +129,102 @@ export async function getEarnings(userId: string, limit = 20) {
       createdAt: e.createdAt,
     })),
     total: total._sum.amount ?? 0,
+    totalPaid: paid._sum.amount ?? 0,
+  };
+}
+
+// Users this user invited, most active first. "Active" = opened the app in
+// the last 24 hours (users.last_active_at).
+export async function getReferralsList(userId: string) {
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await prisma.referral.findMany({
+    where: { referrerId: userId },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    include: {
+      referredUser: {
+        select: { username: true, displayName: true, profilePictureUrl: true, lastActiveAt: true },
+      },
+    },
+  });
+  const referrals = rows.map((r) => ({
+    username: r.referredUser.username,
+    displayName: r.referredUser.displayName,
+    avatar: r.referredUser.profilePictureUrl,
+    joinedAt: r.createdAt,
+    active: !!r.referredUser.lastActiveAt && r.referredUser.lastActiveAt >= dayAgo,
+  }));
+  // Active first; the query order (newest first) is kept inside each group.
+  referrals.sort((a, b) => Number(b.active) - Number(a.active));
+  return {
+    invited: referrals.length,
+    activeDaily: referrals.filter((r) => r.active).length,
+    referrals,
+  };
+}
+
+// Earnings grouped per post/reel (earning rows that carry a referenceId).
+export async function getEarningsByContent(userId: string) {
+  const rows = await prisma.earning.findMany({
+    where: { userId, referenceId: { not: null } },
+    select: { referenceId: true, amount: true },
+  });
+  const totals = new Map<string, number>();
+  for (const r of rows) {
+    if (r.referenceId) totals.set(r.referenceId, (totals.get(r.referenceId) ?? 0) + r.amount);
+  }
+  const ids = [...totals.keys()];
+  if (!ids.length) return { items: [] as ContentEarning[] };
+
+  const [posts, reels, reelViews] = await Promise.all([
+    prisma.post.findMany({
+      where: { id: { in: ids }, userId },
+      select: { id: true, content: true, imageUrl: true, _count: { select: { views: true } } },
+    }),
+    prisma.reel.findMany({
+      where: { id: { in: ids }, userId },
+      select: { id: true, caption: true, thumbnailUrl: true },
+    }),
+    prisma.reelView.groupBy({ by: ['reelId'], where: { reelId: { in: ids } }, _count: { _all: true } }),
+  ]);
+  const reelViewCounts = new Map(reelViews.map((v) => [v.reelId, v._count._all]));
+
+  type ContentEarning = {
+    id: string; kind: 'post' | 'reel'; title: string;
+    thumbnail: string | null; views: number | null; amount: number;
+  };
+  const items: ContentEarning[] = [];
+  for (const p of posts) {
+    items.push({
+      id: p.id, kind: 'post',
+      title: (p.content || '').split('\n')[0].slice(0, 80) || 'Post',
+      thumbnail: p.imageUrl, views: p._count.views, amount: totals.get(p.id) ?? 0,
+    });
+  }
+  for (const r of reels) {
+    items.push({
+      id: r.id, kind: 'reel',
+      title: (r.caption || '').split('\n')[0].slice(0, 80) || 'Reel',
+      thumbnail: r.thumbnailUrl, views: reelViewCounts.get(r.id) ?? 0, amount: totals.get(r.id) ?? 0,
+    });
+  }
+  items.sort((a, b) => b.amount - a.amount);
+  return { items: items.slice(0, 20) };
+}
+
+export async function getPayoutHistory(userId: string) {
+  const rows = await prisma.payout.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+  });
+  return {
+    payouts: rows.map((p) => ({
+      id: p.id,
+      amount: p.amount,
+      status: p.status,
+      methodLabel: p.methodLabel,
+      createdAt: p.createdAt,
+    })),
   };
 }

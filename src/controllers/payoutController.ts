@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import {
   getPayoutMethods, addPayoutMethod, deletePayoutMethod, setDefaultPayoutMethod, getEarnings,
+  getReferralsList, getEarningsByContent, getPayoutHistory,
 } from '../services/payoutService';
 import { z } from 'zod';
 
@@ -45,6 +46,27 @@ export async function getEarningsHandler(req: Request, res: Response, next: Next
   try {
     const limit = parseInt(req.query.limit as string, 10) || 20;
     const data = await getEarnings(req.user!.id, limit);
+    sendSuccess(res, data);
+  } catch (err) { next(err); }
+}
+
+export async function getReferralsListHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await getReferralsList(req.user!.id);
+    sendSuccess(res, data);
+  } catch (err) { next(err); }
+}
+
+export async function getEarningsByContentHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await getEarningsByContent(req.user!.id);
+    sendSuccess(res, data);
+  } catch (err) { next(err); }
+}
+
+export async function getPayoutHistoryHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await getPayoutHistory(req.user!.id);
     sendSuccess(res, data);
   } catch (err) { next(err); }
 }
