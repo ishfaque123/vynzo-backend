@@ -222,7 +222,7 @@ export async function updateCoverHandler(req: Request, res: Response, next: Next
 async function getVerificationEligibility(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { createdAt: true, isVerified: true, verifiedAt: true, verifiedUntil: true, freeMonthClaimed: true, profilePictureUrl: true, bio: true, username: true, displayName: true },
+    select: { createdAt: true, isVerified: true, verifiedAt: true, verifiedUntil: true, freeMonthClaimed: true, profilePictureUrl: true, bio: true, username: true, displayName: true, country: true },
   });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');
 
@@ -270,6 +270,7 @@ async function getVerificationEligibility(userId: string) {
     verifiedAt: user.verifiedAt,
     username: user.username,
     displayName: user.displayName,
+    country: user.country,
     freeMonthClaimed: user.freeMonthClaimed,
   };
 }
