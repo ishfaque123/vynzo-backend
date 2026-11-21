@@ -12,6 +12,9 @@ import { prisma } from '../config/prisma';
 //   - device_sessions whose expiry has passed (added 2026-10-22 on the
 //     owner's order; an expired session is already unusable per
 //     getDeviceSession, and its account_sessions cascade-delete)
+//   - device_sessions not used for 7 days (added 2026-11-21 on the
+//     owner's order: idle / logged-out device data clears itself after
+//     7 days; a returning device simply gets a fresh session)
 //
 // It NEVER touches real content: posts, comments, reels, users, follows,
 // likes, messages, or view rows (post_views / reel_views are the source of
@@ -26,6 +29,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const PING_RETENTION_MS = 7 * DAY_MS;
 const NOTIFICATION_RETENTION_MS = 30 * DAY_MS;
 const AUTH_LOG_RETENTION_MS = 30 * DAY_MS;
+const DEVICE_IDLE_RETENTION_MS = 7 * DAY_MS;
 const DISK_WARN_MB = 3500;
 
 export interface RetentionResult {
@@ -91,7 +95,12 @@ export async function runDataRetention(): Promise<RetentionResult> {
 
   const deviceSessions = await safeDelete('device_sessions', () =>
     prisma.deviceSession.deleteMany({
-      where: { expiresAt: { lt: new Date(now) } },
+      where: {
+        OR: [
+          { expiresAt: { lt: new Date(now) } },
+          { lastUsedAt: { lt: new Date(now - DEVICE_IDLE_RETENTION_MS) } },
+        ],
+      },
     }),
   );
 

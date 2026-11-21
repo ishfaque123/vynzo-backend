@@ -36,7 +36,19 @@ export async function listDevices(userId: string, currentDeviceSessionId?: strin
     orderBy: { lastUsedAt: 'desc' },
   });
 
-  return accountSessions.map((acc) => {
+  // Owner rule (2026-11-21): the list shows only devices used within the
+  // last 7 days (plus the current device and unexpired sessions) — idle
+  // device data is deleted by the daily retention sweep after 7 days.
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const nowDate = new Date();
+  const visible = accountSessions.filter((acc) => {
+    const ds = acc.deviceSession;
+    const isCurrent = !!currentDeviceSessionId && ds.id === currentDeviceSessionId;
+    if (isCurrent) return true;
+    return ds.expiresAt > nowDate && acc.lastUsedAt >= sevenDaysAgo;
+  });
+
+  return visible.map((acc) => {
     const ds = acc.deviceSession;
     const location = [ds.city, ds.country].filter(Boolean).join(', ');
     return {
