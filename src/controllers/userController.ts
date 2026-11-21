@@ -415,7 +415,7 @@ export async function markNotInterested(req: Request, res: Response, next: NextF
 export async function getMyStrikes(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.id;
-    const [strikes, removals] = await Promise.all([
+    const [allStrikes, allRemovals] = await Promise.all([
       prisma.chatAbuseStrike.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
@@ -432,6 +432,25 @@ export async function getMyStrikes(req: Request, res: Response, next: NextFuncti
         select: { id: true, type: true, detail: true, createdAt: true },
       }).catch(() => []),
     ]);
+    // Warnings clear after 30 clean days: walk the violations newest-first
+    // and keep only the current chain — a gap of more than 30 days between
+    // violations (or since the newest one) means the older warnings are gone.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const merged = [
+      ...allStrikes.map((s) => ({ kind: 'strike' as const, at: new Date(s.createdAt).getTime(), item: s })),
+      ...allRemovals.map((r) => ({ kind: 'removal' as const, at: new Date(r.createdAt).getTime(), item: r })),
+    ].sort((a, b) => b.at - a.at);
+    const keptStrikeIds = new Set<string>();
+    const keptRemovalIds = new Set<string>();
+    let previousAt = Date.now();
+    for (const entry of merged) {
+      if (previousAt - entry.at > 30 * DAY_MS) break;
+      if (entry.kind === 'strike') keptStrikeIds.add((entry.item as { id: string }).id);
+      else keptRemovalIds.add((entry.item as { id: string }).id);
+      previousAt = entry.at;
+    }
+    const strikes = allStrikes.filter((s) => keptStrikeIds.has(s.id));
+    const removals = allRemovals.filter((r) => keptRemovalIds.has(r.id));
     sendSuccess(res, { strikes, removals, total: strikes.length + removals.length });
   } catch (err) {
     next(err);

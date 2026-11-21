@@ -111,6 +111,8 @@ async function loginWithGoogleIdentity(
     },
   });
 
+  await assertDeviceAccountLimit(device.session.id, Boolean(existingAccountSession));
+
   const accountSession = await prisma.accountSession.upsert({
     where: {
       deviceSessionId_userId: {
@@ -160,6 +162,18 @@ export async function loginWithGoogleIdToken(
   return loginWithGoogleIdentity(googleId, email, deviceToken, meta);
 }
 
+const MAX_SAVED_ACCOUNTS_PER_DEVICE = 5;
+
+async function assertDeviceAccountLimit(deviceSessionId: string, alreadySaved: boolean) {
+  if (alreadySaved) return;
+  const savedCount = await prisma.accountSession.count({
+    where: { deviceSessionId, user: { accountStatus: 'active' } },
+  });
+  if (savedCount >= MAX_SAVED_ACCOUNTS_PER_DEVICE) {
+    throw new ApiError(403, 'ACCOUNT_LIMIT_REACHED', 'You can add up to 5 accounts on this device.');
+  }
+}
+
 export async function getSavedAccounts(deviceToken?: string) {
   const device = await getDeviceSession(deviceToken);
   if (!device) return [];
@@ -183,7 +197,14 @@ export async function getSavedAccounts(deviceToken?: string) {
     },
   });
 
-  return accounts.map((account) => account.user);
+  return Promise.all(
+    accounts.map(async (account) => {
+      const unreadNotifications = await prisma.notification.count({
+        where: { userId: account.user.id, read: false },
+      });
+      return { ...account.user, unreadNotifications };
+    }),
+  );
 }
 
 export async function switchAccount(accountId: string, deviceToken?: string) {
@@ -260,6 +281,8 @@ export async function loginWithEmail(email: string, deviceToken?: string, meta?:
   const existingAccountSession = await prisma.accountSession.findUnique({
     where: { deviceSessionId_userId: { deviceSessionId: device.session.id, userId: user.id } },
   });
+
+  await assertDeviceAccountLimit(device.session.id, Boolean(existingAccountSession));
 
   const accountSession = await prisma.accountSession.upsert({
     where: { deviceSessionId_userId: { deviceSessionId: device.session.id, userId: user.id } },

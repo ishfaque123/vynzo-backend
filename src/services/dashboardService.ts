@@ -21,6 +21,8 @@ export async function getDashboardStats(userId: string, days = 30) {
     topPostViewGroups,
     prevPostLikes, prevPostComments, prevPostShares,
     prevReelLikes, prevReelComments,
+    postLikeRows, postCommentRows, shareRows,
+    reelLikeRows, reelCommentRows, followRows,
   ] = await Promise.all([
     prisma.post.count({ where: { userId, createdAt: { gte: since }, originalPostId: null } }),
     prisma.reel.count({ where: { userId, createdAt: { gte: since } } }),
@@ -50,6 +52,12 @@ export async function getDashboardStats(userId: string, days = 30) {
     prisma.post.count({ where: { originalPost: { userId }, createdAt: { gte: previousSince, lt: since } } }),
     prisma.reelLike.count({ where: { reel: { userId }, createdAt: { gte: previousSince, lt: since } } }),
     prisma.reelComment.count({ where: { reel: { userId }, createdAt: { gte: previousSince, lt: since } } }),
+    prisma.like.findMany({ where: { post: { userId }, createdAt: { gte: since } }, select: { createdAt: true } }),
+    prisma.comment.findMany({ where: { post: { userId }, createdAt: { gte: since } }, select: { createdAt: true } }),
+    prisma.post.findMany({ where: { originalPost: { userId }, createdAt: { gte: since } }, select: { createdAt: true } }),
+    prisma.reelLike.findMany({ where: { reel: { userId }, createdAt: { gte: since } }, select: { createdAt: true } }),
+    prisma.reelComment.findMany({ where: { reel: { userId }, createdAt: { gte: since } }, select: { createdAt: true } }),
+    prisma.follow.findMany({ where: { followingId: userId, createdAt: { gte: since } }, select: { createdAt: true } }),
   ]);
 
   const reelIds = userReels.map((r) => r.id);
@@ -89,6 +97,12 @@ export async function getDashboardStats(userId: string, days = 30) {
   const followersTrendPct = prevNewFollowers === 0 ? null : Math.round(((newFollowers - prevNewFollowers) / prevNewFollowers) * 100);
   const contentTrendPct = prevContent === 0 ? null : Math.round(((content - prevContent) / prevContent) * 100);
   const dailyViews = buildDailyBuckets([...postViewRows, ...reelViewRows].map((r) => r.createdAt), days);
+  const dailyEngagement = buildDailyBuckets(
+    [...postLikeRows, ...postCommentRows, ...shareRows, ...reelLikeRows, ...reelCommentRows].map((r) => r.createdAt),
+    days,
+  );
+  const dailyFollows = buildDailyBuckets(followRows.map((r) => r.createdAt), days);
+  const viewsBreakdown = { posts: postViewRows.length, reels: reelViewRows.length };
 
   const topPost = topPostViewGroups[0]
     ? await prisma.post.findUnique({
@@ -128,7 +142,7 @@ export async function getDashboardStats(userId: string, days = 30) {
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
     .sort((a, b) => b.views - a.views)[0] || null;
 
-  return { views, engagement, engagementBreakdown, engagementTrendPct, newFollowers, followersTrendPct, content, contentTrendPct, dailyViews, viewsTrendPct, topPerforming, days };
+  return { views, engagement, engagementBreakdown, engagementTrendPct, newFollowers, followersTrendPct, content, contentTrendPct, dailyViews, dailyEngagement, dailyFollows, viewsBreakdown, viewsTrendPct, topPerforming, days };
 }
 
 function buildDailyBuckets(dates: Date[], days: number) {
