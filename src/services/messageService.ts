@@ -42,10 +42,11 @@ export async function getOrCreateConversation(userId: string, otherUserId: strin
   return prisma.conversation.create({
     data: {
       isGroup: false,
-      // Owner decision (2026-10-23): disappearing messages are ON by
-      // default at 1 hour for every conversation. Either participant can
-      // still change the duration or turn it off per chat.
-      disappearingDuration: 3600,
+      // Owner decision (2026-11-22, supersedes 2026-10-23): disappearing
+      // messages are ON by default at 24 hours for every conversation.
+      // The 1-hour option was removed. Either participant can still
+      // change the duration or turn it off per chat.
+      disappearingDuration: 86400,
       participants: { create: [{ userId }, { userId: otherUserId }] },
     },
     include: { participants: true },
@@ -266,6 +267,48 @@ export async function ensureDisappearingDefaultMigration() {
     );
   } catch (e) {
     console.error('[disappearing] default-1h migration failed', e);
+  }
+}
+
+const DISAPPEARING_24H_MIGRATION_KEY = 'disappearing_1h_to_24h_v2';
+
+/**
+ * One-time migration (owner decision 2026-11-22): the 1-hour disappearing
+ * timer is removed. Every conversation still on 3600 (whether it came from
+ * the old 1-hour default or was picked manually) moves to 86400 (24 hours).
+ * Conversations set to Off / 7 days / 90 days are untouched. Message rows
+ * are never modified — messages already sent keep the expiry stamp they
+ * were sent with; only new messages get the 24-hour stamp.
+ *
+ * Same claim-first guard as the v1 migration: a persistent marker row in
+ * `app_migrations` makes this run exactly once, so a chat a user later
+ * changes is never re-flipped by a later boot.
+ */
+export async function ensureDisappearing24hMigration() {
+  try {
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS \`app_migrations\` (
+      \`migration_key\` VARCHAR(100) NOT NULL PRIMARY KEY,
+      \`applied_at\` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+    )`);
+
+    const claimed = await prisma.$executeRawUnsafe(
+      'INSERT IGNORE INTO `app_migrations` (`migration_key`) VALUES (?)',
+      DISAPPEARING_24H_MIGRATION_KEY
+    );
+    if (claimed === 0) {
+      console.log('[disappearing] 1h-to-24h migration already applied, skipping');
+      return;
+    }
+
+    const result = await prisma.conversation.updateMany({
+      where: { disappearingDuration: 3600 },
+      data: { disappearingDuration: 86400 },
+    });
+    console.log(
+      `[disappearing] 1h-to-24h migration applied: moved ${result.count} conversation(s) from 3600 to 86400`
+    );
+  } catch (e) {
+    console.error('[disappearing] 1h-to-24h migration failed', e);
   }
 }
 

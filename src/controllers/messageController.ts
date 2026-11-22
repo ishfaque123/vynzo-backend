@@ -71,7 +71,7 @@ export async function sendMessageHandler(req: Request, res: Response, next: Next
   }
 }
 
-const ALLOWED_DURATIONS = [3600, 86400, 604800, 7776000]; // 1h, 24h, 7d, 90d
+const ALLOWED_DURATIONS = [86400, 604800, 7776000]; // 24h, 7d, 90d (1h removed — owner decision 2026-11-22)
 
 export async function setDisappearingHandler(req: Request, res: Response, next: NextFunction) {
   try {
