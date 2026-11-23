@@ -72,6 +72,7 @@ enum NotificationType {
   messaging_restricted
   viral_post
   boost_approved
+  follower_milestone
 }
 
 enum VerificationRequestStatus {

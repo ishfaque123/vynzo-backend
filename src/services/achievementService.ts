@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { createNotification } from './notificationService';
 
 /** All achievements. icon is an emoji-free key mapped to SVG on the client. */
 export const ACHIEVEMENTS = [
@@ -99,8 +100,25 @@ export async function updateStoryStreak(userId: string): Promise<number> {
 /** Check follower-milestone achievements. Call after a follow. */
 export async function checkFollowerMilestones(userId: string) {
   const count = await prisma.follow.count({ where: { followingId: userId } });
-  if (count >= 10000) await awardAchievement(userId, 'followers_10000');
-  else if (count >= 1000) await awardAchievement(userId, 'followers_1000');
-  else if (count >= 100) await awardAchievement(userId, 'followers_100');
+  let key: AchievementKey | null = null;
+  let threshold = 0;
+  if (count >= 10000) { key = 'followers_10000'; threshold = 10000; }
+  else if (count >= 1000) { key = 'followers_1000'; threshold = 1000; }
+  else if (count >= 100) { key = 'followers_100'; threshold = 100; }
+  if (key) {
+    const awarded = await awardAchievement(userId, key);
+    // A brand-new milestone also sends the user a celebration notification
+    // (in-app row + phone push). awardAchievement returns null when the
+    // milestone was already earned, so this fires exactly once per milestone.
+    if (awarded) {
+      const label = threshold.toLocaleString('en-US');
+      await createNotification({
+        userId,
+        type: 'follower_milestone',
+        reaction: label,
+        detail: `You reached ${label} followers!`,
+      }).catch(() => {});
+    }
+  }
   return count;
 }

@@ -28,6 +28,7 @@ export async function pushNewMessage(
   else if (message.mediaType === 'image') body = 'Sent you a photo';
   else if (message.mediaType === 'voice') body = 'Sent you a voice message';
   await sendPushToUser(recipient.userId, {
+    ttlSeconds: 86400,
     title: senderName,
     body,
     url: `/messages/${message.conversationId}`,

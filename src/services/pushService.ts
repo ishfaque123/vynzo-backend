@@ -48,6 +48,9 @@ export async function sendPushToUser(
     postId?: string;
     commentId?: string;
     reelId?: string;
+    // How long FCM keeps trying to deliver before giving up (seconds).
+    // Default keeps a stale social notification from landing hours late.
+    ttlSeconds?: number;
   }
 ) {
   const a = getAuth();
@@ -101,12 +104,12 @@ export async function sendPushToUser(
               ...(payload.commentId ? { commentId: payload.commentId } : {}),
               ...(payload.reelId ? { reelId: payload.reelId } : {}),
             },
-            android: { priority: 'HIGH' },
+            android: { priority: 'HIGH', ttl: `${payload.ttlSeconds ?? 21600}s` },
             apns: { payload: { aps: { alert: { title: payload.title, body: payload.body }, badge } } },
           },
         }),
       });
-      console.log('[push] FCM response', res.status);
+      console.log('[push] FCM response', res.status, '| title:', payload.title);
       if (!res.ok) {
         const text = await res.text();
         if (res.status === 404 || text.includes('UNREGISTERED')) {

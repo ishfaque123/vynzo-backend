@@ -19,6 +19,26 @@ async function ensureDetailColumn() {
   detailColReady = true;
 }
 
+// Ensure the notifications.type enum includes follower_milestone (safe:
+// only ever APPENDS the new value to the enum, never removes or reorders).
+let milestoneEnumReady = false;
+async function ensureMilestoneEnum() {
+  if (milestoneEnumReady) return;
+  try {
+    const rows: any[] = await prisma.$queryRawUnsafe(
+      `SELECT COLUMN_TYPE AS t FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notifications' AND COLUMN_NAME = 'type'`
+    );
+    const colType = String(rows[0]?.t ?? '');
+    if (!colType.includes('follower_milestone')) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE notifications MODIFY COLUMN type ENUM('follow','post_like','post_comment','comment_like','comment_reply','post_share','new_device_login','account_restricted','account_banned','reel_like','reel_comment','reel_reply','comment_mention','verification_approved','verification_rejected','comment_removed','post_removed','reel_removed','messaging_restricted','viral_post','boost_approved','follower_milestone')`);
+      console.log('[notifications] added follower_milestone to type enum');
+    }
+  } catch (err) {
+    console.error('[notifications] milestone enum ensure failed', err);
+  }
+  milestoneEnumReady = true;
+}
+
 // Ensure the preferences table exists (safe: IF NOT EXISTS, no data loss).
 let prefsTableReady = false;
 async function ensurePrefsTable() {
@@ -47,7 +67,8 @@ type NotificationType =
   | 'post_removed'
   | 'reel_removed'
   | 'messaging_restricted'
-  | 'boost_approved';
+  | 'boost_approved'
+  | 'follower_milestone';
 
 // Toggle-style actions (like/unlike, follow/unfollow) must not notify the
 // same person about the same thing again and again.
@@ -91,6 +112,7 @@ async function createNotificationRecord(params: {
     if (recent) return null;
   }
   await ensureDetailColumn();
+  await ensureMilestoneEnum();
   const data: any = {
     userId: params.userId,
     actorId: params.actorId ?? null,
@@ -232,6 +254,23 @@ const PUSH_TEXT: Record<string, (name: string, others: number, reaction?: string
   // content type ('post' | 'reel') is passed via the `reaction` slot, like
   // the moderation reasons above — display-only, not stored
   boost_approved: (n, o, r) => (r === 'reel' ? 'Your reel boost is approved' : 'Your post boost is approved'),
+  follower_milestone: (n, o, r) => (r ? `You reached ${r} followers!` : 'You reached a new follower milestone!'),
+};
+
+// Action-only push bodies for person notifications: the person's name moves
+// into the notification TITLE (the way other social apps do it), so the body
+// holds just what they did. PUSH_TEXT above keeps the full sentence for
+// system notifications, whose title stays 'Frianzo'.
+const PUSH_ACTION: Record<string, (others: number, reaction?: string) => string> = {
+  follow: () => 'started following you',
+  post_like: (o, r) => `${reactionVerb(r, o)} your post`,
+  post_comment: () => 'commented on your post',
+  comment_like: (o, r) => `${reactionVerb(r, o)} your comment`,
+  comment_reply: () => 'replied to your comment',
+  post_share: () => 'shared your post',
+  reel_like: () => 'liked your reel',
+  reel_comment: () => 'commented on your reel',
+  reel_reply: () => 'replied to your comment on a reel',
 };
 
 // Several people doing the same thing to the same target are merged into
@@ -324,6 +363,20 @@ async function sendPushForNotification(params: NotificationParams) {
   if (params.type === 'comment_mention') {
     body = `${withOthers(name, others)} ${params.commentId ? 'mentioned you in a comment' : 'tagged you in a post'}`;
   }
+  // Person notifications: the person's name is the title and the body is the
+  // action alone (chat-message pushes already work this way). System
+  // notifications keep the 'Frianzo' title with the full sentence as body.
+  let title = 'Frianzo';
+  if (GROUPED_TYPES.has(params.type)) {
+    title = withOthers(name, others);
+    if (title.length > 60) title = `${title.slice(0, 57)}...`;
+    if (params.type === 'comment_mention') {
+      body = params.commentId ? 'mentioned you in a comment' : 'tagged you in a post';
+    } else {
+      const makeAction = PUSH_ACTION[params.type];
+      if (makeAction) body = makeAction(others, params.reaction);
+    }
+  }
   let url = '/notifications';
   // Removed or restricted content no longer exists, so a tap on these pushes
   // must not open the deleted post/reel. Send the user to the Community
@@ -340,7 +393,7 @@ async function sendPushForNotification(params: NotificationParams) {
   else if (params.postId) url = `/post/${params.postId}`;
   const tag = grouped ? `${params.type}:${params.postId ?? ''}:${params.commentId ?? ''}:${params.reelId ?? ''}` : undefined;
   await sendPushToUser(params.userId, {
-    title: 'Frianzo',
+    title,
     body,
     url,
     tag,
@@ -352,10 +405,42 @@ async function sendPushForNotification(params: NotificationParams) {
   });
 }
 
+// Like and follow pushes are batched: the first event opens a short window,
+// later events in the window only refresh which actor is named, and ONE push
+// goes out when the window closes (its text counts everyone who acted in the
+// meantime). The in-app notification rows are still created instantly — only
+// the phone push waits. A server restart drops a pending push (the rows stay
+// in the app), which is acceptable for likes and follows.
+const BATCHED_PUSH_TYPES = new Set<string>(['follow', 'post_like', 'comment_like', 'reel_like']);
+const BATCH_WINDOW_MS = 5 * 60 * 1000;
+const pendingPushBatches = new Map<string, { params: NotificationParams; timer: NodeJS.Timeout }>();
+
+function scheduleBatchedPush(params: NotificationParams) {
+  const key = `${params.userId}:${params.type}:${params.postId ?? ''}:${params.commentId ?? ''}:${params.reelId ?? ''}`;
+  const existing = pendingPushBatches.get(key);
+  if (existing) {
+    existing.params = params; // the push names the most recent actor
+    return;
+  }
+  const timer = setTimeout(() => {
+    const batch = pendingPushBatches.get(key);
+    pendingPushBatches.delete(key);
+    if (batch) {
+      sendPushForNotification(batch.params).catch((err) => console.error('[push] send failed', err));
+    }
+  }, BATCH_WINDOW_MS);
+  timer.unref?.();
+  pendingPushBatches.set(key, { params, timer });
+}
+
 export async function createNotification(params: NotificationParams) {
   const notification = await createNotificationRecord(params);
   if (notification) {
-    sendPushForNotification(params).catch((err) => console.error('[push] send failed', err));
+    if (BATCHED_PUSH_TYPES.has(params.type)) {
+      scheduleBatchedPush(params);
+    } else {
+      sendPushForNotification(params).catch((err) => console.error('[push] send failed', err));
+    }
   }
   return notification;
 }
