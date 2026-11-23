@@ -30,7 +30,7 @@ async function ensureMilestoneEnum() {
     );
     const colType = String(rows[0]?.t ?? '');
     if (!colType.includes('follower_milestone')) {
-      await prisma.$executeRawUnsafe(`ALTER TABLE notifications MODIFY COLUMN type ENUM('follow','post_like','post_comment','comment_like','comment_reply','post_share','new_device_login','account_restricted','account_banned','reel_like','reel_comment','reel_reply','comment_mention','verification_approved','verification_rejected','comment_removed','post_removed','reel_removed','messaging_restricted','viral_post','boost_approved','follower_milestone')`);
+      await prisma.$executeRawUnsafe(`ALTER TABLE notifications MODIFY COLUMN type ENUM('follow','post_like','post_comment','comment_like','comment_reply','post_share','new_device_login','account_restricted','account_banned','reel_like','reel_comment','reel_reply','comment_mention','verification_approved','verification_rejected','comment_removed','post_removed','reel_removed','messaging_restricted','viral_post','boost_approved','account_activated','follower_milestone')`);
       console.log('[notifications] added follower_milestone to type enum');
     }
   } catch (err) {
