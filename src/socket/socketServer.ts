@@ -19,6 +19,10 @@ export async function pushNewMessage(
   recipient: { userId: string; lastReadAt: Date | null },
   senderId: string
 ) {
+  // The recipient is looking at this conversation right now: the message
+  // is already arriving live over the socket, so a phone push on top of
+  // it would only buzz them for something already on their screen.
+  if (isUserViewingConversation(recipient.userId, message.conversationId)) return;
   const unread = await prisma.message.count({
     where: { conversationId: message.conversationId, senderId, createdAt: { gt: recipient.lastReadAt ?? new Date(0) } },
   });
@@ -40,6 +44,23 @@ export async function pushNewMessage(
 }
 
 const onlineUsers = new Map<string, Set<string>>();
+
+// The conversation each connected socket is currently viewing, if any.
+// The chat page emits conversation:join when it opens and
+// conversation:leave when it closes, so this tracks live viewing rather
+// than mere connection — every socket joins every conversation room at
+// connect time, which says nothing about what is on the user's screen.
+const viewingBySocket = new Map<string, string>();
+
+/** True while any of the user's connected sockets is viewing this conversation. */
+export function isUserViewingConversation(userId: string, conversationId: string): boolean {
+  const sockets = onlineUsers.get(userId);
+  if (!sockets) return false;
+  for (const socketId of sockets) {
+    if (viewingBySocket.get(socketId) === conversationId) return true;
+  }
+  return false;
+}
 
 // REST handlers (notification quick reply) need to emit into chat rooms too.
 // Stored at init; null until initSocketServer runs (server startup).
@@ -430,6 +451,12 @@ export function initSocketServer(httpServer: HttpServer) {
       if (!conversationId) return;
       if (!(await isParticipant(conversationId, userId))) return;
       socket.join(`conversation:${conversationId}`);
+      viewingBySocket.set(socket.id, conversationId);
+    });
+
+    socket.on('conversation:leave', ({ conversationId }: { conversationId: string }) => {
+      if (!conversationId) return;
+      if (viewingBySocket.get(socket.id) === conversationId) viewingBySocket.delete(socket.id);
     });
 
     socket.on('conversation:read', async ({ conversationId }: { conversationId: string }) => {
@@ -443,6 +470,7 @@ export function initSocketServer(httpServer: HttpServer) {
 
     socket.on('disconnect', async () => {
       clearSocketRateLimits(socket.id);
+      viewingBySocket.delete(socket.id);
       const set = onlineUsers.get(userId);
       if (!set) return;
       set.delete(socket.id);
