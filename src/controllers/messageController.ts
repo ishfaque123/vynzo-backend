@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
 import { prisma } from '../config/prisma';
-import { getOrCreateConversation, listConversations, getMessages, deleteConversation, setDisappearingDuration, sendTextMessage } from '../services/messageService';
+import { getOrCreateConversation, listConversations, listMessageRequests, countMessageRequests, acceptMessageRequest, getMessages, deleteConversation, setDisappearingDuration, sendTextMessage } from '../services/messageService';
 import { isUserOnline, emitToConversation, pushNewMessage } from '../socket/socketServer';
 
 export async function listConversationsHandler(req: Request, res: Response, next: NextFunction) {
@@ -31,12 +31,55 @@ export async function createConversationHandler(req: Request, res: Response, nex
   }
 }
 
+export async function listMessageRequestsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const requests = await listMessageRequests(req.user!.id);
+    const withPresence = requests.map((c) => ({
+      ...c,
+      otherUser: c.otherUser
+        ? { ...c.otherUser, isOnline: c.otherUser.showOnlineStatus === false ? false : isUserOnline(c.otherUser.id) }
+        : null,
+    }));
+    sendSuccess(res, withPresence);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function messageRequestCountHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const count = await countMessageRequests(req.user!.id);
+    sendSuccess(res, { count });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function acceptMessageRequestHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+    const result = await acceptMessageRequest(req.user!.id, id);
+    sendSuccess(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getMessagesHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
     const cursor = req.query.cursor as string | undefined;
-    const messages = await getMessages(req.user!.id, id, cursor);
-    sendSuccess(res, messages);
+    const data = await getMessages(req.user!.id, id, cursor);
+    const shaped = data.otherUser
+      ? {
+          ...data,
+          otherUser: {
+            ...data.otherUser,
+            isOnline: data.otherUser.showOnlineStatus === false ? false : isUserOnline(data.otherUser.id),
+          },
+        }
+      : data;
+    sendSuccess(res, shaped);
   } catch (err) {
     next(err);
   }

@@ -39,26 +39,53 @@ export async function getOrCreateConversation(userId: string, otherUserId: strin
 
   if (existing && existing.participants.length === 2) return existing;
 
+  // Message requests: a brand-new conversation is a "request" for the
+  // recipient when the recipient does not follow the sender. Until the
+  // recipient accepts, it stays out of their inbox, they cannot reply,
+  // and nothing in it is ever marked read for them. People the recipient
+  // follows land directly in the inbox.
+  const recipientFollowsSender = await prisma.follow.findUnique({
+    where: { followerId_followingId: { followerId: otherUserId, followingId: userId } },
+  });
+
+  // The disappearing timer for a new conversation comes from the
+  // INITIATOR's account-level default (Messages Settings). The column
+  // default (86400) preserves the previous product behaviour — ON at
+  // 24 hours, owner decision 2026-11-22 — for users who never set it;
+  // a stored null means the user chose Off.
+  const initiator = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { defaultDisappearingDuration: true },
+  });
+
   return prisma.conversation.create({
     data: {
       isGroup: false,
-      // Owner decision (2026-11-22, supersedes 2026-10-23): disappearing
-      // messages are ON by default at 24 hours for every conversation.
-      // The 1-hour option was removed. Either participant can still
-      // change the duration or turn it off per chat.
-      disappearingDuration: 86400,
-      participants: { create: [{ userId }, { userId: otherUserId }] },
+      disappearingDuration: initiator ? initiator.defaultDisappearingDuration : 86400,
+      participants: {
+        create: [
+          { userId, requestStatus: 'accepted' },
+          { userId: otherUserId, requestStatus: recipientFollowsSender ? 'accepted' : 'pending' },
+        ],
+      },
     },
     include: { participants: true },
   });
 }
 
-export async function listConversations(userId: string) {
+async function listConversationsScoped(userId: string, scope: 'inbox' | 'requests') {
   const conversations = await prisma.conversation.findMany({
-    where: { participants: { some: { userId } } },
+    where: {
+      participants: {
+        some:
+          scope === 'requests'
+            ? { userId, requestStatus: 'pending' }
+            : { userId, requestStatus: { not: 'pending' } },
+      },
+    },
     orderBy: { updatedAt: 'desc' },
     include: {
-      participants: { include: { user: { select: userSelect } } },
+      participants: { include: { user: { select: { ...userSelect, readReceiptsEnabled: true } } } },
       // Never surface a message the user deleted for themselves, and never
       // let a "deleted for everyone" message leak its original content into
       // the inbox preview.
@@ -95,14 +122,23 @@ export async function listConversations(userId: string) {
 
     let lastMessageStatus: 'sent' | 'delivered' | 'read' | null = null;
     if (lastMessage && lastMessage.senderId === userId) {
-      if (other?.lastReadAt && other.lastReadAt >= lastMessage.createdAt) lastMessageStatus = 'read';
+      // Read receipts off: the other user never shows as "read" — the
+      // status caps at delivered, matching what their chat screen shows.
+      const otherReadAt = other?.user?.readReceiptsEnabled === false ? null : other?.lastReadAt;
+      if (otherReadAt && otherReadAt >= lastMessage.createdAt) lastMessageStatus = 'read';
       else if (other?.lastDeliveredAt && other.lastDeliveredAt >= lastMessage.createdAt) lastMessageStatus = 'delivered';
       else lastMessageStatus = 'sent';
     }
 
-    const otherUserShaped = other?.user
-      ? { ...other.user, lastActiveAt: other.user.showOnlineStatus === false ? null : other.user.lastActiveAt }
-      : null;
+    let otherUserShaped = null;
+    if (other?.user) {
+      const fields: any = { ...other.user };
+      delete fields.readReceiptsEnabled;
+      otherUserShaped = {
+        ...fields,
+        lastActiveAt: other.user.showOnlineStatus === false ? null : other.user.lastActiveAt,
+      };
+    }
 
     return {
       id: c.id,
@@ -116,6 +152,35 @@ export async function listConversations(userId: string) {
       updatedAt: c.updatedAt,
     };
   });
+}
+
+/** Main inbox: every conversation except unaccepted message requests. */
+export async function listConversations(userId: string) {
+  return listConversationsScoped(userId, 'inbox');
+}
+
+/** Message requests: conversations where the viewer's side is still pending. */
+export async function listMessageRequests(userId: string) {
+  return listConversationsScoped(userId, 'requests');
+}
+
+export async function countMessageRequests(userId: string) {
+  return prisma.conversationParticipant.count({ where: { userId, requestStatus: 'pending' } });
+}
+
+/** Accept a message request: the recipient's side becomes a normal conversation. */
+export async function acceptMessageRequest(userId: string, conversationId: string) {
+  const participant = await prisma.conversationParticipant.findUnique({
+    where: { conversationId_userId: { conversationId, userId } },
+  });
+  if (!participant) throw new ApiError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found.');
+  if (participant.requestStatus !== 'pending') return { accepted: true };
+  const now = new Date();
+  await prisma.conversationParticipant.update({
+    where: { id: participant.id },
+    data: { requestStatus: 'accepted', lastReadAt: now, lastDeliveredAt: now },
+  });
+  return { accepted: true };
 }
 
 export async function getMessages(userId: string, conversationId: string, cursor?: string, limit = 30) {
@@ -151,10 +216,39 @@ export async function getMessages(userId: string, conversationId: string, cursor
       : { ...m, isDeleted: false }
   );
 
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { disappearingDuration: true },
+  });
+  const otherUserRow = other
+    ? await prisma.user.findUnique({
+        where: { id: other.userId },
+        select: { ...userSelect, readReceiptsEnabled: true },
+      })
+    : null;
+
+  // Read receipts off: the other user's read watermark is never exposed,
+  // so no surface (ticks, statuses) can show them as having read.
+  const otherReceiptsEnabled = otherUserRow ? (otherUserRow as any).readReceiptsEnabled !== false : true;
+
+  let otherUser = null;
+  if (otherUserRow) {
+    const fields: any = { ...otherUserRow };
+    delete fields.readReceiptsEnabled;
+    fields.lastActiveAt = fields.showOnlineStatus === false ? null : fields.lastActiveAt;
+    otherUser = fields;
+  }
+
   return {
     messages: shaped,
-    otherLastReadAt: other?.lastReadAt || null,
+    otherLastReadAt: otherReceiptsEnabled ? other?.lastReadAt || null : null,
     otherLastDeliveredAt: other?.lastDeliveredAt || null,
+    otherUser,
+    disappearingDuration: conversation?.disappearingDuration ?? null,
+    // True when the VIEWER's side of this conversation is an unaccepted
+    // message request: the chat screen swaps the composer for the
+    // Accept/Delete bar and never marks the conversation read.
+    viewerRequestPending: participant.requestStatus === 'pending',
   };
 }
 
@@ -404,6 +498,9 @@ export async function sendTextMessage(userId: string, conversationId: string, co
   });
   if (!isParticipantRow) {
     throw new ApiError(403, 'NOT_A_PARTICIPANT', 'You are not a participant of this conversation.');
+  }
+  if (isParticipantRow.requestStatus === 'pending') {
+    throw new ApiError(403, 'REQUEST_NOT_ACCEPTED', 'Accept the message request before replying.');
   }
 
   const otherParticipant = await prisma.conversationParticipant.findFirst({

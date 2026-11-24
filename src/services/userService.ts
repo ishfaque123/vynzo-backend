@@ -64,6 +64,10 @@ export function toPrivateProfile(user: any) {
     messagePermission: user.messagePermission,
     tagPermission: user.tagPermission,
     showOnlineStatus: user.showOnlineStatus,
+    readReceiptsEnabled: user.readReceiptsEnabled !== false,
+    defaultDisappearingDuration:
+      user.defaultDisappearingDuration === undefined ? 86400 : user.defaultDisappearingDuration,
+    chatWallpaper: user.chatWallpaper ?? null,
     isPrivate: user.isPrivate,
     usernameChangedAt: user.usernameChangedAt,
     displayNameChangedAt: user.displayNameChangedAt,
@@ -162,8 +166,10 @@ export async function getPublicProfileByUsername(username: string, currentUserId
 
   return toPublicProfile(user, friendStatus, {
     isSelf: Boolean(currentUserId) && currentUserId === user.id,
-    isOnline: isUserOnline(user.id),
-    lastActiveAt: user.lastActiveAt,
+    // Online status setting: a user who turned it off appears offline and
+    // shows no last-seen time on their public profile.
+    isOnline: user.showOnlineStatus === false ? false : isUserOnline(user.id),
+    lastActiveAt: user.showOnlineStatus === false ? null : user.lastActiveAt,
     ...blockStatus,
     mutualFollowers: mutual.mutuals,
     mutualCount: mutual.count,

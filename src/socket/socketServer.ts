@@ -155,10 +155,22 @@ export function initSocketServer(httpServer: HttpServer) {
     const conversationIds = participants.map((p) => p.conversationId);
     conversationIds.forEach((id) => socket.join(`conversation:${id}`));
 
+    // Online status setting: a user who turned it off never broadcasts
+    // presence — no "online" on connect and no "offline / last seen" on
+    // disconnect. (Delivered watermarks below are a separate mechanism
+    // and keep working either way.)
+    const presenceRow = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { showOnlineStatus: true },
+    });
+    const presenceHidden = presenceRow?.showOnlineStatus === false;
+
     if (onlineUsers.get(userId)!.size === 1) {
-      conversationIds.forEach((id) => {
-        socket.to(`conversation:${id}`).emit('presence:online', { userId });
-      });
+      if (!presenceHidden) {
+        conversationIds.forEach((id) => {
+          socket.to(`conversation:${id}`).emit('presence:online', { userId });
+        });
+      }
 
       const deliveredAt = new Date();
       await prisma.conversationParticipant.updateMany({
@@ -218,6 +230,13 @@ export function initSocketServer(httpServer: HttpServer) {
         });
         if (!isParticipantRow) {
           if (ack) ack({ success: false, error: 'NOT_A_PARTICIPANT' });
+          return;
+        }
+        // The recipient of an unaccepted message request cannot reply
+        // until they accept it. (The sender's side is always accepted,
+        // so their messages into the request are unaffected.)
+        if (isParticipantRow.requestStatus === 'pending') {
+          if (ack) ack({ success: false, error: 'REQUEST_NOT_ACCEPTED' });
           return;
         }
 
@@ -461,11 +480,28 @@ export function initSocketServer(httpServer: HttpServer) {
 
     socket.on('conversation:read', async ({ conversationId }: { conversationId: string }) => {
       if (!conversationId) return;
-      if (!(await isParticipant(conversationId, userId))) return;
+      const me = await prisma.conversationParticipant.findUnique({
+        where: { conversationId_userId: { conversationId, userId } },
+        select: { requestStatus: true },
+      });
+      if (!me) return;
+      // An unaccepted message request is never marked read: opening it
+      // must not move the recipient's watermark or tell the sender.
+      if (me.requestStatus === 'pending') return;
 
       const readAt = new Date();
       await prisma.conversationParticipant.updateMany({ where: { conversationId, userId }, data: { lastReadAt: readAt, lastDeliveredAt: readAt } });
-      socket.to(`conversation:${conversationId}`).emit('conversation:read', { conversationId, userId, readAt });
+
+      // Read receipts off: the watermark still moves (the reader's own
+      // unread counts depend on it) but the read is never broadcast, so
+      // the other side's ticks stay at delivered.
+      const meUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { readReceiptsEnabled: true },
+      });
+      if (meUser?.readReceiptsEnabled !== false) {
+        socket.to(`conversation:${conversationId}`).emit('conversation:read', { conversationId, userId, readAt });
+      }
     });
 
     socket.on('disconnect', async () => {
@@ -477,9 +513,11 @@ export function initSocketServer(httpServer: HttpServer) {
       if (set.size === 0) {
         onlineUsers.delete(userId);
         await prisma.user.update({ where: { id: userId }, data: { lastActiveAt: new Date() } }).catch(() => {});
-        conversationIds.forEach((id) => {
-          socket.to(`conversation:${id}`).emit('presence:offline', { userId, lastActiveAt: new Date() });
-        });
+        if (!presenceHidden) {
+          conversationIds.forEach((id) => {
+            socket.to(`conversation:${id}`).emit('presence:offline', { userId, lastActiveAt: new Date() });
+          });
+        }
       }
     });
   });

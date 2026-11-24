@@ -32,6 +32,26 @@ export const profileUpdateSchema = z.object({
   messagePermission: z.enum(['everyone', 'followers', 'none']).optional(),
   tagPermission: z.enum(['everyone', 'followers', 'none']).optional(),
   showOnlineStatus: z.boolean().optional(),
+  readReceiptsEnabled: z.boolean().optional(),
+  // Account-level default disappearing timer for NEW conversations:
+  // null = Off, otherwise one of 24 hours / 7 days / 90 days (seconds).
+  defaultDisappearingDuration: z
+    .union([z.literal(86400), z.literal(604800), z.literal(7776000)])
+    .nullable()
+    .optional(),
+  // Chat wallpaper: either a preset key from the shared preset list or the
+  // URL of an image the user uploaded through the chat media upload path.
+  chatWallpaper: z
+    .string()
+    .max(500)
+    .refine(
+      (v) =>
+        ['default', 'beige', 'green', 'blue', 'pink', 'dark', 'dusk', 'ocean', 'dots'].includes(v) ||
+        v.includes('/chat-media/'),
+      'Invalid chat wallpaper.'
+    )
+    .nullable()
+    .optional(),
   isPrivate: z.boolean().optional(),
   publicKey: z.string().max(2000).optional(),
   category: z.enum(['Personal', 'Video Creator', 'Business', 'Artist', 'Public Figure', 'Other']).nullable().optional(),
