@@ -295,18 +295,46 @@ export async function updateProfile(userId: string, data: any) {
   return prisma.user.update({ where: { id: userId }, data: updateData });
 }
 
+function searchMatchRank(user: { username: string | null; displayName: string | null }, normalizedQuery: string): number {
+  const username = (user.username || '').toLowerCase();
+  const displayName = (user.displayName || '').toLowerCase();
+  if (username === normalizedQuery) return 0;
+  if (displayName === normalizedQuery) return 1;
+  if (username.startsWith(normalizedQuery)) return 2;
+  if (displayName.startsWith(normalizedQuery)) return 3;
+  return 4;
+}
+
 export async function searchUsers(query: string, currentUserId?: string) {
-  const users = await prisma.user.findMany({
+  const candidates = await prisma.user.findMany({
     where: { OR: [{ username: { contains: query } }, { displayName: { contains: query } }] },
-    take: 20,
+    take: 100,
   });
 
-  if (!currentUserId || users.length === 0) {
-    return users
-      .sort((a, b) => Number(b.isVerified ?? false) - Number(a.isVerified ?? false))
+  const normalizedQuery = query.trim().toLowerCase();
+  const candidateIds = candidates.map((u) => u.id);
+  const followerCountRows = candidateIds.length
+    ? await prisma.follow.groupBy({
+        by: ['followingId'],
+        where: { followingId: { in: candidateIds } },
+        _count: { _all: true },
+      })
+    : [];
+  const followerCounts = new Map(followerCountRows.map((row) => [row.followingId, row._count._all]));
+
+  const bySearchRank = (a: (typeof candidates)[number], b: (typeof candidates)[number]) =>
+    searchMatchRank(a, normalizedQuery) - searchMatchRank(b, normalizedQuery) ||
+    (followerCounts.get(b.id) ?? 0) - (followerCounts.get(a.id) ?? 0) ||
+    Number(b.isVerified ?? false) - Number(a.isVerified ?? false);
+
+  if (!currentUserId || candidates.length === 0) {
+    return candidates
+      .sort(bySearchRank)
+      .slice(0, 20)
       .map((u) => toPublicProfile(u));
   }
 
+  const users = candidates;
   const userIds = users.map((u) => u.id);
 
   const [blockedUsers, followingRows, followerRows] = await Promise.all([
@@ -337,7 +365,8 @@ export async function searchUsers(query: string, currentUserId?: string) {
 
   return users
     .filter((user) => !blockedIds.has(user.id))
-    .sort((a, b) => Number(b.isVerified ?? false) - Number(a.isVerified ?? false))
+    .sort(bySearchRank)
+    .slice(0, 20)
     .map((user) => {
       const friendStatus =
         user.id === currentUserId
