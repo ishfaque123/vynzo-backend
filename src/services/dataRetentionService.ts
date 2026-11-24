@@ -12,9 +12,18 @@ import { prisma } from '../config/prisma';
 //   - device_sessions whose expiry has passed (added 2026-10-22 on the
 //     owner's order; an expired session is already unusable per
 //     getDeviceSession, and its account_sessions cascade-delete)
-//   - device_sessions not used for 7 days (added 2026-11-21 on the
-//     owner's order: idle / logged-out device data clears itself after
-//     7 days; a returning device simply gets a fresh session)
+//
+// Device sessions are NEVER deleted for being idle. An unexpired
+// device_sessions row is still a valid login — getDeviceSession and
+// getOrCreateDeviceSession only ever test expiresAt — and deleting one
+// cascade-deletes its account_sessions, which makes auth reject the
+// user's token as SESSION_REVOKED: a user who never logged out is
+// silently signed out (the blank-blue-screen bug, 2026-11-24). Owner
+// ruling 2026-11-24: the 7-day cleanup ordered on 2026-11-21 was only
+// ever meant for devices that are ALREADY logged out; a still-logged-in
+// device's session must never be removed and nobody may be logged out
+// by this sweep. The Devices list's "last 7 days" view is a read-level
+// filter in deviceService.listDevices and is unaffected by this sweep.
 //
 // It NEVER touches real content: posts, comments, reels, users, follows,
 // likes, messages, or view rows (post_views / reel_views are the source of
@@ -29,7 +38,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const PING_RETENTION_MS = 7 * DAY_MS;
 const NOTIFICATION_RETENTION_MS = 30 * DAY_MS;
 const AUTH_LOG_RETENTION_MS = 30 * DAY_MS;
-const DEVICE_IDLE_RETENTION_MS = 7 * DAY_MS;
 const DISK_WARN_MB = 3500;
 
 export interface RetentionResult {
@@ -93,14 +101,14 @@ export async function runDataRetention(): Promise<RetentionResult> {
     }),
   );
 
+  // Only expired device sessions are removed. An expired row is an
+  // already-ended session: getDeviceSession returns null for it, so it
+  // can never authenticate again and deleting it signs nobody out.
+  // Idle-but-unexpired rows are live logins and are kept no matter how
+  // long the device has been away (owner ruling 2026-11-24, above).
   const deviceSessions = await safeDelete('device_sessions', () =>
     prisma.deviceSession.deleteMany({
-      where: {
-        OR: [
-          { expiresAt: { lt: new Date(now) } },
-          { lastUsedAt: { lt: new Date(now - DEVICE_IDLE_RETENTION_MS) } },
-        ],
-      },
+      where: { expiresAt: { lt: new Date(now) } },
     }),
   );
 

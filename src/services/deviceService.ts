@@ -37,8 +37,11 @@ export async function listDevices(userId: string, currentDeviceSessionId?: strin
   });
 
   // Owner rule (2026-11-21): the list shows only devices used within the
-  // last 7 days (plus the current device and unexpired sessions) — idle
-  // device data is deleted by the daily retention sweep after 7 days.
+  // last 7 days (plus the current device and unexpired sessions). This
+  // is a display filter only — the retention sweep never deletes an
+  // unexpired session, so a device hidden by this filter is still
+  // signed in and returns exactly as it left (owner clarification
+  // 2026-11-24).
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const nowDate = new Date();
   const visible = accountSessions.filter((acc) => {
