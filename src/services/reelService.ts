@@ -1176,6 +1176,28 @@ export async function getReelById(reelId: string, currentUserId: string) {
   };
 }
 
+// Public single-reel fetch for link previews (GET /api/reels/:id/public).
+// No login — WhatsApp / Telegram / Facebook crawlers fetch with no
+// credentials. Fail closed, mirroring the post page's getSeedablePost
+// rule: only a reel whose author is NOT private is returned, and only
+// the fields a preview needs. Anything else is a 404, exactly like a
+// missing reel, so private content can never leak through this route.
+export async function getPublicReelById(reelId: string) {
+  const reel = await prisma.reel.findUnique({
+    where: { id: reelId },
+    include: { user: true },
+  });
+  if (!reel || reel.user.isPrivate) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
+  return {
+    id: reel.id,
+    caption: reel.caption,
+    thumbnailUrl: reel.thumbnailUrl,
+    videoUrl: reel.videoUrl,
+    createdAt: reel.createdAt,
+    author: { id: reel.user.id, username: reel.user.username, displayName: (reel.user.displayName || '').trim(), profilePictureUrl: reel.user.profilePictureUrl, isVerified: reel.user.isVerified },
+  };
+}
+
 export async function getReelsByUsername(username: string, currentUserId: string) {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');

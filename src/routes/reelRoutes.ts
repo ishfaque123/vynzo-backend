@@ -10,6 +10,7 @@ import {
   getMyFavoriteReelsHandler,
   getReelsByUsernameHandler,
   getReelByIdHandler,
+  getPublicReelByIdHandler,
   deleteReelHandler,
   getMyReelStatusHandler,
   addReelCommentHandler,
@@ -31,6 +32,7 @@ router.get('/', authMiddleware, getReelFeedHandler);
 router.get('/me/status', authMiddleware, getMyReelStatusHandler);
 router.get('/me/favorites', authMiddleware, getMyFavoriteReelsHandler);
 router.get('/user/:username', authMiddleware, getReelsByUsernameHandler);
+router.get('/:id/public', getPublicReelByIdHandler);
 router.get('/:id', authMiddleware, getReelByIdHandler);
 router.post('/', authMiddleware, reelUpload.fields([{ name: 'video', maxCount: 1 }, { name: 'cover', maxCount: 1 }]), createReelHandler);
 router.post('/:id/like', authMiddleware, toggleReelLikeHandler);
