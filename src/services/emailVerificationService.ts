@@ -10,7 +10,7 @@ const MAX_ATTEMPTS = 5;
 // without them a script can burn the whole day's quota in minutes and take
 // email login/signup down for everyone.
 const DAILY_LIMIT_PER_EMAIL = 5;
-const DAILY_LIMIT_GLOBAL = 70;
+const DAILY_LIMIT_GLOBAL = 100;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function normalizeEmail(email: string) {
