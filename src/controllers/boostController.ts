@@ -3,7 +3,7 @@ import { PostBoostStatus } from '@prisma/client';
 import { prisma } from '../config/prisma';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../middleware/errorHandler';
-import { createBoostRequest, getBoostConfigForUser, getMyBoosts, boostDisplayStatus } from '../services/boostService';
+import { createBoostRequest, getBoostConfigForUser, getMyBoosts, boostDisplayStatus, recordBoostLinkClick } from '../services/boostService';
 import { createNotification } from '../services/notificationService';
 
 // User-facing handlers are thin wrappers over boostService; the admin
@@ -29,6 +29,17 @@ export async function getMyBoostsHandler(req: Request, res: Response, next: Next
   try {
     const boosts = await getMyBoosts(req.user!.id);
     sendSuccess(res, { boosts });
+  } catch (err) { next(err); }
+}
+
+// Record one click on a live boost's link button. The frontend fires
+// this (fire-and-forget) from the Learn More / Shop Now / Order Now
+// button before opening the link; a repeat click by the same viewer
+// within the hour is simply not counted (see recordBoostLinkClick).
+export async function recordBoostLinkClickHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await recordBoostLinkClick(req.params.id, req.user!.id);
+    sendSuccess(res, result);
   } catch (err) { next(err); }
 }
 
@@ -99,6 +110,8 @@ export async function listAdminBoostRequests(req: Request, res: Response, next: 
           reviewedAt: true,
           startsAt: true,
           endsAt: true,
+          linkClicks: true,
+          clickCap: true,
           createdAt: true,
           user: {
             select: {
@@ -210,6 +223,8 @@ export async function reviewAdminBoostRequest(req: Request, res: Response, next:
           reviewedAt: true,
           startsAt: true,
           endsAt: true,
+          linkClicks: true,
+          clickCap: true,
           createdAt: true,
           updatedAt: true,
         },

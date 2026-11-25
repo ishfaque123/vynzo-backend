@@ -41,9 +41,16 @@ const boostSelect = {
   reviewedAt: true,
   startsAt: true,
   endsAt: true,
+  linkClicks: true,
+  clickCap: true,
   createdAt: true,
   updatedAt: true,
 } as const;
+
+// Click cap bounds (owner order 2026-11-25): a Business Promotion
+// boost may end after 1–100,000 link clicks. Null = no cap.
+const BOOST_CLICK_CAP_MIN = 1;
+const BOOST_CLICK_CAP_MAX = 100000;
 
 // An approved boost whose window has ended reads as "expired" everywhere
 // without needing a background job to flip the stored status.
@@ -103,7 +110,7 @@ export async function createBoostRequest(
   input: {
     contentType?: unknown; postId?: unknown; reelId?: unknown; purpose?: unknown;
     planDays?: unknown; dailyBudget?: unknown; days?: unknown;
-    linkUrl?: unknown; buttonText?: unknown;
+    linkUrl?: unknown; buttonText?: unknown; clickCap?: unknown;
     paymentMethod?: unknown; transactionId?: unknown; screenshotUrl?: unknown;
   }
 ) {
@@ -156,6 +163,7 @@ export async function createBoostRequest(
   // purposes any link/button sent by the client is dropped.
   let linkUrl: string | null = null;
   let buttonText: string | null = null;
+  let clickCap: number | null = null;
   if (purpose.id === 'business_promotion') {
     const rawLink = typeof input.linkUrl === 'string' ? input.linkUrl.trim() : '';
     if (rawLink) {
@@ -168,6 +176,16 @@ export async function createBoostRequest(
       }
       linkUrl = rawLink;
       buttonText = rawButton;
+      // Optional click cap (owner order 2026-11-25): end the boost
+      // automatically once it reaches this many link clicks. Only
+      // meaningful with a link — without one the cap is dropped.
+      if (input.clickCap !== null && input.clickCap !== undefined && input.clickCap !== '') {
+        const cap = typeof input.clickCap === 'number' ? input.clickCap : Number(input.clickCap);
+        if (!Number.isInteger(cap) || cap < BOOST_CLICK_CAP_MIN || cap > BOOST_CLICK_CAP_MAX) {
+          throw new ApiError(400, 'INVALID_BOOST_CLICK_CAP', 'Enter a click limit between 1 and 100,000, or leave it empty for no limit.');
+        }
+        clickCap = cap;
+      }
     }
   }
 
@@ -278,6 +296,7 @@ export async function createBoostRequest(
       dailyBudget,
       linkUrl,
       buttonText,
+      clickCap,
       paymentMethod: method.id,
       transactionId: transactionId || null,
       screenshotUrl,
@@ -292,19 +311,27 @@ export async function createBoostRequest(
 // running: content views recorded inside the window (post_views /
 // reel_views rows, both carry a created_at timestamp) plus new
 // followers gained inside the window (follows.created_at where
-// followingId = the boost owner). Only approved boosts have a window;
-// pending and rejected boosts return null. Counts are single indexed
-// lookups (post_views.post_id, reel_views.reel_id, follows.following_id)
-// and run only for the requesting user's own boosts.
+// followingId = the boost owner). Clicks come from the stored
+// linkClicks counter — clicks are only recorded while the boost is
+// live, so the counter is already the window count. Only approved
+// boosts have a window; pending and rejected boosts return null.
+// Counts are single indexed lookups (post_views.post_id,
+// reel_views.reel_id, follows.following_id) and run only for the
+// requesting user's own boosts.
 async function getBoostResults(
   boost: {
     status: PostBoostStatus; contentType: string;
     postId: string | null; reelId: string | null;
     startsAt: Date | null; endsAt: Date | null;
+    linkClicks: number;
   },
   userId: string,
-): Promise<{ views: number | null; followers: number } | null> {
-  if (boost.status !== PostBoostStatus.approved || !boost.startsAt) return null;
+): Promise<{ views: number | null; followers: number; clicks: number } | null> {
+  // 'expired' is included: a boost ended by its click cap has stored
+  // status 'expired' (endsAt = when the cap was hit) and its results
+  // must stay visible. Pending/rejected boosts have no window
+  // (startsAt null) and still return null.
+  if ((boost.status !== PostBoostStatus.approved && boost.status !== PostBoostStatus.expired) || !boost.startsAt) return null;
   const window = { gte: boost.startsAt, lt: boost.endsAt ?? new Date() };
   const [views, followers] = await Promise.all([
     boost.contentType === 'reel'
@@ -316,7 +343,82 @@ async function getBoostResults(
           : Promise.resolve<number | null>(null)),
     prisma.follow.count({ where: { followingId: userId, createdAt: window } }),
   ]);
-  return { views, followers };
+  return { views, followers, clicks: boost.linkClicks };
+}
+
+// Record one click on a live boost's link button (POST
+// /api/boosts/:id/click, any logged-in viewer). One counted click per
+// viewer per boost per hour — the unique index on boost_link_clicks
+// (boostId, viewerId, hourBucket) makes the guard race-safe: a repeat
+// click inside the hour inserts nothing and the counter does not move.
+// When the counter reaches the boost's clickCap (if set), the boost
+// ends immediately: stored status becomes 'expired' and endsAt = now,
+// so the feed stops serving it at once. Returns whether the click was
+// counted, the new total, and whether the cap ended the boost.
+export async function recordBoostLinkClick(
+  boostId: string,
+  viewerId: string,
+): Promise<{ counted: boolean; clicks: number; ended: boolean }> {
+  const boost = await prisma.postBoost.findUnique({
+    where: { id: boostId },
+    select: { id: true, status: true, startsAt: true, endsAt: true, linkClicks: true },
+  });
+  if (!boost) throw new ApiError(404, 'BOOST_NOT_FOUND', 'Boost not found.');
+
+  const now = new Date();
+  const live = boost.status === PostBoostStatus.approved
+    && !!boost.startsAt && boost.startsAt <= now
+    && (!boost.endsAt || boost.endsAt > now);
+  if (!live) {
+    throw new ApiError(409, 'BOOST_NOT_LIVE', 'This boost is no longer running.');
+  }
+
+  const hourBucket = Math.floor(now.getTime() / 3_600_000);
+
+  return prisma.$transaction(async (tx) => {
+    try {
+      await tx.boostLinkClick.create({ data: { boostId, viewerId, hourBucket } });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        // Same viewer clicked this boost within the hour — not counted.
+        const current = await tx.postBoost.findUnique({ where: { id: boostId }, select: { linkClicks: true } });
+        return { counted: false, clicks: current?.linkClicks ?? boost.linkClicks, ended: false };
+      }
+      throw err;
+    }
+
+    // Count only if the boost is still live at this instant (a boost
+    // that ended between the check above and this write loses the
+    // click instead of counting past its end).
+    const inc = await tx.postBoost.updateMany({
+      where: {
+        id: boostId,
+        status: PostBoostStatus.approved,
+        startsAt: { lte: now },
+        endsAt: { gt: now },
+      },
+      data: { linkClicks: { increment: 1 } },
+    });
+    if (inc.count !== 1) {
+      return { counted: false, clicks: boost.linkClicks, ended: true };
+    }
+
+    const current = await tx.postBoost.findUnique({
+      where: { id: boostId },
+      select: { linkClicks: true, clickCap: true },
+    });
+    const clicks = current?.linkClicks ?? boost.linkClicks + 1;
+
+    let ended = false;
+    if (current?.clickCap !== null && current?.clickCap !== undefined && clicks >= current.clickCap) {
+      const endResult = await tx.postBoost.updateMany({
+        where: { id: boostId, status: PostBoostStatus.approved },
+        data: { status: PostBoostStatus.expired, endsAt: now },
+      });
+      ended = endResult.count === 1;
+    }
+    return { counted: true, clicks, ended };
+  });
 }
 
 export async function getMyBoosts(userId: string) {
@@ -377,6 +479,7 @@ export async function getActiveBoostReelIds(reelIds?: string[]): Promise<Set<str
 // ---- Boost v2 read helpers (owner-approved design 2026-11-18) ----
 
 export interface ActiveBoostInfo {
+  boostId: string;
   purpose: string;
   linkUrl: string | null;
   buttonText: string | null;
@@ -386,7 +489,9 @@ export interface ActiveBoostInfo {
 // feeds and single-content reads use this to attach the boost button:
 // Followers Gain boosts carry a Follow button, Business Promotion
 // boosts with a link carry that link as a button, Views Gain boosts
-// carry no button (see boostButtonFor).
+// carry no button (see boostButtonFor). The boost id rides along so
+// the button can record the click (POST /api/boosts/:id/click) before
+// opening the link.
 export async function getActiveBoostPostInfo(postIds: string[]): Promise<Map<string, ActiveBoostInfo>> {
   const map = new Map<string, ActiveBoostInfo>();
   if (postIds.length === 0) return map;
@@ -399,12 +504,12 @@ export async function getActiveBoostPostInfo(postIds: string[]): Promise<Map<str
       endsAt: { gt: now },
       postId: { in: postIds },
     },
-    select: { postId: true, purpose: true, linkUrl: true, buttonText: true },
+    select: { id: true, postId: true, purpose: true, linkUrl: true, buttonText: true },
     orderBy: { endsAt: 'asc' },
   });
   for (const r of rows) {
     if (r.postId && !map.has(r.postId)) {
-      map.set(r.postId, { purpose: r.purpose, linkUrl: r.linkUrl, buttonText: r.buttonText });
+      map.set(r.postId, { boostId: r.id, purpose: r.purpose, linkUrl: r.linkUrl, buttonText: r.buttonText });
     }
   }
   return map;
@@ -422,12 +527,12 @@ export async function getActiveBoostReelInfo(reelIds: string[]): Promise<Map<str
       endsAt: { gt: now },
       reelId: { in: reelIds },
     },
-    select: { reelId: true, purpose: true, linkUrl: true, buttonText: true },
+    select: { id: true, reelId: true, purpose: true, linkUrl: true, buttonText: true },
     orderBy: { endsAt: 'asc' },
   });
   for (const r of rows) {
     if (r.reelId && !map.has(r.reelId)) {
-      map.set(r.reelId, { purpose: r.purpose, linkUrl: r.linkUrl, buttonText: r.buttonText });
+      map.set(r.reelId, { boostId: r.id, purpose: r.purpose, linkUrl: r.linkUrl, buttonText: r.buttonText });
     }
   }
   return map;
@@ -438,11 +543,11 @@ export async function getActiveBoostReelInfo(reelIds: string[]): Promise<Map<str
 // Business Promotion with a link, and nothing otherwise.
 export function boostButtonFor(
   info?: ActiveBoostInfo | null,
-): { type: 'follow' } | { type: 'link'; url: string; text: string } | null {
+): { type: 'follow' } | { type: 'link'; url: string; text: string; boostId: string } | null {
   if (!info) return null;
   if (info.purpose === 'followers_gain') return { type: 'follow' };
   if (info.purpose === 'business_promotion' && info.linkUrl) {
-    return { type: 'link', url: info.linkUrl, text: info.buttonText || 'Learn More' };
+    return { type: 'link', url: info.linkUrl, text: info.buttonText || 'Learn More', boostId: info.boostId };
   }
   return null;
 }

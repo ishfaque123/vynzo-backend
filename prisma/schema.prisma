@@ -1009,18 +1009,43 @@ model PostBoost {
   reviewedAt    DateTime?            @map("reviewed_at")
   startsAt      DateTime?            @map("starts_at")
   endsAt        DateTime?            @map("ends_at")
+  // Link-click tracking (owner order 2026-11-25): counted clicks on
+  // the boost's link button. clickCap ends the boost automatically
+  // once linkClicks reaches it; null means no cap (time-only run).
+  linkClicks    Int                  @default(0) @map("link_clicks")
+  clickCap      Int?                 @map("click_cap")
   createdAt     DateTime             @default(now()) @map("created_at")
   updatedAt     DateTime             @updatedAt @map("updated_at")
 
   post Post? @relation(fields: [postId], references: [id], onDelete: Cascade)
   reel Reel? @relation(fields: [reelId], references: [id], onDelete: Cascade)
   user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clicks BoostLinkClick[]
 
   @@index([postId, status])
   @@index([reelId, status])
   @@index([userId, createdAt])
   @@index([status, endsAt])
   @@map("post_boosts")
+}
+
+// One counted link click on a boosted post/reel. The click endpoint
+// records at most one row per viewer per boost per hour (hourBucket =
+// floor(unixMillis / 3_600_000)); the unique index makes that guard
+// race-safe — a repeat click inside the hour inserts nothing and the
+// boost's linkClicks counter does not move.
+model BoostLinkClick {
+  id         String   @id @default(uuid())
+  boostId    String   @map("boost_id")
+  viewerId   String   @map("viewer_id")
+  hourBucket Int      @map("hour_bucket")
+  clickedAt  DateTime @default(now()) @map("clicked_at")
+
+  boost PostBoost @relation(fields: [boostId], references: [id], onDelete: Cascade)
+
+  @@unique([boostId, viewerId, hourBucket])
+  @@index([boostId, clickedAt])
+  @@map("boost_link_clicks")
 }
 
 // One row per PayFast hosted-checkout attempt (today: Blue Tick
