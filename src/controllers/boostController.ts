@@ -33,8 +33,8 @@ export async function getMyBoostsHandler(req: Request, res: Response, next: Next
 }
 
 // Record one click on a live boost's link button. The frontend fires
-// this (fire-and-forget) from the Learn More / Shop Now / Order Now
-// button before opening the link; a repeat click by the same viewer
+// this (fire-and-forget) from the Shop / Learn More / Order button
+// (or the user's own words) before opening the link; a repeat click by the same viewer
 // within the hour is simply not counted (see recordBoostLinkClick).
 export async function recordBoostLinkClickHandler(req: Request, res: Response, next: NextFunction) {
   try {

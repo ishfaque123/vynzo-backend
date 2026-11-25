@@ -4,7 +4,7 @@ import { ApiError } from '../middleware/errorHandler';
 import { env } from '../config/env';
 import { normalizeCountry } from '../utils/country';
 import {
-  BOOST_BUTTON_TEXTS, BOOST_CONTENT_TYPES, BOOST_COUNTRY_CODE, BOOST_DAILY_BUDGET, BOOST_DURATIONS, BOOST_ESTIMATE_FACTORS, BOOST_FIRST_BOOST_TRIAL, BOOST_MAX_ACTIVE_BOOSTS, BOOST_PAYMENT_DETAILS, BOOST_PLANS, BOOST_PURPOSES, BOOST_REPEAT_AFTER_HOURS, BOOST_V2_FIRST_BOOST_TRIAL,
+  BOOST_BUTTON_TEXTS, BOOST_BUTTON_TEXT_MAX_LENGTH, BOOST_CONTENT_TYPES, BOOST_COUNTRY_CODE, BOOST_DAILY_BUDGET, BOOST_DURATIONS, BOOST_ESTIMATE_FACTORS, BOOST_FIRST_BOOST_TRIAL, BOOST_MAX_ACTIVE_BOOSTS, BOOST_PAYMENT_DETAILS, BOOST_PLANS, BOOST_PURPOSES, BOOST_REPEAT_AFTER_HOURS, BOOST_V2_FIRST_BOOST_TRIAL,
   type BoostContentType, type BoostPurpose,
 } from '../config/boost';
 
@@ -47,8 +47,9 @@ const boostSelect = {
   updatedAt: true,
 } as const;
 
-// Click cap bounds (owner order 2026-11-25): a Business Promotion
-// boost may end after 1–100,000 link clicks. Null = no cap.
+// Click cap bounds (owner order 2026-11-25): a Clicks boost MUST end
+// after 1–100,000 link clicks — the cap is required, never optional.
+// Legacy Business Promotion rows keep whatever cap they had (or none).
 const BOOST_CLICK_CAP_MIN = 1;
 const BOOST_CLICK_CAP_MAX = 100000;
 
@@ -126,7 +127,7 @@ export async function createBoostRequest(
   }
 
   const purpose = BOOST_PURPOSES.find((p) => p.id === input.purpose);
-  if (!purpose) throw new ApiError(400, 'INVALID_BOOST_PURPOSE', 'Choose why you are boosting (followers, views or business promotion).');
+  if (!purpose) throw new ApiError(400, 'INVALID_BOOST_PURPOSE', 'Choose why you are boosting (followers, views or clicks).');
 
   // Boost v2 pricing (owner-approved design 2026-11-18): the user picks
   // a DAILY budget (Rs 100–1,000, steps of 50) and a duration (1/3/7/14
@@ -157,36 +158,50 @@ export async function createBoostRequest(
     baseAmountPkr = plan.amountPkr;
   }
 
-  // Optional business link + button (Boost v2): only for the Business
-  // Promotion purpose. The link shows on the boosted content as a
-  // button with the chosen text; no link means no button. For other
-  // purposes any link/button sent by the client is dropped.
+  // Clicks link + button + click target (owner decision 2026-11-25):
+  // a Clicks boost REQUIRES all three. The link shows on the boosted
+  // content as a button with the chosen text, and the boost ends
+  // automatically once it reaches the click target. Without a link
+  // there is no button and no click target, so a Clicks boost without
+  // one is just a Views boost under another name — that is why all
+  // three are required, not optional. For other purposes any
+  // link/button/cap sent by the client is dropped.
   let linkUrl: string | null = null;
   let buttonText: string | null = null;
   let clickCap: number | null = null;
-  if (purpose.id === 'business_promotion') {
+  if (purpose.id === 'clicks') {
     const rawLink = typeof input.linkUrl === 'string' ? input.linkUrl.trim() : '';
-    if (rawLink) {
-      if (rawLink.length > 500 || !/^https?:\/\/.+/i.test(rawLink)) {
-        throw new ApiError(400, 'INVALID_BOOST_LINK', 'Enter a valid link starting with http:// or https://.');
-      }
-      const rawButton = typeof input.buttonText === 'string' ? input.buttonText : '';
-      if (!(BOOST_BUTTON_TEXTS as readonly string[]).includes(rawButton)) {
-        throw new ApiError(400, 'INVALID_BOOST_BUTTON', 'Choose a button text for your link.');
-      }
-      linkUrl = rawLink;
-      buttonText = rawButton;
-      // Optional click cap (owner order 2026-11-25): end the boost
-      // automatically once it reaches this many link clicks. Only
-      // meaningful with a link — without one the cap is dropped.
-      if (input.clickCap !== null && input.clickCap !== undefined && input.clickCap !== '') {
-        const cap = typeof input.clickCap === 'number' ? input.clickCap : Number(input.clickCap);
-        if (!Number.isInteger(cap) || cap < BOOST_CLICK_CAP_MIN || cap > BOOST_CLICK_CAP_MAX) {
-          throw new ApiError(400, 'INVALID_BOOST_CLICK_CAP', 'Enter a click limit between 1 and 100,000, or leave it empty for no limit.');
-        }
-        clickCap = cap;
-      }
+    if (!rawLink) {
+      throw new ApiError(400, 'INVALID_BOOST_LINK', 'Add a link — a Clicks boost needs a link to send people to.');
     }
+    if (rawLink.length > 500 || !/^https?:\/\/.+/i.test(rawLink)) {
+      throw new ApiError(400, 'INVALID_BOOST_LINK', 'Enter a valid link starting with http:// or https://.');
+    }
+    // Button text: one of the 3 presets, or the user's own words
+    // (owner order 2026-11-26 01:41). Custom text is trimmed and
+    // capped at BOOST_BUTTON_TEXT_MAX_LENGTH (30 — the DB column
+    // width, buttonText VarChar(30)).
+    const rawButton = typeof input.buttonText === 'string' ? input.buttonText.trim() : '';
+    const isPresetButton = (BOOST_BUTTON_TEXTS as readonly string[]).includes(rawButton);
+    if (!rawButton) {
+      throw new ApiError(400, 'INVALID_BOOST_BUTTON', 'Choose a button text for your link.');
+    }
+    if (!isPresetButton && rawButton.length > BOOST_BUTTON_TEXT_MAX_LENGTH) {
+      throw new ApiError(400, 'INVALID_BOOST_BUTTON', 'Button words must be 30 letters or fewer.');
+    }
+    linkUrl = rawLink;
+    buttonText = rawButton;
+    // Required click target: the boost ends automatically once it
+    // reaches this many link clicks (recordBoostLinkClick flips the
+    // stored status to 'expired' and stamps endsAt = now).
+    if (input.clickCap === null || input.clickCap === undefined || input.clickCap === '') {
+      throw new ApiError(400, 'INVALID_BOOST_CLICK_CAP', 'Choose how many clicks the boost should stop after (1 to 100,000).');
+    }
+    const cap = typeof input.clickCap === 'number' ? input.clickCap : Number(input.clickCap);
+    if (!Number.isInteger(cap) || cap < BOOST_CLICK_CAP_MIN || cap > BOOST_CLICK_CAP_MAX) {
+      throw new ApiError(400, 'INVALID_BOOST_CLICK_CAP', 'Choose how many clicks the boost should stop after (1 to 100,000).');
+    }
+    clickCap = cap;
   }
 
   const method = BOOST_PAYMENT_DETAILS.methods.find((m) => m.id === input.paymentMethod);
@@ -487,11 +502,11 @@ export interface ActiveBoostInfo {
 
 // Live-boost details for a set of posts/reels, keyed by content id. The
 // feeds and single-content reads use this to attach the boost button:
-// Followers Gain boosts carry a Follow button, Business Promotion
-// boosts with a link carry that link as a button, Views Gain boosts
-// carry no button (see boostButtonFor). The boost id rides along so
-// the button can record the click (POST /api/boosts/:id/click) before
-// opening the link.
+// Followers Gain boosts carry a Follow button, Clicks boosts with a
+// link carry that link as a button (legacy Business Promotion boosts
+// keep theirs), Views Gain boosts carry no button (see boostButtonFor).
+// The boost id rides along so the button can record the click
+// (POST /api/boosts/:id/click) before opening the link.
 export async function getActiveBoostPostInfo(postIds: string[]): Promise<Map<string, ActiveBoostInfo>> {
   const map = new Map<string, ActiveBoostInfo>();
   if (postIds.length === 0) return map;
@@ -540,13 +555,14 @@ export async function getActiveBoostReelInfo(reelIds: string[]): Promise<Map<str
 
 // The button a boosted item shows in the feed, derived from its boost:
 // Follow for Followers Gain, the user's link (with its chosen text) for
-// Business Promotion with a link, and nothing otherwise.
+// Clicks with a link — and for legacy Business Promotion rows, which
+// keep the button they were created with — and nothing otherwise.
 export function boostButtonFor(
   info?: ActiveBoostInfo | null,
 ): { type: 'follow' } | { type: 'link'; url: string; text: string; boostId: string } | null {
   if (!info) return null;
   if (info.purpose === 'followers_gain') return { type: 'follow' };
-  if (info.purpose === 'business_promotion' && info.linkUrl) {
+  if ((info.purpose === 'clicks' || info.purpose === 'business_promotion') && info.linkUrl) {
     return { type: 'link', url: info.linkUrl, text: info.buttonText || 'Learn More', boostId: info.boostId };
   }
   return null;
@@ -618,9 +634,10 @@ export async function getViewerBoostAffinities(
 
 // Stable re-order of eligible boost content ids for one viewer:
 // Followers Gain boosts score the viewer's follow affinity, Views
-// Gain boosts score the view affinity, Business Promotion sits in
-// the middle (0.5). Equal scores keep the incoming order (Array.sort
-// is stable), which is soonest-expiring first.
+// Gain boosts score the view affinity, Clicks sits in the middle
+// (0.5) — like legacy Business Promotion did. Equal scores keep the
+// incoming order (Array.sort is stable), which is soonest-expiring
+// first.
 export function orderBoostIdsForViewer(
   ids: string[],
   info: Map<string, ActiveBoostInfo>,

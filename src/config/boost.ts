@@ -18,7 +18,13 @@ export const BOOST_CONTENT_TYPES: BoostContentType[] = ['post', 'reel'];
 
 // Why the user is boosting. Required on every boost request and stored
 // on the row so the admin queue (and later reporting) can see the goal.
-export type BoostPurpose = 'followers_gain' | 'views_gain' | 'business_promotion';
+// Owner decision 2026-11-25: the goals are ONLY Followers, Views and
+// Clicks — Business Promotion was removed from the create options
+// ("agr kisi ne Clicks bola hai to wohi Business hai"). Legacy
+// business_promotion rows in the database keep running; only creating
+// NEW ones is blocked (they fail validation below, because the id is
+// no longer in BOOST_PURPOSES).
+export type BoostPurpose = 'followers_gain' | 'views_gain' | 'clicks';
 
 export interface BoostPurposeOption {
   id: BoostPurpose;
@@ -29,7 +35,7 @@ export interface BoostPurposeOption {
 export const BOOST_PURPOSES: BoostPurposeOption[] = [
   { id: 'followers_gain', label: 'Followers Gain', description: 'Grow your profile followers.' },
   { id: 'views_gain', label: 'Views Gain', description: 'Get more views on this post or reel.' },
-  { id: 'business_promotion', label: 'Business Promotion', description: 'Promote a product, service or business.' },
+  { id: 'clicks', label: 'Clicks', description: 'Get more clicks on your link.' },
 ];
 
 export interface BoostPlan {
@@ -86,9 +92,14 @@ export const BOOST_DURATIONS: number[] = [1, 3, 7, 14];
 // for 1 day costs Rs 79 (same trial as v1, expressed in v2 terms).
 export const BOOST_V2_FIRST_BOOST_TRIAL = { dailyBudget: 100, days: 1, amountPkr: 79 };
 
-// Button texts a Business Promotion boost can put on its link button
-// (Facebook-style choice: Learn More / Shop Now / Order Now).
-export const BOOST_BUTTON_TEXTS = ['Learn More', 'Shop Now', 'Order Now'] as const;
+// Button texts a Clicks boost can put on its link button
+// (owner-approved presets 2026-11-26: Shop, Learn More, Order —
+// Learn More is the default). The user may also write their own
+// button words, up to BOOST_BUTTON_TEXT_MAX_LENGTH letters
+// (owner order 2026-11-26 01:41). Legacy Business Promotion boosts
+// keep whatever text they were created with.
+export const BOOST_BUTTON_TEXTS = ['Shop', 'Learn More', 'Order'] as const;
+export const BOOST_BUTTON_TEXT_MAX_LENGTH = 30;
 
 // Estimated daily results per rupee of daily budget (ANDAZAN — shown to
 // the user as estimates, never a guarantee). These are the exact
