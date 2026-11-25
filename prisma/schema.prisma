@@ -890,6 +890,10 @@ model ReelView {
   reelId    String   @map("reel_id")
   viewerId  String   @map("viewer_id")
   createdAt DateTime @default(now()) @map("created_at")
+  // Latest view of this reel by this viewer. The boost 6h repeat rule
+  // reads this (see getStaleViewedReelIds); createdAt is the FIRST view
+  // and must never move (dashboards + census read it).
+  lastViewedAt DateTime @default(now()) @map("last_viewed_at")
 
   @@index([reelId], name: "reel_views_reel_id_idx")
   @@index([viewerId], name: "reel_views_viewer_id_idx")
@@ -901,6 +905,10 @@ model PostView {
   viewerId  String   @map("viewer_id")
   watchSec  Int      @default(0) @map("watch_sec")
   createdAt DateTime @default(now()) @map("created_at")
+  // Latest view of this post by this viewer. The boost 6h repeat rule
+  // reads this (see getStaleViewedPostIds); createdAt is the FIRST view
+  // and must never move (dashboards + census + watch-time windows read it).
+  lastViewedAt DateTime @default(now()) @map("last_viewed_at")
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
 

@@ -557,11 +557,14 @@ export function boostButtonFor(
 // item re-appear through its boost slot once the earlier view is old;
 // a fresh view (< 6h) still blocks the slot, and normal (non-boosted)
 // content is never affected — its seen rule is unchanged.
+// Reads lastViewedAt (refreshed on every view), NOT createdAt — the
+// first-ever view timestamp never moves, so reading createdAt made
+// every old view permanently stale and the house ad stuck at slot 0.
 export async function getStaleViewedPostIds(viewerId: string, postIds: string[]): Promise<Set<string>> {
   if (!viewerId || postIds.length === 0) return new Set();
   const cutoff = new Date(Date.now() - BOOST_REPEAT_AFTER_HOURS * 60 * 60 * 1000);
   const rows = await prisma.postView.findMany({
-    where: { viewerId, postId: { in: postIds }, createdAt: { lt: cutoff } },
+    where: { viewerId, postId: { in: postIds }, lastViewedAt: { lt: cutoff } },
     select: { postId: true },
   }).catch(() => [] as Array<{ postId: string }>);
   return new Set(rows.map((r) => r.postId));
@@ -571,7 +574,7 @@ export async function getStaleViewedReelIds(viewerId: string, reelIds: string[])
   if (!viewerId || reelIds.length === 0) return new Set();
   const cutoff = new Date(Date.now() - BOOST_REPEAT_AFTER_HOURS * 60 * 60 * 1000);
   const rows = await prisma.reelView.findMany({
-    where: { viewerId, reelId: { in: reelIds }, createdAt: { lt: cutoff } },
+    where: { viewerId, reelId: { in: reelIds }, lastViewedAt: { lt: cutoff } },
     select: { reelId: true },
   }).catch(() => [] as Array<{ reelId: string }>);
   return new Set(rows.map((r) => r.reelId));

@@ -7,7 +7,9 @@ export async function recordPostView(userId: string, postId: string, watchSec: n
   const ws = Math.max(0, Math.min(3600, Math.floor(Number(watchSec) || 0)));
   await prisma.postView.upsert({
     where: { postId_viewerId: { postId, viewerId: userId } },
-    update: { watchSec: { increment: ws } },
+    // Refresh lastViewedAt on every view: the boost 6h repeat rule reads
+    // it (see getStaleViewedPostIds). createdAt stays the FIRST view.
+    update: { watchSec: { increment: ws }, lastViewedAt: new Date() },
     create: { postId, viewerId: userId, watchSec: ws },
   });
   const viewCount = await prisma.postView.count({ where: { postId } });

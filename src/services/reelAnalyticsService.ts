@@ -42,12 +42,15 @@ export async function recordReelView(userId: string, reelId: string, watchSec = 
   try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views ADD COLUMN watch_sec INT NOT NULL DEFAULT 0`); } catch {}
   try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views ADD COLUMN completed TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
   try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views ADD COLUMN created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)`); } catch {}
+  try { await prisma.$executeRawUnsafe(`ALTER TABLE reel_views ADD COLUMN last_viewed_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)`); } catch {}
 
   const completed = reel.durationSec ? watchSec >= Math.floor(reel.durationSec * 0.9) : watchSec >= 3;
-  // Upsert: keep the max watch time
+  // Upsert: keep the max watch time, and refresh last_viewed_at on every
+  // view — the boost 6h repeat rule reads it (see getStaleViewedReelIds).
+  // created_at stays the FIRST view.
   await prisma.$executeRawUnsafe(
     `INSERT INTO reel_views (id, reel_id, viewer_id, watch_sec, completed) VALUES (UUID(), ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE watch_sec = GREATEST(watch_sec, VALUES(watch_sec)), completed = GREATEST(completed, VALUES(completed))`,
+     ON DUPLICATE KEY UPDATE watch_sec = GREATEST(watch_sec, VALUES(watch_sec)), completed = GREATEST(completed, VALUES(completed)), last_viewed_at = NOW(3)`,
     reelId, userId, Math.floor(watchSec), completed ? 1 : 0
   );
   const rows = await prisma.$queryRawUnsafe<Array<{ viewCount: bigint }>>(`SELECT COUNT(*) AS viewCount FROM reel_views WHERE reel_id = ?`, reelId);
