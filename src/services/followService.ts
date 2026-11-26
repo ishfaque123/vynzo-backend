@@ -87,7 +87,9 @@ export async function getFollowCounts(userId: string) {
   return { followers, following, friends };
 }
 
-export async function getFriendStatus(currentUserId: string | undefined, otherUserId: string): Promise<'none' | 'following' | 'follow_back' | 'friends' | 'self'> {
+export type FriendStatus = 'none' | 'following' | 'follow_back' | 'friends' | 'self';
+
+export async function getFriendStatus(currentUserId: string | undefined, otherUserId: string): Promise<FriendStatus> {
   if (!currentUserId) return 'none';
   if (currentUserId === otherUserId) return 'self';
   if (await isEitherBlocked(currentUserId, otherUserId)) return 'none';
@@ -139,6 +141,8 @@ export async function getFollowUsers(
   const userIds = users.map((user) => user.id);
 
   let followingIds = new Set<string>();
+  let followedByIds = new Set<string>();
+  let blockedIds = new Set<string>();
   if (currentUserId && userIds.length) {
     const blocked = await prisma.block.findMany({
       where: {
@@ -149,19 +153,45 @@ export async function getFollowUsers(
       },
       select: { blockerId: true, blockedId: true },
     });
-    const blockedIds = new Set(blocked.map((b) => b.blockerId === currentUserId ? b.blockedId : b.blockerId));
+    blockedIds = new Set(blocked.map((b) => b.blockerId === currentUserId ? b.blockedId : b.blockerId));
     const follows = await prisma.follow.findMany({
       where: { followerId: currentUserId, followingId: { in: userIds } },
       select: { followingId: true },
     });
     followingIds = new Set(follows.filter((f) => !blockedIds.has(f.followingId)).map((f) => f.followingId));
+    // ONE extra batched query for the reverse direction: which listed users
+    // follow the viewer back. The (followerId, followingId) composite unique
+    // index serves it — one query per page, never per row, and never a
+    // per-row GET /status fan-out from the client.
+    const followedBy = await prisma.follow.findMany({
+      where: { followerId: { in: userIds }, followingId: currentUserId },
+      select: { followerId: true },
+    });
+    followedByIds = new Set(followedBy.filter((f) => !blockedIds.has(f.followerId)).map((f) => f.followerId));
   }
 
   return {
-    users: users.map((user) => ({
-      ...user,
-      isFollowing: followingIds.has(user.id),
-    })),
+    users: users.map((user) => {
+      // Same semantics as getFriendStatus: blocked -> 'none', own row ->
+      // 'self', logged-out viewer -> 'none' for every row.
+      let friendStatus: FriendStatus = 'none';
+      if (currentUserId && user.id === currentUserId) {
+        friendStatus = 'self';
+      } else if (blockedIds.has(user.id)) {
+        friendStatus = 'none';
+      } else if (followingIds.has(user.id) && followedByIds.has(user.id)) {
+        friendStatus = 'friends';
+      } else if (followingIds.has(user.id)) {
+        friendStatus = 'following';
+      } else if (followedByIds.has(user.id)) {
+        friendStatus = 'follow_back';
+      }
+      return {
+        ...user,
+        isFollowing: followingIds.has(user.id),
+        friendStatus,
+      };
+    }),
     pagination: listPagination(safePage, total, safeLimit),
   };
 }
