@@ -158,14 +158,18 @@ export async function createBoostRequest(
     baseAmountPkr = plan.amountPkr;
   }
 
-  // Clicks link + button + click target (owner decision 2026-11-25):
-  // a Clicks boost REQUIRES all three. The link shows on the boosted
-  // content as a button with the chosen text, and the boost ends
-  // automatically once it reaches the click target. Without a link
-  // there is no button and no click target, so a Clicks boost without
-  // one is just a Views boost under another name — that is why all
-  // three are required, not optional. For other purposes any
-  // link/button/cap sent by the client is dropped.
+  // Clicks link + button (owner decision 2026-11-25) + OPTIONAL click
+  // target (owner order 2026-11-26 09:41 — reversed the earlier
+  // required-target decision: "Target nahi likhna hoga — clicks jitne
+  // aayein"). A Clicks boost REQUIRES a link and a button text. The
+  // link shows on the boosted content as a button with the chosen
+  // text. The click target, when set, ends the boost automatically
+  // once it reaches that many link clicks; when blank, the boost
+  // runs its full days and only the days end it. Without a link there
+  // is no button, so a Clicks boost without one is just a Views boost
+  // under another name — that is why link + button are required, not
+  // optional. For other purposes any link/button/cap sent by the
+  // client is dropped.
   let linkUrl: string | null = null;
   let buttonText: string | null = null;
   let clickCap: number | null = null;
@@ -191,17 +195,20 @@ export async function createBoostRequest(
     }
     linkUrl = rawLink;
     buttonText = rawButton;
-    // Required click target: the boost ends automatically once it
-    // reaches this many link clicks (recordBoostLinkClick flips the
-    // stored status to 'expired' and stamps endsAt = now).
-    if (input.clickCap === null || input.clickCap === undefined || input.clickCap === '') {
-      throw new ApiError(400, 'INVALID_BOOST_CLICK_CAP', 'Choose how many clicks the boost should stop after (1 to 100,000).');
+    // Optional click target (owner order 2026-11-26 09:41): when set,
+    // the boost ends automatically once it reaches this many link
+    // clicks (recordBoostLinkClick flips the stored status to
+    // 'expired' and stamps endsAt = now). When blank, clickCap stays
+    // null and the boost runs its full days — the hard stop applies
+    // only when a target is set. A target that IS sent must be a
+    // whole number from 1 to 100,000.
+    if (input.clickCap !== null && input.clickCap !== undefined && input.clickCap !== '') {
+      const cap = typeof input.clickCap === 'number' ? input.clickCap : Number(input.clickCap);
+      if (!Number.isInteger(cap) || cap < BOOST_CLICK_CAP_MIN || cap > BOOST_CLICK_CAP_MAX) {
+        throw new ApiError(400, 'INVALID_BOOST_CLICK_CAP', 'Choose how many clicks the boost should stop after (1 to 100,000).');
+      }
+      clickCap = cap;
     }
-    const cap = typeof input.clickCap === 'number' ? input.clickCap : Number(input.clickCap);
-    if (!Number.isInteger(cap) || cap < BOOST_CLICK_CAP_MIN || cap > BOOST_CLICK_CAP_MAX) {
-      throw new ApiError(400, 'INVALID_BOOST_CLICK_CAP', 'Choose how many clicks the boost should stop after (1 to 100,000).');
-    }
-    clickCap = cap;
   }
 
   const method = BOOST_PAYMENT_DETAILS.methods.find((m) => m.id === input.paymentMethod);
