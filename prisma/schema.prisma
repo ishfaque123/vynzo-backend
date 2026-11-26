@@ -1029,6 +1029,7 @@ model PostBoost {
   reel Reel? @relation(fields: [reelId], references: [id], onDelete: Cascade)
   user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   clicks BoostLinkClick[]
+  repeatViews PostBoostView[]
 
   @@index([postId, status])
   @@index([reelId, status])
@@ -1054,6 +1055,33 @@ model BoostLinkClick {
   @@unique([boostId, viewerId, hourBucket])
   @@index([boostId, clickedAt])
   @@map("boost_link_clicks")
+}
+
+// One counted REPEAT view on a boosted post (owner order 2026-11-26):
+// post_views counts unique viewers only, so a repeat view by the same
+// person never moves an ad's Views. For posts with a live boost, repeat
+// views are recorded here and added to the boost's Views in
+// getBoostResults — at most one per viewer per boost per 10 minutes
+// (tenMinBucket = floor(unixMillis / 600_000)); the unique index makes
+// that guard race-safe, the same pattern as BoostLinkClick's
+// hourBucket. First views are NOT recorded here (post_views already
+// counts them), and the boost owner's own views are never recorded
+// here either. The table starts empty, so boosts that ran before this
+// change keep their exact old numbers.
+model PostBoostView {
+  id           String   @id @default(uuid())
+  boostId      String   @map("boost_id")
+  postId       String   @map("post_id")
+  viewerId     String   @map("viewer_id")
+  tenMinBucket Int      @map("ten_min_bucket")
+  viewedAt     DateTime @default(now()) @map("viewed_at")
+
+  boost PostBoost @relation(fields: [boostId], references: [id], onDelete: Cascade)
+
+  @@unique([boostId, viewerId, tenMinBucket])
+  @@index([boostId, viewedAt])
+  @@index([postId])
+  @@map("post_boost_views")
 }
 
 // One row per PayFast hosted-checkout attempt (today: Blue Tick

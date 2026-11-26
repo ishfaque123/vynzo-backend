@@ -340,8 +340,16 @@ export async function createBoostRequest(
 // Counts are single indexed lookups (post_views.post_id,
 // reel_views.reel_id, follows.following_id) and run only for the
 // requesting user's own boosts.
+//
+// Post views are unique first-views (post_views) PLUS counted repeat
+// views on the live boost (post_boost_views, owner order 2026-11-26:
+// every repeat view counts, at most one per viewer per boost per 10
+// minutes, never the boost owner's own). The repeat table starts
+// empty, so boosts that ran before the change keep their exact old
+// numbers. Reels are untouched — repeat counting is posts-only.
 async function getBoostResults(
   boost: {
+    id: string;
     status: PostBoostStatus; contentType: string;
     postId: string | null; reelId: string | null;
     startsAt: Date | null; endsAt: Date | null;
@@ -361,11 +369,27 @@ async function getBoostResults(
           ? prisma.reelView.count({ where: { reelId: boost.reelId, createdAt: window } })
           : Promise.resolve<number | null>(null))
       : (boost.postId
-          ? prisma.postView.count({ where: { postId: boost.postId, createdAt: window } })
+          ? postViewsWithRepeats(boost.postId, boost.id, window)
           : Promise.resolve<number | null>(null)),
     prisma.follow.count({ where: { followingId: userId, createdAt: window } }),
   ]);
   return { views, followers, clicks: boost.linkClicks };
+}
+
+// Post views for a boost window: unique first-views (post_views) plus
+// counted repeat views on the live boost (post_boost_views). Both
+// counts are windowed on their own timestamps (createdAt for first
+// views, viewedAt for repeats).
+async function postViewsWithRepeats(
+  postId: string,
+  boostId: string,
+  window: { gte: Date; lt: Date },
+): Promise<number> {
+  const [unique, repeats] = await Promise.all([
+    prisma.postView.count({ where: { postId, createdAt: window } }),
+    prisma.postBoostView.count({ where: { boostId, viewedAt: window } }),
+  ]);
+  return unique + repeats;
 }
 
 // Record one click on a live boost's link button (POST
@@ -502,6 +526,10 @@ export async function getActiveBoostReelIds(reelIds?: string[]): Promise<Set<str
 
 export interface ActiveBoostInfo {
   boostId: string;
+  // Owner of the boost — set by getActiveBoostPostInfo only (the
+  // repeat-view rule needs it to exclude the owner's own views).
+  // Reel info does not carry it; reels are untouched by this change.
+  userId?: string;
   purpose: string;
   linkUrl: string | null;
   buttonText: string | null;
@@ -526,12 +554,12 @@ export async function getActiveBoostPostInfo(postIds: string[]): Promise<Map<str
       endsAt: { gt: now },
       postId: { in: postIds },
     },
-    select: { id: true, postId: true, purpose: true, linkUrl: true, buttonText: true },
+    select: { id: true, postId: true, userId: true, purpose: true, linkUrl: true, buttonText: true },
     orderBy: { endsAt: 'asc' },
   });
   for (const r of rows) {
     if (r.postId && !map.has(r.postId)) {
-      map.set(r.postId, { boostId: r.id, purpose: r.purpose, linkUrl: r.linkUrl, buttonText: r.buttonText });
+      map.set(r.postId, { boostId: r.id, userId: r.userId, purpose: r.purpose, linkUrl: r.linkUrl, buttonText: r.buttonText });
     }
   }
   return map;
