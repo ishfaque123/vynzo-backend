@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma';
 import { ApiError } from '../middleware/errorHandler';
+import { assertMonthlyReportAllowance } from './moderationService';
 
 let viewTableReady = false;
 
@@ -21,6 +22,11 @@ export async function reportReel(userId: string, reelId: string, reason: string,
   if (!reel) throw new ApiError(404, 'REEL_NOT_FOUND', 'Reel not found.');
   if (reel.userId === userId) throw new ApiError(400, 'CANNOT_REPORT_OWN_REEL', 'You cannot report your own reel.');
   if (details && details.length > 500) throw new ApiError(400, 'DETAILS_TOO_LONG', 'Report details are too long.');
+  // One report per user per calendar month across all report types
+  // (user-ordered 2026-11-26). Only a NEW row consumes quota: an existing
+  // row just updates (update: {}) without the monthly check.
+  const existing = await prisma.reelReport.findUnique({ where: { reelId_reporterId: { reelId, reporterId: userId } } });
+  if (!existing) await assertMonthlyReportAllowance(userId);
   await prisma.reelReport.upsert({
     where: { reelId_reporterId: { reelId, reporterId: userId } },
     update: {},

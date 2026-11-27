@@ -3,7 +3,7 @@ import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
 import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
-import { moderatePost } from './moderationService';
+import { moderatePost, assertMonthlyReportAllowance } from './moderationService';
 import { awardAchievement } from './achievementService';
 import { isSameCountry, normalizeCountry } from '../utils/country';
 import { thumbUrlForUrl, mediumUrlForUrl } from './imageCompressService';
@@ -807,6 +807,10 @@ export async function reportPost(userId: string, postId: string, reason: string,
   if (!post) throw new ApiError(404, 'POST_NOT_FOUND', 'Post not found.');
   const existing = await prisma.report.findUnique({ where: { postId_reporterId: { postId, reporterId: userId } } });
   if (existing) throw new ApiError(400, 'ALREADY_REPORTED', 'You have already reported this post.');
+  // One report per user per calendar month across all report types
+  // (user-ordered 2026-11-26). Checked after the duplicate check, so
+  // re-reporting the same post never consumes quota.
+  await assertMonthlyReportAllowance(userId);
   await prisma.report.create({ data: { postId, reporterId: userId, reason: reason as any, details } });
   return { reported: true };
 }

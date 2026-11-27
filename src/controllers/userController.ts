@@ -9,6 +9,7 @@ import { prisma } from '../config/prisma';
 import { FREE_MONTH_REQUEST_REASON } from '../config/verification';
 import { uploadToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
+import { REPORT_DETAILS_REQUIRED_MESSAGE } from '../services/moderationService';
 import { claimReferral, getMyReferralInfo, getLeaderboard, LeaderboardCategory } from '../services/referralService';
 import { getDashboardStats } from '../services/dashboardService';
 
@@ -190,6 +191,10 @@ export async function deleteMyAccount(req: Request, res: Response, next: NextFun
 const reportUserSchema = z.object({
   reason: z.enum(['spam', 'harassment', 'hate_speech', 'violence', 'nudity', 'misinformation', 'other']).default('other'),
   details: z.string().max(500).optional(),
+}).superRefine((data, ctx) => {
+  if (data.reason === 'other' && !data.details?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['details'], message: REPORT_DETAILS_REQUIRED_MESSAGE });
+  }
 });
 
 export async function reportUserHandler(req: Request, res: Response, next: NextFunction) {

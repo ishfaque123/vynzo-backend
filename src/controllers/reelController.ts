@@ -10,6 +10,7 @@ import { reportReelComment } from '../services/reelCommentReportService';
 import { reportReel, recordReelView } from '../services/reelAnalyticsService';
 import { uploadStreamToR2, deleteFromR2 } from '../config/r2';
 import { z } from 'zod';
+import { REPORT_DETAILS_REQUIRED_MESSAGE } from '../services/moderationService';
 import { env } from '../config/env';
 import { createWatermarkedReelDownload } from '../services/reelDownloadService';
 import { createTrimmedReel, compressVideoForUpload } from '../services/reelTrimService';
@@ -120,9 +121,24 @@ export async function getReelCommentsHandler(req: Request, res: Response, next: 
 }
 export async function toggleReelCommentReactionHandler(req: Request, res: Response, next: NextFunction) { try { const type = typeof req.body?.type === 'string' ? req.body.type : 'like'; sendSuccess(res, await toggleReelCommentReaction(req.user!.id, req.params.commentId, type)); } catch (err) { next(err); } }
 export async function editReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { const content = typeof req.body?.content === 'string' ? req.body.content : ''; sendSuccess(res, { comment: await editReelComment(req.user!.id, req.params.commentId, content) }); } catch (err) { next(err); } }
-export async function reportReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { const reason = typeof req.body?.reason === 'string' ? req.body.reason : 'other'; const details = typeof req.body?.details === 'string' ? req.body.details : undefined; sendSuccess(res, await reportReelComment(req.user!.id, req.params.commentId, reason, details)); } catch (err) { next(err); } }
+// Report schemas (parity with the post/comment/user report schemas): the
+// same seven reasons, details capped at 500 chars, and details are mandatory
+// when the reason is 'other' (user-ordered 2026-11-26). Previously these two
+// handlers did no validation at all, so an invalid reason or over-long
+// details reached the service (or the database) unchecked.
+const reportReelSchema = z.object({
+  reason: z.enum(['spam', 'harassment', 'hate_speech', 'violence', 'nudity', 'misinformation', 'other']).default('other'),
+  details: z.string().max(500).optional(),
+}).superRefine((data, ctx) => {
+  if (data.reason === 'other' && !data.details?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['details'], message: REPORT_DETAILS_REQUIRED_MESSAGE });
+  }
+});
+const reportReelCommentSchema = reportReelSchema;
+
+export async function reportReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { const { reason, details } = reportReelCommentSchema.parse(req.body ?? {}); sendSuccess(res, await reportReelComment(req.user!.id, req.params.commentId, reason, details)); } catch (err) { next(err); } }
 export async function deleteReelCommentHandler(req: Request, res: Response, next: NextFunction) { try { sendSuccess(res, await deleteReelComment(req.user!.id, req.params.commentId)); } catch (err) { next(err); } }
-export async function reportReelHandler(req: Request, res: Response, next: NextFunction) { try { const reason = typeof req.body?.reason === 'string' ? req.body.reason : 'other'; const details = typeof req.body?.details === 'string' ? req.body.details : undefined; sendSuccess(res, await reportReel(req.user!.id, req.params.id, reason, details)); } catch (err) { next(err); } }
+export async function reportReelHandler(req: Request, res: Response, next: NextFunction) { try { const { reason, details } = reportReelSchema.parse(req.body ?? {}); sendSuccess(res, await reportReel(req.user!.id, req.params.id, reason, details)); } catch (err) { next(err); } }
 export async function downloadReelHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const reel = await getReelById(req.params.id, req.user!.id);

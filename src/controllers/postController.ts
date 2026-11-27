@@ -12,6 +12,7 @@ import { compressImageBuffer, compressPostThumbBuffer, thumbKeyForUrl, compressP
 import { env } from '../config/env';
 import { z } from 'zod';
 import { ApiError } from '../middleware/errorHandler';
+import { REPORT_DETAILS_REQUIRED_MESSAGE } from '../services/moderationService';
 
 const createPostSchema = z.object({
   content: z.string().max(2000).optional().default(''),
@@ -150,6 +151,10 @@ export async function sharePostHandler(req: Request, res: Response, next: NextFu
 const reportPostSchema = z.object({
   reason: z.enum(['spam', 'harassment', 'hate_speech', 'violence', 'nudity', 'misinformation', 'other']).default('other'),
   details: z.string().max(500).optional(),
+}).superRefine((data, ctx) => {
+  if (data.reason === 'other' && !data.details?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['details'], message: REPORT_DETAILS_REQUIRED_MESSAGE });
+  }
 });
 
 export async function reportPostHandler(req: Request, res: Response, next: NextFunction) {

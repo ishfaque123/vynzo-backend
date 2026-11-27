@@ -4,7 +4,7 @@ import { ApiError } from '../middleware/errorHandler';
 import { getFriendStatus } from './followService';
 import { isEitherBlocked } from './blockService';
 import { createNotification } from './notificationService';
-import { moderateComment } from './moderationService';
+import { moderateComment, assertMonthlyReportAllowance } from './moderationService';
 
 function toAuthorDTO(user: any) {
   return {
@@ -365,6 +365,11 @@ export async function reportComment(userId: string, commentId: string, reason: s
     where: { commentId_reporterId: { commentId, reporterId: userId } },
   });
   if (existing) throw new ApiError(400, 'ALREADY_REPORTED', 'You have already reported this comment.');
+
+  // One report per user per calendar month across all report types
+  // (user-ordered 2026-11-26). Checked after the duplicate check, so
+  // re-reporting the same comment never consumes quota.
+  await assertMonthlyReportAllowance(userId);
 
   await prisma.commentReport.create({
     data: { commentId, reporterId: userId, reason: reason as any, details },

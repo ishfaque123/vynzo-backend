@@ -1,4 +1,5 @@
 import { prisma } from '../config/prisma';
+import { ApiError } from '../middleware/errorHandler';
 import { createNotification } from './notificationService';
 
 // ---------------------------------------------------------------------------
@@ -432,5 +433,39 @@ export async function moderateChatMessage(messageId: string): Promise<void> {
     });
   } catch (err) {
     console.error('[moderation] moderateChatMessage failed', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Report limits (user-ordered 2026-11-26)
+// ---------------------------------------------------------------------------
+// One report per user per calendar month, counted across ALL five report
+// tables (posts, users, comments, reels, reel comments). The window is the
+// UTC calendar month. Re-reporting the same item never consumes quota: the
+// duplicate check (or the upsert's existing-row path) runs before this
+// helper in every report service, so this only runs when a genuinely new
+// report row is about to be created. No strike system (owner order).
+// ---------------------------------------------------------------------------
+
+// Exact user-facing messages (professional English, verbatim everywhere):
+// the monthly-limit message is thrown here; the details-required message is
+// used by the report Zod schemas in the controllers.
+export const REPORT_DETAILS_REQUIRED_MESSAGE = "Please describe the issue when you choose 'Other'.";
+export const MONTHLY_REPORT_LIMIT_MESSAGE = 'You have already filed a report this month. You can file another report next month.';
+
+export async function assertMonthlyReportAllowance(userId: string): Promise<void> {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const nextMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const window = { gte: monthStart, lt: nextMonthStart };
+  const [posts, users, comments, reels, reelComments] = await Promise.all([
+    prisma.report.count({ where: { reporterId: userId, createdAt: window } }),
+    prisma.userReport.count({ where: { reporterId: userId, createdAt: window } }),
+    prisma.commentReport.count({ where: { reporterId: userId, createdAt: window } }),
+    prisma.reelReport.count({ where: { reporterId: userId, createdAt: window } }),
+    prisma.reelCommentReport.count({ where: { reporterId: userId, createdAt: window } }),
+  ]);
+  if (posts + users + comments + reels + reelComments >= 1) {
+    throw new ApiError(429, 'MONTHLY_REPORT_LIMIT', MONTHLY_REPORT_LIMIT_MESSAGE);
   }
 }

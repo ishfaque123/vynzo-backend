@@ -4,6 +4,7 @@ import { ApiError } from '../middleware/errorHandler';
 import { addComment, getComments, toggleCommentsSetting, deleteComment, editComment, setCommentReaction, reportComment } from '../services/commentService';
 import { uploadToR2 } from '../config/r2';
 import { z } from 'zod';
+import { REPORT_DETAILS_REQUIRED_MESSAGE } from '../services/moderationService';
 
 const commentSchema = z.object({
   content: z.string().max(500).optional().default(''),
@@ -71,6 +72,10 @@ export async function toggleCommentsSettingHandler(req: Request, res: Response, 
 const reportCommentSchema = z.object({
   reason: z.enum(['spam', 'harassment', 'hate_speech', 'violence', 'nudity', 'misinformation', 'other']).default('other'),
   details: z.string().max(500).optional(),
+}).superRefine((data, ctx) => {
+  if (data.reason === 'other' && !data.details?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['details'], message: REPORT_DETAILS_REQUIRED_MESSAGE });
+  }
 });
 
 export async function reportCommentHandler(req: Request, res: Response, next: NextFunction) {
