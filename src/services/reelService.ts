@@ -1198,6 +1198,62 @@ export async function getPublicReelById(reelId: string) {
   };
 }
 
+// Public top-reels list for the frontend sitemap (GET /api/reels/public).
+// No login — the sitemap generator and search-engine crawlers fetch with no
+// credentials. Fail closed, mirroring getPublicReelById: only reels whose
+// author is NOT private AND whose account is active are ever returned.
+// There is no viewer identity here, so no block check applies (blocks are
+// between two users) and no close-friends content exists for reels —
+// close-friends visibility only applies to statuses, which this endpoint
+// never touches. Reels have no hidden/moderated flag in the schema;
+// moderated reels are deleted, so nothing extra needs filtering.
+// Ranking follows the feed's own pattern: a bounded newest-first
+// candidate pool, batched view counts via the same raw-SQL shape as
+// getReelFeed, then an in-memory popularity sort. No new Prisma
+// constructs, no migration.
+const PUBLIC_REELS_POOL_SIZE = 1000;
+const PUBLIC_REELS_MAX_LIMIT = 100;
+
+export async function getPublicReels(sort: 'top' | 'recent' = 'top', limit = 50, offset = 0) {
+  const safeLimit = Math.min(Math.max(limit, 1), PUBLIC_REELS_MAX_LIMIT);
+  const safeOffset = Math.max(offset, 0);
+  const pool = await prisma.reel.findMany({
+    where: { user: { isPrivate: false, accountStatus: 'active' } },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: PUBLIC_REELS_POOL_SIZE,
+    select: { id: true, createdAt: true, _count: { select: { likes: true } } },
+  });
+  const reelIds = pool.map((r) => r.id);
+  const viewCounts = new Map<string, number>();
+  if (reelIds.length) {
+    try {
+      const vc = await prisma.$queryRawUnsafe<Array<{ reel_id: string; cnt: bigint }>>(
+        `SELECT reel_id, COUNT(*) AS cnt FROM reel_views WHERE reel_id IN (${reelIds.map(() => '?').join(',')}) GROUP BY reel_id`,
+        ...reelIds
+      );
+      for (const row of vc) viewCounts.set(row.reel_id, Number(row.cnt));
+    } catch {}
+  }
+  const ranked = pool.map((r) => ({
+    id: r.id,
+    createdAt: r.createdAt,
+    viewCount: viewCounts.get(r.id) || 0,
+    likeCount: r._count.likes,
+  }));
+  if (sort === 'top') {
+    ranked.sort((a, b) => {
+      const byPopularity = (b.viewCount + b.likeCount) - (a.viewCount + a.likeCount);
+      if (byPopularity !== 0) return byPopularity;
+      const byDate = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (byDate !== 0) return byDate;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+  }
+  const total = ranked.length;
+  const page = ranked.slice(safeOffset, safeOffset + safeLimit);
+  return { reels: page, total, sort, limit: safeLimit, offset: safeOffset };
+}
+
 export async function getReelsByUsername(username: string, currentUserId: string) {
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) throw new ApiError(404, 'USER_NOT_FOUND', 'User not found.');

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/authMiddleware';
+import { publicReelsLimiter } from '../middleware/rateLimiter';
 import { reelUpload } from '../middleware/reelUpload';
 import {
   getReelsConfigHandler,
@@ -11,6 +12,7 @@ import {
   getReelsByUsernameHandler,
   getReelByIdHandler,
   getPublicReelByIdHandler,
+  getPublicReelsHandler,
   deleteReelHandler,
   getMyReelStatusHandler,
   addReelCommentHandler,
@@ -27,6 +29,7 @@ import {
 
 const router = Router();
 router.get('/config', getReelsConfigHandler);
+router.get('/public', publicReelsLimiter, getPublicReelsHandler);
 router.post('/detect-category', authMiddleware, detectCategoryHandler);
 router.get('/', authMiddleware, getReelFeedHandler);
 router.get('/me/status', authMiddleware, getMyReelStatusHandler);
